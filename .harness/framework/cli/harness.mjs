@@ -1,0 +1,482 @@
+#!/usr/bin/env node
+
+/**
+ * Harness CLI Orchestrator
+ * 
+ * Commands:
+ *   prep          - Print MUST block from Harness.md
+ *   iterate       - Format + lint fix (changed files)
+ *   post          - Full verification + policy-audit
+ *   ci            - CI mirror (same as post)
+ *   new:learned   - Create a learned entry from template
+ *   new:decision  - Create a decision entry from template
+ */
+
+import { execSync, spawn } from 'node:child_process';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const HARNESS_ROOT = join(__dirname, '..', '..');
+const REPO_ROOT = join(HARNESS_ROOT, '..');
+
+// ============================================================================
+// Utilities
+// ============================================================================
+
+function log(msg) {
+    console.log(msg);
+}
+
+function logError(msg) {
+    console.error(`\x1b[31m✗ ${msg}\x1b[0m`);
+}
+
+function logSuccess(msg) {
+    console.log(`\x1b[32m✓ ${msg}\x1b[0m`);
+}
+
+function logInfo(msg) {
+    console.log(`\x1b[36mℹ ${msg}\x1b[0m`);
+}
+
+function printRecoveryPointers() {
+    log(`
+\x1b[33m───────────────────────────────────────────────────────────────────────\x1b[0m
+\x1b[33mRecovery:\x1b[0m
+  1. Rerun the right stage:
+     - \x1b[36mnpm run harness:iterate\x1b[0m (format + lint fix on changed files)
+     - \x1b[36mnpm run harness:post\x1b[0m (full local verification)
+  2. If you didn't run prep (or you're stuck):
+     - \x1b[36mnpm run harness:prep\x1b[0m (prints MUST summary + grep recipe)
+  3. For details:
+     - open \x1b[36m.harness/Harness.md\x1b[0m
+\x1b[33m───────────────────────────────────────────────────────────────────────\x1b[0m
+`);
+}
+
+function loadConfig() {
+    const configPath = join(HARNESS_ROOT, 'harness.yml');
+    if (!existsSync(configPath)) {
+        throw new Error(`Config not found: ${configPath}`);
+    }
+    // Simple YAML parser for our limited structure
+    const content = readFileSync(configPath, 'utf-8');
+    return parseSimpleYaml(content);
+}
+
+function parseSimpleYaml(content) {
+    const config = { stages: {}, globs: {} };
+    let currentSection = null;
+    let currentStage = null;
+    let currentGlob = null;
+
+    const lines = content.split('\n');
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+
+        if (trimmed === 'stages:') {
+            currentSection = 'stages';
+            continue;
+        }
+        if (trimmed === 'globs:') {
+            currentSection = 'globs';
+            continue;
+        }
+
+        if (currentSection === 'stages') {
+            const stageMatch = trimmed.match(/^(\w+):$/);
+            if (stageMatch && !trimmed.includes('command')) {
+                currentStage = stageMatch[1];
+                config.stages[currentStage] = [];
+                continue;
+            }
+
+            if (currentStage && trimmed.startsWith('- command:')) {
+                const cmd = trimmed.replace('- command:', '').trim().replace(/^["']|["']$/g, '');
+                config.stages[currentStage].push({ command: cmd, files: 'all' });
+                continue;
+            }
+
+            if (currentStage && trimmed.startsWith('files:')) {
+                const lastCmd = config.stages[currentStage][config.stages[currentStage].length - 1];
+                if (lastCmd) {
+                    lastCmd.files = trimmed.replace('files:', '').trim();
+                }
+                continue;
+            }
+        }
+
+        if (currentSection === 'globs') {
+            const globKeyMatch = trimmed.match(/^(\w+):(.*)$/);
+            if (globKeyMatch) {
+                const key = globKeyMatch[1];
+                const value = globKeyMatch[2].trim();
+                if (value && value !== '') {
+                    // Single-line value (learned/decisions)
+                    config.globs[key] = value.replace(/^["']|["']$/g, '');
+                } else {
+                    // Multi-line array
+                    currentGlob = key;
+                    config.globs[key] = [];
+                }
+                continue;
+            }
+
+            if (currentGlob && trimmed.startsWith('-')) {
+                const pattern = trimmed.slice(1).trim().replace(/^["']|["']$/g, '');
+                config.globs[currentGlob].push(pattern);
+            }
+        }
+    }
+
+    return config;
+}
+
+function getChangedFiles() {
+    try {
+        // Get staged files
+        const staged = execSync('git diff --cached --name-only', {
+            cwd: REPO_ROOT,
+            encoding: 'utf-8'
+        }).trim().split('\n').filter(Boolean);
+
+        // Get unstaged modified files
+        const unstaged = execSync('git diff --name-only', {
+            cwd: REPO_ROOT,
+            encoding: 'utf-8'
+        }).trim().split('\n').filter(Boolean);
+
+        // Get untracked files
+        const untracked = execSync('git ls-files --others --exclude-standard', {
+            cwd: REPO_ROOT,
+            encoding: 'utf-8'
+        }).trim().split('\n').filter(Boolean);
+
+        return [...new Set([...staged, ...unstaged, ...untracked])];
+    } catch {
+        return [];
+    }
+}
+
+function runCommand(command, files = 'all') {
+    const changedFiles = files === 'changed' ? getChangedFiles() : [];
+
+    if (files === 'changed') {
+        if (changedFiles.length === 0) {
+            logInfo(`Skipping (no changed files): ${command}`);
+            return true;
+        }
+        // Filter to relevant files for the command
+        const relevantFiles = changedFiles.filter(f =>
+            f.endsWith('.ts') || f.endsWith('.tsx') ||
+            f.endsWith('.js') || f.endsWith('.jsx') ||
+            f.endsWith('.json') || f.endsWith('.md')
+        );
+        if (relevantFiles.length === 0) {
+            logInfo(`Skipping (no relevant files): ${command}`);
+            return true;
+        }
+        command = `${command} ${relevantFiles.join(' ')}`;
+    }
+
+    log(`\n\x1b[90m$ ${command}\x1b[0m`);
+
+    try {
+        execSync(command, {
+            cwd: REPO_ROOT,
+            stdio: 'inherit',
+            shell: true
+        });
+        return true;
+    } catch (error) {
+        return false;
+    }
+}
+
+// ============================================================================
+// Commands
+// ============================================================================
+
+function cmdPrep() {
+    const harnessDocPath = join(HARNESS_ROOT, 'Harness.md');
+
+    if (!existsSync(harnessDocPath)) {
+        logError('Harness.md not found at ' + harnessDocPath);
+        process.exit(1);
+    }
+
+    const content = readFileSync(harnessDocPath, 'utf-8');
+
+    // Extract MUST block
+    const mustMatch = content.match(/<!-- BEGIN MUST -->([\s\S]*?)<!-- END MUST -->/);
+
+    if (!mustMatch) {
+        logError('No MUST block found in Harness.md');
+        log('Expected markers: <!-- BEGIN MUST --> and <!-- END MUST -->');
+        process.exit(1);
+    }
+
+    log('\n\x1b[36m╔══════════════════════════════════════════════════════════════════════╗\x1b[0m');
+    log('\x1b[36m║                         HARNESS MUST BLOCK                           ║\x1b[0m');
+    log('\x1b[36m╚══════════════════════════════════════════════════════════════════════╝\x1b[0m\n');
+
+    log(mustMatch[1].trim());
+
+    log('\n\x1b[36m╔══════════════════════════════════════════════════════════════════════╗\x1b[0m');
+    log('\x1b[36m║  Memory lives in .harness/context/ — grep before creating new code   ║\x1b[0m');
+    log('\x1b[36m╚══════════════════════════════════════════════════════════════════════╝\x1b[0m');
+
+    log('\n\x1b[33mFor more details, open: .harness/Harness.md\x1b[0m\n');
+}
+
+function cmdIterate() {
+    log('\n\x1b[36m=== harness:iterate ===\x1b[0m');
+    log('Running format + lint fix on changed files...\n');
+
+    const config = loadConfig();
+    const stage = config.stages.iterate || [];
+
+    let success = true;
+    for (const step of stage) {
+        if (!runCommand(step.command, step.files)) {
+            success = false;
+            // Continue anyway for iterate - we want to fix as much as possible
+        }
+    }
+
+    if (success) {
+        logSuccess('Iterate complete');
+    } else {
+        logError('Some commands had issues (see above)');
+        printRecoveryPointers();
+        process.exit(1);
+    }
+}
+
+function cmdPost() {
+    log('\n\x1b[36m=== harness:post ===\x1b[0m');
+    log('Running full verification...\n');
+
+    const config = loadConfig();
+    const stage = config.stages.post || [];
+
+    for (const step of stage) {
+        if (!runCommand(step.command, step.files)) {
+            logError(`Failed: ${step.command}`);
+            printRecoveryPointers();
+            process.exit(1);
+        }
+    }
+
+    logSuccess('Post verification complete');
+}
+
+function cmdCi() {
+    log('\n\x1b[36m=== harness:ci ===\x1b[0m');
+    log('Running CI verification...\n');
+
+    const config = loadConfig();
+    const stage = config.stages.ci || [];
+
+    for (const step of stage) {
+        if (!runCommand(step.command, step.files)) {
+            logError(`Failed: ${step.command}`);
+            printRecoveryPointers();
+            process.exit(1);
+        }
+    }
+
+    logSuccess('CI verification complete');
+}
+
+function cmdNewLearned(slug) {
+    const date = new Date().toISOString().slice(0, 10);
+    const filename = `${date}-${slug}.md`;
+    const targetDir = join(HARNESS_ROOT, 'context', 'learned');
+    const targetPath = join(targetDir, filename);
+    const templatePath = join(HARNESS_ROOT, 'framework', 'templates', 'learned.md');
+
+    if (!existsSync(targetDir)) {
+        mkdirSync(targetDir, { recursive: true });
+    }
+
+    if (existsSync(targetPath)) {
+        logError(`File already exists: ${targetPath}`);
+        process.exit(1);
+    }
+
+    let template = '';
+    if (existsSync(templatePath)) {
+        template = readFileSync(templatePath, 'utf-8');
+        template = template.replace(/{{date}}/g, date);
+        template = template.replace(/{{slug}}/g, slug);
+    } else {
+        template = `# ${slug}
+
+**Date:** ${date}
+
+## What Happened
+
+(describe the bug or issue)
+
+## Root Cause
+
+(what was the underlying problem)
+
+## Solution
+
+(how you fixed it)
+
+## Search terms
+
+- 
+
+## Related
+
+NONE
+
+## Tags
+
+#
+`;
+    }
+
+    writeFileSync(targetPath, template);
+    logSuccess(`Created: ${targetPath}`);
+    log('\nDon\'t forget to:');
+    log('  1. Fill in the Search terms, Related, and Tags fields');
+    log('  2. Add a test that covers this learning');
+}
+
+function cmdNewDecision(slug) {
+    const date = new Date().toISOString().slice(0, 10);
+    const filename = `${date}-${slug}.md`;
+    const targetDir = join(HARNESS_ROOT, 'context', 'decisions');
+    const targetPath = join(targetDir, filename);
+    const templatePath = join(HARNESS_ROOT, 'framework', 'templates', 'decision.md');
+
+    if (!existsSync(targetDir)) {
+        mkdirSync(targetDir, { recursive: true });
+    }
+
+    if (existsSync(targetPath)) {
+        logError(`File already exists: ${targetPath}`);
+        process.exit(1);
+    }
+
+    let template = '';
+    if (existsSync(templatePath)) {
+        template = readFileSync(templatePath, 'utf-8');
+        template = template.replace(/{{date}}/g, date);
+        template = template.replace(/{{slug}}/g, slug);
+    } else {
+        template = `# ${slug}
+
+**Date:** ${date}
+
+## Context
+
+(what situation led to this decision)
+
+## Decision
+
+(what you decided to do)
+
+## Rationale
+
+(why this approach over alternatives)
+
+## Consequences
+
+(what trade-offs or implications this has)
+
+## Search terms
+
+- 
+
+## Related
+
+NONE
+
+## Tags
+
+#
+`;
+    }
+
+    writeFileSync(targetPath, template);
+    logSuccess(`Created: ${targetPath}`);
+    log('\nDon\'t forget to fill in the Search terms, Related, and Tags fields');
+}
+
+// ============================================================================
+// Main
+// ============================================================================
+
+const args = process.argv.slice(2);
+const command = args[0];
+
+// Parse additional flags
+let slug = null;
+for (let i = 1; i < args.length; i++) {
+    if (args[i] === '--slug' && args[i + 1]) {
+        slug = args[i + 1];
+        i++;
+    }
+}
+
+switch (command) {
+    case 'prep':
+        cmdPrep();
+        break;
+
+    case 'iterate':
+        cmdIterate();
+        break;
+
+    case 'post':
+        cmdPost();
+        break;
+
+    case 'ci':
+        cmdCi();
+        break;
+
+    case 'new:learned':
+        if (!slug) {
+            logError('Usage: harness new:learned --slug <slug>');
+            process.exit(1);
+        }
+        cmdNewLearned(slug);
+        break;
+
+    case 'new:decision':
+        if (!slug) {
+            logError('Usage: harness new:decision --slug <slug>');
+            process.exit(1);
+        }
+        cmdNewDecision(slug);
+        break;
+
+    default:
+        log('Harness CLI');
+        log('');
+        log('Usage: harness <command>');
+        log('');
+        log('Commands:');
+        log('  prep              Print MUST block from Harness.md');
+        log('  iterate           Format + lint fix (changed files)');
+        log('  post              Full verification + policy-audit');
+        log('  ci                CI mirror (same as post)');
+        log('  new:learned       Create a learned entry');
+        log('  new:decision      Create a decision entry');
+        log('');
+        log('Options:');
+        log('  --slug <slug>     Slug for new entries (required for new:*)');
+        process.exit(1);
+}

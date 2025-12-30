@@ -1,0 +1,57 @@
+# Harness Configuration
+
+stages:
+  iterate:
+    - command: "npx prettier --write"
+      files: changed
+    - command: "npx eslint --fix"
+      files: changed
+
+  post:
+    - command: "npx eslint ."
+    - command: "npx tsc --noEmit"
+    - command: "npm test"
+    - command: "node .harness/framework/scripts/policy-audit.mjs"
+
+  ci:
+    - command: "npx prettier --check ."
+    - command: "npx eslint ."
+    - command: "npx tsc --noEmit"
+    - command: "npm test"
+    - command: "node .harness/framework/scripts/policy-audit.mjs"
+
+globs:
+  # Files that count as "real code" - changes require memory entry
+  realCode:
+    - "src/**/*.ts"
+    - "src/**/*.tsx"
+    - "src/**/*.js"
+    - "src/**/*.jsx"
+
+  # Files that are exempt from memory requirement
+  exempt:
+    - "*.config.*"
+    - "*.json"
+    - ".harness/**"
+    - ".github/**"
+    - "*.md"
+    - ".gitignore"
+    - ".eslintrc*"
+    - ".prettierrc*"
+    - "tsconfig.json"
+
+  # Test files - required when adding learned entries
+  tests:
+    - "**/*.test.ts"
+    - "**/*.test.tsx"
+    - "**/*.test.js"
+    - "**/*.spec.ts"
+    - "**/*.spec.tsx"
+    - "**/*.spec.js"
+    - "**/__tests__/**"
+    - "**/test/**"
+    - "**/tests/**"
+
+  # Memory entry locations
+  learned: ".harness/context/learned/**/*.md"
+  decisions: ".harness/context/decisions/**/*.md"
