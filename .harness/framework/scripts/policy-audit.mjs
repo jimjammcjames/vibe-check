@@ -56,7 +56,7 @@ function printRecoveryPointers() {
 }
 
 function loadConfig() {
-    const configPath = join(HARNESS_ROOT, 'harness.yml');
+    const configPath = join(HARNESS_ROOT, 'config.yml');
     if (!existsSync(configPath)) {
         throw new Error(`Config not found: ${configPath}`);
     }

@@ -1,5 +1,23 @@
 # Harness Configuration
 
+# Anti-Gamification Review Layer
+reviewers:
+  # Deterministic: tests must fail on base commit when learned entry present
+  base_tripwire:
+    enabled: true
+    base_ref: "origin/main"
+    require_fail_on_base: true
+    allow_weak_pass: true
+    exempt_tag: "#basefail-exempt"
+    run_tests_cmd: "npm test"
+  
+  # Pluggable reviewer (adapter-based)
+  code_reviewer:
+    enabled: true
+    adapter: "auto"
+    fail_threshold: "high"
+    base_ref: "origin/main"
+
 stages:
   iterate:
     - command: "npx prettier --write"
@@ -12,6 +30,8 @@ stages:
     - command: "npx tsc --noEmit"
     - command: "npm test"
     - command: "node .harness/framework/scripts/policy-audit.mjs"
+    - command: "node .harness/framework/scripts/base-tripwire.mjs"
+    - command: "node .harness/framework/scripts/review-adapter.mjs"
 
   ci:
     - command: "npx prettier --check ."
@@ -19,6 +39,8 @@ stages:
     - command: "npx tsc --noEmit"
     - command: "npm test"
     - command: "node .harness/framework/scripts/policy-audit.mjs"
+    - command: "node .harness/framework/scripts/base-tripwire.mjs"
+    - command: "node .harness/framework/scripts/review-adapter.mjs"
 
 globs:
   # Files that count as "real code" - changes require memory entry
@@ -55,3 +77,17 @@ globs:
   # Memory entry locations
   learned: ".harness/context/learned/**/*.md"
   decisions: ".harness/context/decisions/**/*.md"
+
+  # Test-side files (applied to base commit in tripwire)
+  testSide:
+    - "**/*.test.ts"
+    - "**/*.test.tsx"
+    - "**/*.test.js"
+    - "**/*.spec.ts"
+    - "**/*.spec.tsx"
+    - "**/*.spec.js"
+    - "**/__tests__/**"
+    - "**/__mocks__/**"
+    - "**/test-utils/**"
+    - "**/fixtures/**"
+

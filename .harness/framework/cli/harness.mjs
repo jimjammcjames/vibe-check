@@ -59,7 +59,7 @@ function printRecoveryPointers() {
 }
 
 function loadConfig() {
-    const configPath = join(HARNESS_ROOT, 'harness.yml');
+    const configPath = join(HARNESS_ROOT, 'config.yml');
     if (!existsSync(configPath)) {
         throw new Error(`Config not found: ${configPath}`);
     }
@@ -294,6 +294,27 @@ function cmdCi() {
     logSuccess('CI verification complete');
 }
 
+function cmdReview() {
+    log('\n\x1b[36m=== harness:review ===\x1b[0m');
+    log('Running anti-gamification review...\n');
+
+    // Run base tripwire
+    if (!runCommand('node .harness/framework/scripts/base-tripwire.mjs')) {
+        logError('Base tripwire failed');
+        printRecoveryPointers();
+        process.exit(1);
+    }
+
+    // Run code reviewer
+    if (!runCommand('node .harness/framework/scripts/review-adapter.mjs')) {
+        logError('Code review failed');
+        printRecoveryPointers();
+        process.exit(1);
+    }
+
+    logSuccess('Review complete');
+}
+
 function cmdNewLearned(slug) {
     const date = new Date().toISOString().slice(0, 10);
     const filename = `${date}-${slug}.md`;
@@ -447,6 +468,10 @@ switch (command) {
         cmdCi();
         break;
 
+    case 'review':
+        cmdReview();
+        break;
+
     case 'new:learned':
         if (!slug) {
             logError('Usage: harness new:learned --slug <slug>');
@@ -473,6 +498,7 @@ switch (command) {
         log('  iterate           Format + lint fix (changed files)');
         log('  post              Full verification + policy-audit');
         log('  ci                CI mirror (same as post)');
+        log('  review            Anti-gamification review (tripwire + adapter)');
         log('  new:learned       Create a learned entry');
         log('  new:decision      Create a decision entry');
         log('');

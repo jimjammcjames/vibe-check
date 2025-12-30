@@ -100,7 +100,7 @@ describe('policy-audit logic', () => {
 
             it('detects harness files', () => {
                 assert.ok(matchesAnyGlob('.harness/Harness.md', defaultGlobs.exempt));
-                assert.ok(matchesAnyGlob('.harness/harness.yml', defaultGlobs.exempt));
+                assert.ok(matchesAnyGlob('.harness/config.yml', defaultGlobs.exempt));
                 assert.ok(matchesAnyGlob('.harness/framework/cli/harness.mjs', defaultGlobs.exempt));
             });
 
@@ -200,7 +200,7 @@ describe('policy-audit logic', () => {
         });
 
         it('passes when only harness files changed', () => {
-            const files = ['.harness/Harness.md', '.harness/harness.yml'];
+            const files = ['.harness/Harness.md', '.harness/config.yml'];
             const result = checkRuleA(files, defaultGlobs);
             assert.strictEqual(result.passed, true);
         });
