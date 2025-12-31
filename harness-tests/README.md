@@ -1,8 +1,10 @@
-# Harness Dev
+# Harness Testing & Simulation
 
-This folder contains **development-only** files for the harness. 
+This directory contains the testing infrastructure for the Agent Harness.
+It includes:
 
-**Do NOT copy this folder** when porting the harness to another repo.
+- **Simulation framework** (`simulation/`): Runs real Codex agents in sandboxes.
+- **Unit tests** (`tests/`): Tests for CLI and utility logic.
 
 ## Contents
 
@@ -18,6 +20,7 @@ npm test
 ```
 
 These tests verify the harness CLI and enforcement logic work correctly. They're useful for:
+
 - Initial setup verification
 - After modifying harness code
 - Debugging harness issues
@@ -25,6 +28,7 @@ These tests verify the harness CLI and enforcement logic work correctly. They're
 ## What TO Copy
 
 When porting to another repo, copy only:
+
 - `.harness/` (the whole folder)
 - `AGENTS.md`
 - Merge the `scripts` from `package.json` (except `test`)

@@ -112,6 +112,8 @@ function getDiffFiles() {
         // Get files changed compared to the merge base (for PRs)
         // Fall back to HEAD~1 if no merge base exists
         let base;
+        let diffFiles = [];
+
         try {
             base = execSync('git merge-base HEAD origin/main', {
                 cwd: REPO_ROOT,
@@ -126,15 +128,27 @@ function getDiffFiles() {
                     stdio: ['pipe', 'pipe', 'pipe']
                 }).trim();
             } catch {
-                // Fall back to comparing against parent commit
-                base = 'HEAD~1';
+                // Try HEAD~1
+                try {
+                    execSync('git rev-parse HEAD~1', {
+                        cwd: REPO_ROOT,
+                        encoding: 'utf-8',
+                        stdio: ['pipe', 'pipe', 'pipe']
+                    });
+                    base = 'HEAD~1';
+                } catch {
+                    // Single commit repo - compare against empty tree
+                    base = null;
+                }
             }
         }
 
-        const files = execSync(`git diff --name-only ${base}`, {
-            cwd: REPO_ROOT,
-            encoding: 'utf-8'
-        }).trim().split('\n').filter(Boolean);
+        if (base) {
+            diffFiles = execSync(`git diff --name-only ${base}`, {
+                cwd: REPO_ROOT,
+                encoding: 'utf-8'
+            }).trim().split('\n').filter(Boolean);
+        }
 
         // Also include staged files
         const staged = execSync('git diff --cached --name-only', {
@@ -142,7 +156,13 @@ function getDiffFiles() {
             encoding: 'utf-8'
         }).trim().split('\n').filter(Boolean);
 
-        return [...new Set([...files, ...staged])];
+        // Also include untracked files (new files not yet staged)
+        const untracked = execSync('git ls-files --others --exclude-standard', {
+            cwd: REPO_ROOT,
+            encoding: 'utf-8'
+        }).trim().split('\n').filter(Boolean);
+
+        return [...new Set([...diffFiles, ...staged, ...untracked])];
     } catch {
         return [];
     }
@@ -176,8 +196,6 @@ function getAddedEntryContent(file) {
 function checkRuleA(diffFiles, config) {
     // Real code change → learned OR decision
     const realCodeFiles = diffFiles.filter(f => matchesAnyGlob(f, config.globs.realCode));
-    const exemptFiles = diffFiles.filter(f => matchesAnyGlob(f, config.globs.exempt));
-
     // Check if we have real code changes (not just exempt files)
     const nonExemptRealCode = realCodeFiles.filter(f => !matchesAnyGlob(f, config.globs.exempt));
 
@@ -186,8 +204,8 @@ function checkRuleA(diffFiles, config) {
     }
 
     // Check for memory entries
-    const learnedFiles = diffFiles.filter(f => matchesAnyGlob(f, config.globs.learned));
-    const decisionFiles = diffFiles.filter(f => matchesAnyGlob(f, config.globs.decisions));
+    const learnedFiles = diffFiles.filter(f => matchesAnyGlob(f, config.globs.learned) && !f.endsWith('TIMELINE.md'));
+    const decisionFiles = diffFiles.filter(f => matchesAnyGlob(f, config.globs.decisions) && !f.endsWith('TIMELINE.md'));
 
     if (learnedFiles.length === 0 && decisionFiles.length === 0) {
         return {
@@ -250,6 +268,9 @@ function checkRuleC(diffFiles, config) {
     for (const file of memoryFiles) {
         const content = getAddedEntryContent(file);
         if (!content) continue;
+
+        // Skip TIMELINE.md - it is a manifest, not a memory entry
+        if (file.endsWith('TIMELINE.md')) continue;
 
         const issues = [];
 

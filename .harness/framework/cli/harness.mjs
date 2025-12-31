@@ -12,16 +12,16 @@
  *   new:decision  - Create a decision entry from template
  */
 
-import { execSync, spawn } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgs } from 'node:util';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const HARNESS_ROOT = join(__dirname, '..', '..');
 const REPO_ROOT = join(HARNESS_ROOT, '..');
+
 
 // ============================================================================
 // Utilities
@@ -193,7 +193,7 @@ function runCommand(command, files = 'all') {
             shell: true
         });
         return true;
-    } catch (error) {
+    } catch {
         return false;
     }
 }
@@ -226,6 +226,16 @@ function cmdPrep() {
     log('\x1b[36m╚══════════════════════════════════════════════════════════════════════╝\x1b[0m\n');
 
     log(mustMatch[1].trim());
+
+    // Meta-Infrastructure check
+    const changedFiles = getChangedFiles();
+    const isHarnessWork = changedFiles.some(f => f.startsWith('.harness/') || f.startsWith('harness-tests/'));
+
+    if (isHarnessWork) {
+        log('\n\x1b[31m⚠️  Meta-Infrastructure detected:\x1b[0m');
+        log('\x1b[31mYou are modifying the harness itself.\x1b[0m');
+        log('\x1b[31mEnsure ARCHITECTURAL changes are documented in .harness/context/decisions/\x1b[0m');
+    }
 
     log('\n\x1b[36m╔══════════════════════════════════════════════════════════════════════╗\x1b[0m');
     log('\x1b[36m║  Memory lives in .harness/context/ — grep before creating new code   ║\x1b[0m');
@@ -274,6 +284,7 @@ function cmdPost() {
     }
 
     logSuccess('Post verification complete');
+    console.log('[HARNESS_VERDICT:PASS]');
 }
 
 function cmdCi() {

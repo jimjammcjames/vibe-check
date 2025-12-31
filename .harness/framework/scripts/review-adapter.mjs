@@ -233,7 +233,7 @@ const stubAdapter = {
         return true; // Stub is always available
     },
 
-    async review(context) {
+    async review() {
         return {
             severity: 'none',
             findings: [],

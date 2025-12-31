@@ -203,7 +203,7 @@ function extractExemptReason(content, tag) {
     const afterTag = content.slice(tagIndex + tag.length, tagIndex + tag.length + 200);
     const firstLine = afterTag.split('\n')[0].trim();
     if (firstLine.startsWith(':') || firstLine.startsWith('-')) {
-        return firstLine.replace(/^[:\-]\s*/, '').trim();
+        return firstLine.replace(/^[:-]\s*/, '').trim();
     }
     return null;
 }
@@ -241,13 +241,10 @@ function cleanupWorktree(worktreePath) {
     }
 }
 
-function generateTestOnlyPatch(testFiles, config) {
-    // Get all test-side files from the diff
-    const testSideGlobs = config.globs.testSide || config.globs.tests || [];
-
+function generateTestOnlyPatch(testFiles) {
     // Generate patch for test files only
+    if (!testFiles || testFiles.length === 0) return null;
     const files = testFiles.join(' ');
-    if (!files) return null;
 
     try {
         const patch = execSync(`git diff origin/main -- ${files}`, {
@@ -382,7 +379,7 @@ async function main() {
     // Check if tripwire is enabled
     if (tripwireConfig.enabled === false) {
         logInfo('Base tripwire is disabled in config');
-        process.exit(3);
+        process.exit(0);
     }
 
     const baseRef = tripwireConfig.base_ref || 'origin/main';
@@ -393,21 +390,21 @@ async function main() {
     const diffFiles = getDiffFiles(baseRef);
     if (diffFiles.length === 0) {
         logInfo('No changed files detected');
-        process.exit(3);
+        process.exit(0);
     }
 
     // Check for learned entries
     const learnedFiles = getLearnedEntries(diffFiles, config);
     if (learnedFiles.length === 0) {
         logInfo('No learned entries - tripwire not applicable');
-        process.exit(3);
+        process.exit(0);
     }
 
     // Check for test files
     const testFiles = getTestFiles(diffFiles, config);
     if (testFiles.length === 0) {
         logInfo('No test files changed - tripwire not applicable');
-        process.exit(3);
+        process.exit(0);
     }
 
     log(`Found ${learnedFiles.length} learned entries and ${testFiles.length} test files\n`);

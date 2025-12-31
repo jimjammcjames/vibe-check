@@ -49,12 +49,16 @@ globs:
     - "src/**/*.tsx"
     - "src/**/*.js"
     - "src/**/*.jsx"
+    - ".harness/framework/scripts/**/*.mjs"
+    - ".harness/framework/cli/**/*.mjs"
+    - ".harness/config.yml"
+    - "harness-tests/simulation/**/*.sh"
+    - "harness-tests/simulation/**/*.sh"
+    - "harness-tests/simulation/**/*.mjs"
 
   # Files that are exempt from memory requirement
   exempt:
-    - "*.config.*"
     - "*.json"
-    - ".harness/**"
     - ".github/**"
     - "*.md"
     - ".gitignore"

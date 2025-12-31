@@ -23,6 +23,12 @@ rg -n "keywords|error-message" .harness/context
 rg -n "#tag" .harness/context
 ```
 
+## Context Safety (CRITICAL)
+
+- **NEVER** manually create, move, or delete files in `.harness/context`.
+- **ALWAYS** use the CLI commands: `npm run harness:new:...`.
+- **Reason:** Manual edits break the audit trail and can cause data loss.
+
 ## Memory Creation
 
 When you make changes:
