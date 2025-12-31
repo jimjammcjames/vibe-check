@@ -132,12 +132,41 @@ function parseSimpleYaml(content) {
 
 function getDiff(baseRef = 'origin/main') {
     try {
-        const diff = execSync(`git diff ${baseRef}...HEAD`, {
+        // Get diff from base ref to HEAD (committed changes)
+        let diff = '';
+        try {
+            diff = execSync(`git diff ${baseRef}...HEAD`, {
+                cwd: REPO_ROOT,
+                encoding: 'utf-8',
+                maxBuffer: 50 * 1024 * 1024,
+                stdio: ['pipe', 'pipe', 'pipe']
+            });
+        } catch {
+            // No common ancestor, use direct diff
+            diff = execSync(`git diff ${baseRef}`, {
+                cwd: REPO_ROOT,
+                encoding: 'utf-8',
+                maxBuffer: 50 * 1024 * 1024,
+                stdio: ['pipe', 'pipe', 'pipe']
+            });
+        }
+
+        // Also get staged and unstaged changes (working directory)
+        const stagedDiff = execSync('git diff --cached', {
             cwd: REPO_ROOT,
             encoding: 'utf-8',
-            maxBuffer: 50 * 1024 * 1024
+            maxBuffer: 50 * 1024 * 1024,
+            stdio: ['pipe', 'pipe', 'pipe']
         });
-        return diff;
+
+        const unstagedDiff = execSync('git diff', {
+            cwd: REPO_ROOT,
+            encoding: 'utf-8',
+            maxBuffer: 50 * 1024 * 1024,
+            stdio: ['pipe', 'pipe', 'pipe']
+        });
+
+        return [diff, stagedDiff, unstagedDiff].filter(Boolean).join('\n');
     } catch {
         return '';
     }
@@ -344,10 +373,128 @@ OUTPUT (JSON only, no markdown):
     }
 };
 
+/** @type {ReviewerAdapter} */
+const codexAdapter = {
+    name: 'codex',
+
+    async isConfigured() {
+        try {
+            execSync('which codex', { stdio: 'pipe' });
+            return true;
+        } catch {
+            return false;
+        }
+    },
+
+    async review(context) {
+        const { mkdtempSync, writeFileSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const sandboxDir = mkdtempSync(join(tmpdir(), 'harness-review-'));
+
+        try {
+            // Write context files to sandbox
+            writeFileSync(join(sandboxDir, 'DIFF.txt'), context.diff || 'No diff available');
+            writeFileSync(join(sandboxDir, 'TEST_FILES.txt'), context.testFiles.join('\n'));
+
+            const learnedContent = context.learnedEntries
+                .map(e => `### ${e.file}\n${e.content}`)
+                .join('\n\n');
+            writeFileSync(join(sandboxDir, 'LEARNED_ENTRIES.txt'), learnedContent || 'None');
+
+            // Read Harness.md for the compliance prompt
+            const harnessDocPath = join(HARNESS_ROOT, 'Harness.md');
+            const harnessMd = existsSync(harnessDocPath)
+                ? readFileSync(harnessDocPath, 'utf-8')
+                : 'Harness.md not found';
+            writeFileSync(join(sandboxDir, 'HARNESS_RULES.md'), harnessMd);
+
+            const prompt = `You are a compliance reviewer. Your ONLY task is to analyze files and write a JSON report.
+
+STEP 1: Read these files in the current directory:
+- HARNESS_RULES.md (the rules)
+- DIFF.txt (git diff of changes)
+- LEARNED_ENTRIES.txt (memory entries created)
+
+STEP 2: Check these rules:
+1. MEMORY: If code files (*.ts, *.js, *.mjs) changed, is there a learned or decision entry in LEARNED_ENTRIES.txt?
+2. FORMAT: Do entries have "Search terms:", "Related:", and "Tags:" sections?
+
+STEP 3: Write COMPLIANCE_REVIEW.json with this exact structure:
+{
+  "compliant": true_or_false,
+  "violations": [{"rule": "MEMORY", "description": "..."}],
+  "summary": "one line summary"
+}
+
+IMPORTANT: You MUST write COMPLIANCE_REVIEW.json before finishing. Do not explain or ask questions.`;
+
+            writeFileSync(join(sandboxDir, 'PROMPT.txt'), prompt);
+
+            // Run Codex in the sandbox with workspace-write sandbox
+            // Use stdin for prompt to avoid shell escaping issues
+            // Override model_reasoning_effort to work around potential invalid user config
+            // Omit -m to use user's configured model (o4-mini requires API key auth)
+            try {
+                const codexOutput = execSync(
+                    `codex exec -s workspace-write -c model_reasoning_effort="high" --skip-git-repo-check -C "${sandboxDir}" -`,
+                    {
+                        cwd: sandboxDir,
+                        encoding: 'utf-8',
+                        timeout: 300000, // 5 minutes
+                        stdio: ['pipe', 'pipe', 'pipe'],
+                        input: prompt
+                    }
+                );
+                log(`Codex output: ${codexOutput.slice(0, 500)}`);
+            } catch (execError) {
+                // Codex might exit non-zero but still produce output
+                log(`Codex execution note: ${execError.message}`);
+                if (execError.stdout) {
+                    log(`Codex stdout: ${execError.stdout.slice(0, 500)}`);
+                }
+                if (execError.stderr) {
+                    log(`Codex stderr: ${execError.stderr.slice(0, 500)}`);
+                }
+            }
+
+            // Read the result
+            const resultPath = join(sandboxDir, 'COMPLIANCE_REVIEW.json');
+            if (existsSync(resultPath)) {
+                const result = JSON.parse(readFileSync(resultPath, 'utf-8'));
+                return {
+                    severity: result.compliant ? 'none' : 'high',
+                    findings: (result.violations || []).map(v => ({
+                        file: 'N/A',
+                        pattern: v.rule,
+                        description: v.description
+                    })),
+                    summary: result.summary || 'Compliance review complete'
+                };
+            }
+
+            return {
+                severity: 'low',
+                findings: [],
+                summary: 'Codex did not produce COMPLIANCE_REVIEW.json - manual review recommended'
+            };
+        } catch (error) {
+            return {
+                severity: 'none',
+                findings: [],
+                summary: `Codex adapter error: ${error.message}`
+            };
+        } finally {
+            // Keep the sandbox for inspection (user requested this as default)
+            logInfo(`Review sandbox preserved at: ${sandboxDir}`);
+        }
+    }
+};
+
 // Registry of available adapters
 const adapters = {
     stub: stubAdapter,
-    openai: openaiAdapter
+    openai: openaiAdapter,
+    codex: codexAdapter
 };
 
 // ============================================================================
@@ -364,7 +511,12 @@ async function selectAdapter(configuredAdapter) {
         logWarning(`Configured adapter '${configuredAdapter}' is not available, falling back to auto-detection`);
     }
 
-    // Auto-detect based on available env vars
+    // Auto-detect: prefer Codex CLI if available
+    if (await codexAdapter.isConfigured()) {
+        return codexAdapter;
+    }
+
+    // Fall back to OpenAI if configured
     if (await openaiAdapter.isConfigured()) {
         return openaiAdapter;
     }
