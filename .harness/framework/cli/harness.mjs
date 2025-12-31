@@ -22,6 +22,8 @@ const __dirname = dirname(__filename);
 const HARNESS_ROOT = join(__dirname, '..', '..');
 const REPO_ROOT = join(HARNESS_ROOT, '..');
 
+// Global verbose flag - default to quiet mode
+const VERBOSE = process.argv.includes('--verbose') || process.argv.includes('-v');
 
 // ============================================================================
 // Utilities
@@ -168,7 +170,7 @@ function runCommand(command, files = 'all') {
 
     if (files === 'changed') {
         if (changedFiles.length === 0) {
-            logInfo(`Skipping (no changed files): ${command}`);
+            if (VERBOSE) logInfo(`Skipping (no changed files): ${command}`);
             return true;
         }
         // Filter to relevant files for the command
@@ -178,22 +180,37 @@ function runCommand(command, files = 'all') {
             f.endsWith('.json') || f.endsWith('.md')
         );
         if (relevantFiles.length === 0) {
-            logInfo(`Skipping (no relevant files): ${command}`);
+            if (VERBOSE) logInfo(`Skipping (no relevant files): ${command}`);
             return true;
         }
         command = `${command} ${relevantFiles.join(' ')}`;
     }
 
-    log(`\n\x1b[90m$ ${command}\x1b[0m`);
+    if (VERBOSE) {
+        log(`\n\x1b[90m$ ${command}\x1b[0m`);
+    }
 
     try {
-        execSync(command, {
-            cwd: REPO_ROOT,
-            stdio: 'inherit',
-            shell: true
-        });
+        if (VERBOSE) {
+            execSync(command, {
+                cwd: REPO_ROOT,
+                stdio: 'inherit',
+                shell: true
+            });
+        } else {
+            // Quiet mode: capture output, only print on failure
+            execSync(command, {
+                cwd: REPO_ROOT,
+                stdio: 'pipe',
+                shell: true
+            });
+        }
         return true;
-    } catch {
+    } catch (error) {
+        // On failure, always print the command and output
+        log(`\n\x1b[90m$ ${command}\x1b[0m`);
+        if (error.stdout) log(error.stdout.toString());
+        if (error.stderr) log(error.stderr.toString());
         return false;
     }
 }
@@ -502,7 +519,7 @@ switch (command) {
     default:
         log('Harness CLI');
         log('');
-        log('Usage: harness <command>');
+        log('Usage: harness <command> [options]');
         log('');
         log('Commands:');
         log('  prep              Print MUST block from Harness.md');
@@ -514,6 +531,7 @@ switch (command) {
         log('  new:decision      Create a decision entry');
         log('');
         log('Options:');
+        log('  --verbose, -v     Print full output (default: quiet, prints only on failure)');
         log('  --slug <slug>     Slug for new entries (required for new:*)');
         process.exit(1);
 }

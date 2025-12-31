@@ -408,25 +408,41 @@ const codexAdapter = {
                 : 'Harness.md not found';
             writeFileSync(join(sandboxDir, 'HARNESS_RULES.md'), harnessMd);
 
-            const prompt = `You are a compliance reviewer. Your ONLY task is to analyze files and write a JSON report.
+            const prompt = `You are a META-LEVEL reviewer detecting gaming and quality issues.
 
-STEP 1: Read these files in the current directory:
-- HARNESS_RULES.md (the rules)
-- DIFF.txt (git diff of changes)
-- LEARNED_ENTRIES.txt (memory entries created)
+READ these files:
+- DIFF.txt: The code changes
+- LEARNED_ENTRIES.txt: Memory entries created
+- HARNESS_RULES.md: The rules agents must follow
 
-STEP 2: Check these rules:
-1. MEMORY: If code files (*.ts, *.js, *.mjs) changed, is there a learned or decision entry in LEARNED_ENTRIES.txt?
-2. FORMAT: Do entries have "Search terms:", "Related:", and "Tags:" sections?
+ANALYZE for gaming attempts and quality issues:
 
-STEP 3: Write COMPLIANCE_REVIEW.json with this exact structure:
+1. GAMING DETECTION:
+   - Are entries hollow/generic (e.g., "I decided to do X" without real rationale)?
+   - Do Search terms actually help find this entry, or are they vague?
+   - Are Tags meaningful (#architecture) or placeholder (#misc)?
+   - Does the entry match what the code change actually does?
+
+2. QUALITY ASSESSMENT:
+   - Is the Context section filled with real motivation, or templated?
+   - Is the Decision section specific, or could apply to anything?
+   - Does Rationale explain WHY this approach over alternatives?
+   - For learned entries: Does it capture the actual lesson?
+
+3. STRUCTURAL COMPLIANCE (secondary):
+   - Were memory entries created for code changes?
+   - Do entries have required fields?
+
+OUTPUT: Write COMPLIANCE_REVIEW.json:
 {
-  "compliant": true_or_false,
-  "violations": [{"rule": "MEMORY", "description": "..."}],
-  "summary": "one line summary"
+  "compliant": true/false,
+  "quality_score": 1-10,
+  "gaming_detected": true/false,
+  "violations": [{"rule": "GAMING|QUALITY|STRUCTURE", "description": "..."}],
+  "summary": "one line assessment"
 }
 
-IMPORTANT: You MUST write COMPLIANCE_REVIEW.json before finishing. Do not explain or ask questions.`;
+Focus on INTENT not just form. A properly structured but hollow entry is worse than missing one.`;
 
             writeFileSync(join(sandboxDir, 'PROMPT.txt'), prompt);
 
@@ -461,14 +477,27 @@ IMPORTANT: You MUST write COMPLIANCE_REVIEW.json before finishing. Do not explai
             const resultPath = join(sandboxDir, 'COMPLIANCE_REVIEW.json');
             if (existsSync(resultPath)) {
                 const result = JSON.parse(readFileSync(resultPath, 'utf-8'));
+
+                // Determine severity based on gaming detection and quality
+                let severity = 'none';
+                if (result.gaming_detected) {
+                    severity = 'high';
+                } else if (!result.compliant) {
+                    severity = 'high';
+                } else if (result.quality_score && result.quality_score < 5) {
+                    severity = 'medium';
+                }
+
                 return {
-                    severity: result.compliant ? 'none' : 'high',
+                    severity,
                     findings: (result.violations || []).map(v => ({
                         file: 'N/A',
                         pattern: v.rule,
                         description: v.description
                     })),
-                    summary: result.summary || 'Compliance review complete'
+                    summary: result.summary || 'Meta-review complete',
+                    qualityScore: result.quality_score,
+                    gamingDetected: result.gaming_detected
                 };
             }
 
@@ -554,14 +583,15 @@ async function main() {
         logInfo('Configure HARNESS_OPENAI_API_KEY for OpenAI review, or add other adapters');
     }
 
-    // Gather context
+    // Gather context - review ALL commits, not just those with test files
     const diffFiles = getDiffFiles(baseRef);
-    const testFiles = getTestFiles(diffFiles, config);
 
-    if (testFiles.length === 0) {
-        logInfo('No test files changed - skipping review');
+    if (diffFiles.length === 0) {
+        logInfo('No changed files - skipping review');
         process.exit(0);
     }
+
+    const testFiles = getTestFiles(diffFiles, config);
 
     const context = {
         diff: getDiff(baseRef),

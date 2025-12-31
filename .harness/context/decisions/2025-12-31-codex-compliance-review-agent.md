@@ -4,31 +4,39 @@
 
 ## Context
 
-The harness needed a second-pass review layer to verify that agents follow `Harness.md` rules. The existing `policy-audit.mjs` enforces rules deterministically, but a Codex-powered reviewer can catch subtle compliance issues.
+The harness needed a second-pass review layer to verify that agents follow `Harness.md` rules. The existing `policy-audit.mjs` enforces rules deterministically, but catches only structural violations. A Codex-powered reviewer can detect gaming attempts and assess entry quality.
 
 ## Decision
 
 Implemented a `codexAdapter` in `review-adapter.mjs` that:
-1. Creates a temporary sandbox with `DIFF.txt`, `HARNESS_RULES.md`, `LEARNED_ENTRIES.txt`
-2. Invokes Codex CLI with `--sandbox workspace-write` and `--skip-git-repo-check`
-3. Parses the agent's `COMPLIANCE_REVIEW.json` output
-4. Returns severity and findings in the standard `ReviewResult` format
+1. Creates a sandbox with `DIFF.txt`, `HARNESS_RULES.md`, `LEARNED_ENTRIES.txt`
+2. Invokes Codex CLI with `--sandbox workspace-write`
+3. Uses META-LEVEL prompt to detect gaming and assess quality
+4. Returns `quality_score` (1-10), `gaming_detected`, and categorized violations
+
+**Meta-Level Review Focus:**
+- Gaming detection (hollow entries, vague tags, generic rationale)
+- Quality assessment (substantive context, specific decisions)
+- Structural compliance (secondary to intent analysis)
+
+**Verbosity Improvements:**
+- Added `--verbose` / `-v` flag to CLI
+- Default: quiet mode (output captured, printed only on failure)
+- Verbose: full output for debugging
 
 ## Rationale
 
-- **Why Codex over OpenAI API?** Codex can read files and write outputs, making it ideal for structured review tasks.
-- **Why sandbox?** Isolates review from the main repo; preserves evidence at `/tmp/harness-review-*`.
-- **Why auto-detect?** Falls back gracefully to stub/OpenAI if Codex CLI unavailable.
+- **Why meta-level?** Structural checks pass hollow entries; intent analysis catches gaming
+- **Why quiet mode?** Less noise in normal workflow; full context on failure
 
 ## Consequences
 
-- **Cost:** Each review incurs model usage (~$0.01-0.10 per review with gpt-5.2-codex)
-- **Latency:** Adds ~30s to `harness:post` when Codex adapter is active
-- **Dependency:** Requires Codex CLI and valid authentication
+- Cost/latency from Codex review per commit
+- Requires Codex CLI authentication
 
 ## Search terms
 
-- codex review agent, compliance reviewer, harness.md enforcement, second-pass review
+codex review, gaming detection, quality score, verbose flag, quiet mode
 
 ## Related
 
@@ -36,4 +44,4 @@ NONE
 
 ## Tags
 
-#architecture #anti-gamification #codex
+#architecture #anti-gamification #codex #meta-review
