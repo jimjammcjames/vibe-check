@@ -197,21 +197,43 @@ function runCommand(command, files = 'all') {
                 stdio: 'inherit',
                 shell: true
             });
+            return { success: true, output: '' };
         } else {
-            // Quiet mode: capture output, only print on failure
-            execSync(command, {
+            // Quiet mode: capture output, print summary lines on success
+            const output = execSync(command, {
                 cwd: REPO_ROOT,
-                stdio: 'pipe',
+                encoding: 'utf-8',
                 shell: true
             });
+
+            // Extract and print key result lines (✓ or ✗ or "---" sections)
+            const importantLines = output.split('\n').filter(line =>
+                line.includes('✓') ||
+                line.includes('✗') ||
+                line.includes('⚠️') ||
+                line.includes('PASS') ||
+                line.includes('FAIL') ||
+                line.includes('Severity:') ||
+                line.includes('Change Type:') ||
+                line.includes('Quality Score:') ||
+                line.includes('Why not 10:') ||
+                line.includes('Gaming Detected:') ||
+                line.includes('Critical Issues:') ||
+                line.includes('Summary:') ||
+                line.includes('--- Agent')
+            );
+            if (importantLines.length > 0) {
+                log(importantLines.join('\n'));
+            }
+
+            return { success: true, output };
         }
-        return true;
     } catch (error) {
-        // On failure, always print the command and output
+        // On failure, always print the command and full output
         log(`\n\x1b[90m$ ${command}\x1b[0m`);
         if (error.stdout) log(error.stdout.toString());
         if (error.stderr) log(error.stderr.toString());
-        return false;
+        return { success: false, output: error.stdout?.toString() || '' };
     }
 }
 
@@ -270,7 +292,7 @@ function cmdIterate() {
 
     let success = true;
     for (const step of stage) {
-        if (!runCommand(step.command, step.files)) {
+        if (!runCommand(step.command, step.files).success) {
             success = false;
             // Continue anyway for iterate - we want to fix as much as possible
         }
@@ -293,7 +315,7 @@ function cmdPost() {
     const stage = config.stages.post || [];
 
     for (const step of stage) {
-        if (!runCommand(step.command, step.files)) {
+        if (!runCommand(step.command, step.files).success) {
             logError(`Failed: ${step.command}`);
             printRecoveryPointers();
             process.exit(1);
@@ -312,7 +334,7 @@ function cmdCi() {
     const stage = config.stages.ci || [];
 
     for (const step of stage) {
-        if (!runCommand(step.command, step.files)) {
+        if (!runCommand(step.command, step.files).success) {
             logError(`Failed: ${step.command}`);
             printRecoveryPointers();
             process.exit(1);
@@ -327,14 +349,14 @@ function cmdReview() {
     log('Running anti-gamification review...\n');
 
     // Run base tripwire
-    if (!runCommand('node .harness/framework/scripts/base-tripwire.mjs')) {
+    if (!runCommand('node .harness/framework/scripts/base-tripwire.mjs').success) {
         logError('Base tripwire failed');
         printRecoveryPointers();
         process.exit(1);
     }
 
     // Run code reviewer
-    if (!runCommand('node .harness/framework/scripts/review-adapter.mjs')) {
+    if (!runCommand('node .harness/framework/scripts/review-adapter.mjs').success) {
         logError('Code review failed');
         printRecoveryPointers();
         process.exit(1);

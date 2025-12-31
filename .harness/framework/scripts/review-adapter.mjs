@@ -408,41 +408,45 @@ const codexAdapter = {
                 : 'Harness.md not found';
             writeFileSync(join(sandboxDir, 'HARNESS_RULES.md'), harnessMd);
 
-            const prompt = `You are a META-LEVEL reviewer detecting gaming and quality issues.
+            const prompt = `You are a META-LEVEL reviewer. Assess quality, detect gaming, and classify change type.
 
-READ these files:
+FILES TO READ:
 - DIFF.txt: The code changes
-- LEARNED_ENTRIES.txt: Memory entries created
-- HARNESS_RULES.md: The rules agents must follow
+- LEARNED_ENTRIES.txt: Memory entries created  
+- HARNESS_RULES.md: The rules
 
-ANALYZE for gaming attempts and quality issues:
+ANALYSIS:
+1. CHANGE TYPE: Is this a FIX (bug/error/correction) or FEATURE (new/add/implement)?
+   - Fixes MUST use "learned" entries and MUST have tests
+   - Features MAY use "decision" entries and MAY skip tests
+   
+2. ENTRY TYPE MISMATCH:
+   - If change looks like a FIX but uses a "decision" entry → flag as mismatch
+   - If change is a FIX but has no test files → flag as missing tests
 
-1. GAMING DETECTION:
-   - Are entries hollow/generic (e.g., "I decided to do X" without real rationale)?
-   - Do Search terms actually help find this entry, or are they vague?
-   - Are Tags meaningful (#architecture) or placeholder (#misc)?
-   - Does the entry match what the code change actually does?
+3. GAMING: Are entries hollow/generic? Do they match the actual code change?
 
-2. QUALITY ASSESSMENT:
-   - Is the Context section filled with real motivation, or templated?
-   - Is the Decision section specific, or could apply to anything?
-   - Does Rationale explain WHY this approach over alternatives?
-   - For learned entries: Does it capture the actual lesson?
+4. QUALITY (1-10): Is Context real? Is Decision specific? Is Rationale explained?
 
-3. STRUCTURAL COMPLIANCE (secondary):
-   - Were memory entries created for code changes?
-   - Do entries have required fields?
-
-OUTPUT: Write COMPLIANCE_REVIEW.json:
+MANDATORY: Create COMPLIANCE_REVIEW.json with this format:
 {
-  "compliant": true/false,
-  "quality_score": 1-10,
-  "gaming_detected": true/false,
-  "violations": [{"rule": "GAMING|QUALITY|STRUCTURE", "description": "..."}],
+  "compliant": true,
+  "change_type": "fix|feature|unknown",
+  "entry_type_mismatch": false,
+  "missing_tests_for_fix": false,
+  "quality_score": 7,
+  "quality_breakdown": "Why not 10: explain what's missing",
+  "gaming_detected": false,
+  "critical_issues": "None",
+  "violations": [],
   "summary": "one line assessment"
 }
 
-Focus on INTENT not just form. A properly structured but hollow entry is worse than missing one.`;
+IMPORTANT: If it's a FIX with no test AND no learned entry, set compliant=false.
+
+Run: echo '{"compliant":true,"change_type":"feature","entry_type_mismatch":false,"missing_tests_for_fix":false,"quality_score":7,"quality_breakdown":"","gaming_detected":false,"critical_issues":"None","violations":[],"summary":""}' > COMPLIANCE_REVIEW.json
+
+Then edit with your assessment. DO NOT SKIP THIS FILE.`;
 
             writeFileSync(join(sandboxDir, 'PROMPT.txt'), prompt);
 
@@ -478,11 +482,13 @@ Focus on INTENT not just form. A properly structured but hollow entry is worse t
             if (existsSync(resultPath)) {
                 const result = JSON.parse(readFileSync(resultPath, 'utf-8'));
 
-                // Determine severity based on gaming detection and quality
+                // Determine severity based on gaming detection, mismatches, and quality
                 let severity = 'none';
                 if (result.gaming_detected) {
                     severity = 'high';
                 } else if (!result.compliant) {
+                    severity = 'high';
+                } else if (result.entry_type_mismatch || result.missing_tests_for_fix) {
                     severity = 'high';
                 } else if (result.quality_score && result.quality_score < 5) {
                     severity = 'medium';
@@ -496,7 +502,12 @@ Focus on INTENT not just form. A properly structured but hollow entry is worse t
                         description: v.description
                     })),
                     summary: result.summary || 'Meta-review complete',
+                    changeType: result.change_type,
+                    entryTypeMismatch: result.entry_type_mismatch,
+                    missingTestsForFix: result.missing_tests_for_fix,
                     qualityScore: result.quality_score,
+                    qualityBreakdown: result.quality_breakdown,
+                    criticalIssues: result.critical_issues,
                     gamingDetected: result.gaming_detected
                 };
             }
@@ -600,15 +611,41 @@ async function main() {
         testCommand: reviewerConfig.test_command || 'npm test'
     };
 
-    log(`Reviewing ${testFiles.length} test files...\n`);
+    log(`Reviewing ${diffFiles.length} changed files...\n`);
 
     // Run review
     const result = await adapter.review(context);
 
-    // Output results
-    log('--- Review Results ---\n');
+    // Output results - always show the agent response
+    log('--- Agent Review Results ---\n');
     log(`Severity: ${result.severity.toUpperCase()}`);
     log(`Summary: ${result.summary}`);
+
+    // Show change type if available
+    if (result.changeType) {
+        log(`Change Type: ${result.changeType.toUpperCase()}`);
+    }
+    if (result.entryTypeMismatch) {
+        log(`⚠️  Entry Type Mismatch: Fix should use learned entry, not decision`);
+    }
+    if (result.missingTestsForFix) {
+        log(`⚠️  Missing Tests: Fixes require test coverage`);
+    }
+
+    // Show quality metrics if available
+    if (result.qualityScore !== undefined) {
+        log(`Quality Score: ${result.qualityScore}/10`);
+    }
+    if (result.qualityBreakdown) {
+        const breakdown = result.qualityBreakdown.replace(/^Why not 10:\s*/i, '');
+        log(`  Why not 10: ${breakdown}`);
+    }
+    if (result.gamingDetected !== undefined) {
+        log(`Gaming Detected: ${result.gamingDetected ? 'YES ⚠️' : 'No'}`);
+    }
+    if (result.criticalIssues) {
+        log(`Critical Issues: ${result.criticalIssues}`);
+    }
 
     if (result.findings.length > 0) {
         log('\nFindings:');
