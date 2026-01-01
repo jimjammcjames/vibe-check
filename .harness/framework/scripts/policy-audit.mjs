@@ -273,6 +273,7 @@ function checkRuleC(diffFiles, config) {
         if (file.endsWith('TIMELINE.md')) continue;
 
         const issues = [];
+        const isLearnedEntry = learnedFiles.includes(file);
 
         // Check for Search terms
         const searchTermsMatch = content.match(/## Search terms\s*\n([\s\S]*?)(?=\n##|$)/);
@@ -312,6 +313,51 @@ function checkRuleC(diffFiles, config) {
             }
         }
 
+        // SYSTEMIC GAP ENFORCEMENT (learned entries only)
+        // Enforces 3-step chain: Bandaid → Meta-Analysis → Close Gap
+        if (isLearnedEntry) {
+            const gapMatch = content.match(/## Systemic Gap\s*\n([\s\S]*?)(?=\n---|\n##|$)/);
+
+            if (!gapMatch) {
+                issues.push('Missing "## Systemic Gap" section (required for learned entries)');
+            } else {
+                const gapContent = gapMatch[1].trim();
+
+                // Must have substantive content (not just template text)
+                if (gapContent.length < 50 || gapContent.includes('[What infrastructure gap')) {
+                    issues.push('"Systemic Gap" section is incomplete - explain the infrastructure gap');
+                }
+
+                // Must contain Gap Closure evidence with file path
+                if (!gapContent.includes('Gap Closure') && !gapContent.includes('Added test') &&
+                    !gapContent.includes('Added validation') && !gapContent.includes('Added pre-flight')) {
+                    issues.push('"Systemic Gap" must include Gap Closure with file path evidence');
+                } else {
+                    // Extract file paths from Gap Closure section
+                    const filePathMatches = gapContent.match(/(?:Added (?:test|validation|pre-flight)[:\s]+)[`"']?([^`"'\n]+(?:\.mjs|\.ts|\.js|\.md))/gi);
+
+                    if (filePathMatches) {
+                        // Check if at least one referenced file appears in diff
+                        const referencedPaths = filePathMatches.map(m => {
+                            const pathMatch = m.match(/[`"']?([^`"'\n]+(?:\.mjs|\.ts|\.js|\.md))/);
+                            return pathMatch ? pathMatch[1].replace(/^[`"']|[`"']$/g, '') : null;
+                        }).filter(Boolean);
+
+                        const foundInDiff = referencedPaths.some(refPath => {
+                            // Check if this path appears in any diff file
+                            return diffFiles.some(diffFile =>
+                                diffFile.includes(refPath) || refPath.includes(diffFile.split('/').pop())
+                            );
+                        });
+
+                        if (!foundInDiff && referencedPaths.length > 0) {
+                            issues.push(`Gap Closure file(s) not found in commit: ${referencedPaths.join(', ')}`);
+                        }
+                    }
+                }
+            }
+        }
+
         if (issues.length > 0) {
             violations.push({ file, issues });
         }
@@ -331,7 +377,11 @@ ${details}
 Required fields in every memory entry:
   - ## Search terms (with at least one keyword)
   - ## Related (with links OR "NONE")
-  - ## Tags (with at least one #tag)`
+  - ## Tags (with at least one #tag)
+  
+Learned entries also require:
+  - ## Systemic Gap (with infrastructure gap analysis)
+  - Gap Closure with file path to test/validation added in this commit`
         };
     }
 

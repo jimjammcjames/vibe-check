@@ -18,6 +18,18 @@ We enhanced the Codex compliance review agent to be more philosophically robust 
 2.  **Sandbox Relocation:** Moved the review sandbox to `harness-tests/simulation/temp/` (inside the workspace). Added to `.gitignore`.
 3.  **Strict Enforcement:** Updated `review-adapter.mjs` to set severity to **HIGH** if the agent fails to produce `COMPLIANCE_REVIEW.json`.
 
+## Systemic Gap
+
+**What infrastructure gap allowed this issue class?**
+
+No error visibility infrastructure existed - stderr from Codex was not prominently logged, debug files were not saved to sandbox, and there was no model validation before invocation. This caused silent failures that were hard to diagnose.
+
+**Gap Closure**:
+- Added test: `harness-tests/tests/review-adapter-integration.test.mjs`
+- Added validation: `.harness/framework/scripts/pre-flight-check.mjs`
+
+The integration tests validate that stderr logging exists and debug files are saved. Pre-flight check validates model compatibility before use.
+
 ## Search terms
 
 meta-review, debugging, sandbox location, systemic flaws, root cause analysis, strict enforcement

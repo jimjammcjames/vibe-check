@@ -481,4 +481,203 @@ NONE
             assert.strictEqual(result.passed, true);
         });
     });
+
+    describe('Rule C: Systemic Gap enforcement (learned entries)', () => {
+        /**
+         * Validates Systemic Gap section for learned entries
+         * Enforces 3-step chain: Bandaid → Meta-Analysis → Close Gap
+         */
+        function validateSystemicGap(content, diffFiles = []) {
+            const issues = [];
+
+            // Check for Systemic Gap section
+            const gapMatch = content.match(/## Systemic Gap\s*\n([\s\S]*?)(?=\n---|\n##|$)/);
+
+            if (!gapMatch) {
+                return { passed: false, issues: ['Missing "## Systemic Gap" section'] };
+            }
+
+            const gapContent = gapMatch[1].trim();
+
+            // Must have substantive content (not just template text)
+            if (gapContent.length < 50 || gapContent.includes('[What infrastructure gap')) {
+                issues.push('"Systemic Gap" section is incomplete');
+            }
+
+            // Must contain Gap Closure evidence with file path
+            if (!gapContent.includes('Gap Closure') && !gapContent.includes('Added test') &&
+                !gapContent.includes('Added validation') && !gapContent.includes('Added pre-flight')) {
+                issues.push('"Systemic Gap" must include Gap Closure with file path');
+            }
+
+            // If file paths are mentioned, check they appear in diff
+            const filePathMatches = gapContent.match(/Added (?:test|validation|pre-flight)[:\s]+`?([^`\n]+(?:\.mjs|\.ts|\.js|\.md))`?/gi);
+            if (filePathMatches && diffFiles.length > 0) {
+                const referencedPaths = filePathMatches.map(m => {
+                    const pathMatch = m.match(/`?([^`\n]+(?:\.mjs|\.ts|\.js|\.md))`?/);
+                    return pathMatch ? pathMatch[1] : null;
+                }).filter(Boolean);
+
+                const foundInDiff = referencedPaths.some(refPath =>
+                    diffFiles.some(diffFile =>
+                        diffFile.includes(refPath) || refPath.includes(diffFile.split('/').pop())
+                    )
+                );
+
+                if (!foundInDiff && referencedPaths.length > 0) {
+                    issues.push(`Gap Closure file(s) not in commit: ${referencedPaths.join(', ')}`);
+                }
+            }
+
+            return { passed: issues.length === 0, issues };
+        }
+
+        it('fails when Systemic Gap section is missing', () => {
+            const content = `# Test Entry
+
+## Context
+
+Fixed a bug
+
+## Decision
+
+Applied bandaid
+
+## Search terms
+
+- bug
+
+## Related
+
+NONE
+
+## Tags
+
+#bug
+`;
+            const result = validateSystemicGap(content);
+            assert.strictEqual(result.passed, false);
+            assert.ok(result.issues.some(i => i.includes('Systemic Gap')));
+        });
+
+        it('passes when Systemic Gap has substantive content and gap closure', () => {
+            const content = `# Test Entry
+
+## Context
+
+Fixed a bug
+
+## Systemic Gap
+
+**What infrastructure gap allowed this issue class?**
+
+No pre-flight check existed to validate model compatibility before invoking Codex.
+This caused silent failures that were hard to debug.
+
+**Gap Closure**:
+- Added test: \`harness-tests/tests/model-validation.test.mjs\`
+- Added validation: \`.harness/framework/scripts/pre-flight-check.mjs\`
+
+## Search terms
+
+- model, validation
+
+## Related
+
+NONE
+
+## Tags
+
+#infrastructure
+`;
+            const diffFiles = ['harness-tests/tests/model-validation.test.mjs'];
+            const result = validateSystemicGap(content, diffFiles);
+            assert.strictEqual(result.passed, true);
+        });
+
+        it('fails when Systemic Gap is too shallow', () => {
+            const content = `# Test Entry
+
+## Systemic Gap
+
+Fixed the bug.
+
+## Search terms
+
+- bug
+
+## Related
+
+NONE
+
+## Tags
+
+#bug
+`;
+            const result = validateSystemicGap(content);
+            assert.strictEqual(result.passed, false);
+            assert.ok(result.issues.some(i => i.includes('incomplete')));
+        });
+
+        it('fails when Gap Closure file not in diff', () => {
+            const content = `# Test Entry
+
+## Systemic Gap
+
+**What infrastructure gap allowed this issue class?**
+
+No validation existed. This is substantive content that explains the gap.
+
+**Gap Closure**:
+- Added test: \`harness-tests/tests/nonexistent.test.mjs\`
+
+## Search terms
+
+- bug
+
+## Related
+
+NONE
+
+## Tags
+
+#bug
+`;
+            const diffFiles = ['src/index.ts']; // Different file
+            const result = validateSystemicGap(content, diffFiles);
+            assert.strictEqual(result.passed, false);
+            assert.ok(result.issues.some(i => i.includes('not in commit')));
+        });
+
+        it('handles multiple gap closure files with one match', () => {
+            const content = `# Test Entry
+
+## Systemic Gap
+
+**What infrastructure gap allowed this issue class?**
+
+Missing integration tests and pre-flight checks for infrastructure validation.
+
+**Gap Closure**:
+- Added test: \`tests/integration.test.mjs\`
+- Added validation: \`scripts/check.mjs\`
+
+## Search terms
+
+- test
+
+## Related
+
+NONE
+
+## Tags
+
+#test
+`;
+            const diffFiles = ['scripts/check.mjs']; // One of the two matches
+            const result = validateSystemicGap(content, diffFiles);
+            assert.strictEqual(result.passed, true);
+        });
+    });
 });
+

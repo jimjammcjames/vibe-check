@@ -415,7 +415,10 @@ const codexAdapter = {
                 : 'Harness.md not found';
             writeFileSync(join(sandboxDir, 'HARNESS_RULES.md'), harnessMd);
 
-            const prompt = `You are a META-LEVEL reviewer. Assess quality, detect gaming, and classify change type.
+            const prompt = `You are a META-LEVEL reviewer enforcing the 3-STEP CHAIN:
+  1. BANDAID → Immediate fix applied
+  2. META-ANALYSIS → Infrastructure gap identified  
+  3. CLOSE GAP → Test/validation added to prevent this issue CLASS
 
 FILES TO READ:
 - DIFF.txt: The code changes
@@ -427,17 +430,19 @@ ANALYSIS:
    - Fixes MUST use "learned" entries and MUST have tests
    - Features MAY use "decision" entries and MAY skip tests
    
-2. ENTRY TYPE MISMATCH:
-   - If change looks like a FIX but uses a "decision" entry → flag as mismatch
-   - If change is a FIX but has no test files → flag as missing tests
+2. SYSTEMIC GAP ANALYSIS (CRITICAL for learned entries):
+   - Does the learned entry have a "## Systemic Gap" section?
+   - Is the gap analysis substantive (not just "fixed the bug")?
+   - Is there Gap Closure evidence with a REAL file path?
+   - Does that file appear in the DIFF.txt?
+   
+   Good example: "No pre-flight check for model compatibility → Added pre-flight-check.mjs"
+   Bad example: "Fixed the issue" (no systemic analysis)
+   Bad example: "None" (unacceptable for learned entries)
 
 3. GAMING: Are entries hollow/generic? Do they match the actual code change?
 
-4. ROOT CAUSE & SYSTEMIC FLAWS:
-   - Beyond the specific fix, what flaw in the testing process, system architecture, or memory rules allowed this error?
-   - Is there a "blind spot" in the harness that needs fixing?
-
-5. QUALITY (1-10): Is Context real? Is Decision specific? Is Rationale explained?
+4. QUALITY (1-10): Is Context real? Is Decision specific? Is Systemic Gap deep?
 
 MANDATORY: Create COMPLIANCE_REVIEW.json with this format:
 {
@@ -445,7 +450,10 @@ MANDATORY: Create COMPLIANCE_REVIEW.json with this format:
   "change_type": "fix|feature|unknown",
   "entry_type_mismatch": false,
   "missing_tests_for_fix": false,
-  "systemic_flaw_detected": "Description of the systemic gap, or 'None'",
+  "systemic_gap_present": true,
+  "systemic_gap_quality": "deep|shallow|missing",  
+  "gap_closure_file": "path/to/file.mjs or 'None'",
+  "gap_closure_in_diff": true,
   "quality_score": 7,
   "quality_breakdown": "Why not 10: explain what's missing",
   "gaming_detected": false,
@@ -454,7 +462,10 @@ MANDATORY: Create COMPLIANCE_REVIEW.json with this format:
   "summary": "one line assessment"
 }
 
-IMPORTANT: If it's a FIX with no test AND no learned entry, set compliant=false.
+IMPORTANT: 
+- If learned entry has no Systemic Gap section → compliant=false
+- If Systemic Gap says "None" or is shallow → flag in quality_breakdown
+- If Gap Closure file not in diff → flag as violation
 
 Run: echo '{JSON content here}' > COMPLIANCE_REVIEW.json
 
@@ -462,15 +473,36 @@ Then edit with your assessment. DO NOT SKIP THIS FILE.`;
 
             writeFileSync(join(sandboxDir, 'PROMPT.txt'), prompt);
 
+            // Validate model is supported (fail fast with helpful error)
+            const SUPPORTED_MODELS = [
+                'gpt-5.2-codex',
+                'gpt-5.1-codex-max',
+                'gpt-5.1-codex-mini',
+                'gpt-5.2',
+                'gpt-5.1',
+                'gpt-5.1-codex',
+                'gpt-5-codex',
+                'gpt-5-codex-mini',
+                'gpt-5'
+            ];
+
             // Perform fast review if requested
             const isFastMode = process.argv.includes('--fast');
             const model = isFastMode ? 'gpt-5.1-codex-mini' : undefined; // undefined uses user config
             const reasoningEffort = isFastMode ? 'medium' : 'high';
 
+            if (model && !SUPPORTED_MODELS.includes(model)) {
+                logWarning(`Model '${model}' may not be supported. Recommended: ${SUPPORTED_MODELS.slice(0, 3).join(', ')}`);
+            }
+
             const modelArgs = model ? `-m ${model}` : '';
             const effortArg = `-c model_reasoning_effort="${reasoningEffort}"`;
 
             // Run Codex in the sandbox with workspace-write sandbox
+            let codexStdout = '';
+            let codexStderr = '';
+            let codexExitCode = 0;
+
             try {
                 const codexOutput = execSync(
                     `codex exec -s workspace-write ${effortArg} ${modelArgs} --skip-git-repo-check -C "${sandboxDir}" -`,
@@ -482,17 +514,34 @@ Then edit with your assessment. DO NOT SKIP THIS FILE.`;
                         input: prompt
                     }
                 );
+                codexStdout = codexOutput;
                 log(`Codex output: ${codexOutput.slice(0, 500)}`);
             } catch (execError) {
-                // Codex might exit non-zero but still produce output
-                log(`Codex execution note: ${execError.message}`);
-                if (execError.stdout) {
-                    log(`Codex stdout: ${execError.stdout.slice(0, 500)}`);
+                codexExitCode = execError.status || 1;
+                codexStdout = execError.stdout || '';
+                codexStderr = execError.stderr || '';
+
+                // CRITICAL: Surface stderr prominently (this is where model errors appear)
+                if (codexStderr) {
+                    logError(`Codex STDERR (exit ${codexExitCode}):`);
+                    logError(codexStderr.slice(0, 1000));
                 }
-                if (execError.stderr) {
-                    log(`Codex stderr: ${execError.stderr.slice(0, 500)}`);
+
+                // Also log stdout if present
+                if (codexStdout) {
+                    log(`Codex stdout: ${codexStdout.slice(0, 500)}`);
+                }
+
+                // If completely empty output, that's a major red flag
+                if (!codexStdout && !codexStderr) {
+                    logError('Codex produced NO output at all - check model/API configuration');
                 }
             }
+
+            // Save full debug output to sandbox for post-mortem analysis
+            writeFileSync(join(sandboxDir, 'CODEX_STDOUT.txt'), codexStdout);
+            writeFileSync(join(sandboxDir, 'CODEX_STDERR.txt'), codexStderr);
+            writeFileSync(join(sandboxDir, 'CODEX_EXIT_CODE.txt'), String(codexExitCode));
 
             // Read the result
             const resultPath = join(sandboxDir, 'COMPLIANCE_REVIEW.json');

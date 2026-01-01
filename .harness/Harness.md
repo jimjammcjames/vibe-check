@@ -48,6 +48,7 @@ npm run harness:new:decision -- --slug "descriptive-slug"
 | A | Real code changed | Must include learned OR decision entry |
 | B | Learned entry added | Must include test delta |
 | C | Any memory entry | Must have: Search terms, Related/NONE, Tags |
+| C+ | Learned entry | Must have **Systemic Gap** + Gap Closure file path |
 
 ## Required Fields in Memory Entries
 
@@ -56,6 +57,18 @@ Every learned/decision entry **must** include:
 - `Search terms:` at least one non-empty keyword
 - `Related:` at least one link OR `NONE`
 - `Tags:` at least one `#tag`
+
+**Learned entries also require (C+ rule):**
+
+- `Systemic Gap:` infrastructure gap analysis
+- `Gap Closure:` file path to test/validation added in this commit
+
+### The 3-Step Chain (Learned Entries)
+
+Every learned entry must document:
+1. **Bandaid** → Immediate fix applied
+2. **Meta-Analysis** → What infrastructure gap allowed this issue class?
+3. **Close Gap** → Test/validation file added to prevent recurrence
 
 ---
 

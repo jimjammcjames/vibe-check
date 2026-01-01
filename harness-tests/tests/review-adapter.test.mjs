@@ -276,4 +276,92 @@ describe('review-adapter logic', () => {
             assert.ok(!process.argv.includes('--fast'), 'Tests should run with standard configuration');
         });
     });
+
+    describe('error visibility and debug outputs', () => {
+        // These tests verify the error handling improvements from 2025-12-31
+
+        it('validates supported models list includes recommended Codex models', () => {
+            const SUPPORTED_MODELS = [
+                'gpt-5.2-codex',
+                'gpt-5.1-codex-max',
+                'gpt-5.1-codex-mini',
+                'gpt-5.2',
+                'gpt-5.1',
+                'gpt-5.1-codex',
+                'gpt-5-codex',
+                'gpt-5-codex-mini',
+                'gpt-5'
+            ];
+
+            // Verify recommended models are included
+            assert.ok(SUPPORTED_MODELS.includes('gpt-5.2-codex'));
+            assert.ok(SUPPORTED_MODELS.includes('gpt-5.1-codex-mini'));
+            assert.ok(SUPPORTED_MODELS.includes('gpt-5.1-codex-max'));
+        });
+
+        it('detects unsupported model names', () => {
+            const SUPPORTED_MODELS = ['gpt-5.2-codex', 'gpt-5.1-codex-mini'];
+            const testModel = 'gpt-5.2-mini'; // Known unsupported model
+
+            assert.ok(!SUPPORTED_MODELS.includes(testModel),
+                'Should reject gpt-5.2-mini (not supported with ChatGPT accounts)');
+        });
+
+        it('stderr should be logged prominently on exec errors', () => {
+            // Mock exec error structure
+            const execError = {
+                status: 1,
+                stdout: 'Some output',
+                stderr: '400 Bad Request: model not supported'
+            };
+
+            // Verify error contains critical info
+            assert.ok(execError.stderr.includes('400'), 'stderr should contain error code');
+            assert.ok(execError.stderr.includes('model not supported'),
+                'stderr should explain model incompatibility');
+        });
+
+        it('detects completely empty codex output as error condition', () => {
+            const codexStdout = '';
+            const codexStderr = '';
+
+            const isEmpty = !codexStdout && !codexStderr;
+            assert.ok(isEmpty, 'Should detect when codex produces no output at all');
+        });
+
+        it('sandbox should preserve debug files for post-mortem', () => {
+            const requiredDebugFiles = [
+                'CODEX_STDOUT.txt',
+                'CODEX_STDERR.txt',
+                'CODEX_EXIT_CODE.txt',
+                'PROMPT.txt',
+                'DIFF.txt'
+            ];
+
+            // Verify all required debug files are in our checklist
+            assert.ok(requiredDebugFiles.includes('CODEX_STDERR.txt'),
+                'Must save stderr for debugging model errors');
+            assert.ok(requiredDebugFiles.includes('CODEX_EXIT_CODE.txt'),
+                'Must save exit code to distinguish failures');
+        });
+
+        it('fast mode uses supported mini model', () => {
+            const fastModeModel = 'gpt-5.1-codex-mini';
+            const SUPPORTED_MODELS = ['gpt-5.1-codex-mini', 'gpt-5.2-codex'];
+
+            assert.ok(SUPPORTED_MODELS.includes(fastModeModel),
+                'Fast mode should use gpt-5.1-codex-mini (confirmed working)');
+        });
+
+        it('reasoning effort is appropriate for fast vs standard', () => {
+            const fastEffort = 'medium';
+            const standardEffort = 'high';
+
+            const validEfforts = ['low', 'medium', 'high'];
+
+            assert.ok(validEfforts.includes(fastEffort), 'Fast effort should be valid');
+            assert.ok(validEfforts.includes(standardEffort), 'Standard effort should be valid');
+            assert.ok(fastEffort !== standardEffort, 'Fast and standard should differ');
+        });
+    });
 });

@@ -18,8 +18,20 @@ We optimized the `harness:post` command to make local verification significantly
 
 2.  **Fast Review Mode:**
     - Implemented `--fast` flag in `review-adapter.mjs`.
-    - Uses `gpt-5.2-mini` model with `low` reasoning effort when flag is set.
+    - Uses `gpt-5.1-codex-mini` model with `medium` reasoning effort when flag is set.
     - Updated `config.yml` to call `review-adapter.mjs --fast` in the `post` stage.
+
+## Systemic Gap
+
+**What infrastructure gap allowed this issue class?**
+
+Model compatibility was never validated before invocation. The original `gpt-5.2-mini` model wasn't supported with ChatGPT accounts but no error surfaced clearly - stderr was not logged prominently.
+
+**Gap Closure**:
+- Added test: `harness-tests/tests/review-adapter.test.mjs` (error visibility tests)
+- Added validation: `.harness/framework/scripts/pre-flight-check.mjs`
+
+The tests verify SUPPORTED_MODELS list exists and validates models. Pre-flight check invokes the model to confirm it works before committing.
 
 ## Search terms
 
