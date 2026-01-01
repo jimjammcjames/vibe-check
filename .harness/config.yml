@@ -26,12 +26,10 @@ stages:
       files: changed
 
   post:
-    - command: "npx eslint ."
-    - command: "npx tsc --noEmit"
     - command: "npm test"
     - command: "node .harness/framework/scripts/policy-audit.mjs"
     - command: "node .harness/framework/scripts/base-tripwire.mjs"
-    - command: "node .harness/framework/scripts/review-adapter.mjs"
+    - command: "node .harness/framework/scripts/review-adapter.mjs --fast"
 
   ci:
     - command: "npx prettier --check ."

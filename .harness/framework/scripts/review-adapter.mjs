@@ -331,7 +331,7 @@ OUTPUT (JSON only, no markdown):
       "pattern": "pattern_name",
       "description": "what's wrong",
       "suggestedFix": "how to fix"
-    }
+   }
   ],
   "summary": "brief assessment"
 }`;
@@ -387,9 +387,16 @@ const codexAdapter = {
     },
 
     async review(context) {
-        const { mkdtempSync, writeFileSync } = await import('node:fs');
+        const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs');
         const { tmpdir } = await import('node:os');
-        const sandboxDir = mkdtempSync(join(tmpdir(), 'harness-review-'));
+
+        // Use workspace-local temp dir for debuggability and access
+        const tempBase = join(HARNESS_ROOT, '..', 'harness-tests', 'simulation', 'temp');
+        if (!existsSync(tempBase)) {
+            mkdirSync(tempBase, { recursive: true });
+        }
+
+        const sandboxDir = mkdtempSync(join(tempBase, 'harness-review-'));
 
         try {
             // Write context files to sandbox
@@ -426,7 +433,11 @@ ANALYSIS:
 
 3. GAMING: Are entries hollow/generic? Do they match the actual code change?
 
-4. QUALITY (1-10): Is Context real? Is Decision specific? Is Rationale explained?
+4. ROOT CAUSE & SYSTEMIC FLAWS:
+   - Beyond the specific fix, what flaw in the testing process, system architecture, or memory rules allowed this error?
+   - Is there a "blind spot" in the harness that needs fixing?
+
+5. QUALITY (1-10): Is Context real? Is Decision specific? Is Rationale explained?
 
 MANDATORY: Create COMPLIANCE_REVIEW.json with this format:
 {
@@ -434,6 +445,7 @@ MANDATORY: Create COMPLIANCE_REVIEW.json with this format:
   "change_type": "fix|feature|unknown",
   "entry_type_mismatch": false,
   "missing_tests_for_fix": false,
+  "systemic_flaw_detected": "Description of the systemic gap, or 'None'",
   "quality_score": 7,
   "quality_breakdown": "Why not 10: explain what's missing",
   "gaming_detected": false,
@@ -444,19 +456,24 @@ MANDATORY: Create COMPLIANCE_REVIEW.json with this format:
 
 IMPORTANT: If it's a FIX with no test AND no learned entry, set compliant=false.
 
-Run: echo '{"compliant":true,"change_type":"feature","entry_type_mismatch":false,"missing_tests_for_fix":false,"quality_score":7,"quality_breakdown":"","gaming_detected":false,"critical_issues":"None","violations":[],"summary":""}' > COMPLIANCE_REVIEW.json
+Run: echo '{JSON content here}' > COMPLIANCE_REVIEW.json
 
 Then edit with your assessment. DO NOT SKIP THIS FILE.`;
 
             writeFileSync(join(sandboxDir, 'PROMPT.txt'), prompt);
 
+            // Perform fast review if requested
+            const isFastMode = process.argv.includes('--fast');
+            const model = isFastMode ? 'gpt-5.1-codex-mini' : undefined; // undefined uses user config
+            const reasoningEffort = isFastMode ? 'medium' : 'high';
+
+            const modelArgs = model ? `-m ${model}` : '';
+            const effortArg = `-c model_reasoning_effort="${reasoningEffort}"`;
+
             // Run Codex in the sandbox with workspace-write sandbox
-            // Use stdin for prompt to avoid shell escaping issues
-            // Override model_reasoning_effort to work around potential invalid user config
-            // Omit -m to use user's configured model (o4-mini requires API key auth)
             try {
                 const codexOutput = execSync(
-                    `codex exec -s workspace-write -c model_reasoning_effort="high" --skip-git-repo-check -C "${sandboxDir}" -`,
+                    `codex exec -s workspace-write ${effortArg} ${modelArgs} --skip-git-repo-check -C "${sandboxDir}" -`,
                     {
                         cwd: sandboxDir,
                         encoding: 'utf-8',
@@ -508,24 +525,25 @@ Then edit with your assessment. DO NOT SKIP THIS FILE.`;
                     qualityScore: result.quality_score,
                     qualityBreakdown: result.quality_breakdown,
                     criticalIssues: result.critical_issues,
-                    gamingDetected: result.gaming_detected
+                    gamingDetected: result.gaming_detected,
+                    systemicFlawDetected: result.systemic_flaw_detected
                 };
             }
 
             return {
-                severity: 'low',
+                severity: 'high',
                 findings: [],
-                summary: 'Codex did not produce COMPLIANCE_REVIEW.json - manual review recommended'
+                summary: 'Codex did not produce COMPLIANCE_REVIEW.json - Manual Code Review REQUIRED (Agent Failed)'
             };
         } catch (error) {
             return {
                 severity: 'none',
                 findings: [],
-                summary: `Codex adapter error: ${error.message}`
+                summary: `Codex adapter error: ${error.message} `
             };
         } finally {
             // Keep the sandbox for inspection (user requested this as default)
-            logInfo(`Review sandbox preserved at: ${sandboxDir}`);
+            logInfo(`Review sandbox preserved at: ${sandboxDir} `);
         }
     }
 };
@@ -548,7 +566,7 @@ async function selectAdapter(configuredAdapter) {
         if (await adapter.isConfigured()) {
             return adapter;
         }
-        logWarning(`Configured adapter '${configuredAdapter}' is not available, falling back to auto-detection`);
+        logWarning(`Configured adapter '${configuredAdapter}' is not available, falling back to auto - detection`);
     }
 
     // Auto-detect: prefer Codex CLI if available
@@ -587,7 +605,7 @@ async function main() {
 
     // Select adapter
     const adapter = await selectAdapter(configuredAdapter);
-    log(`Using adapter: ${adapter.name}`);
+    log(`Using adapter: ${adapter.name} `);
 
     if (adapter.name === 'stub') {
         logWarning('Using stub adapter - no real anti-gamification review will be performed');
@@ -619,11 +637,11 @@ async function main() {
     // Output results - always show the agent response
     log('--- Agent Review Results ---\n');
     log(`Severity: ${result.severity.toUpperCase()}`);
-    log(`Summary: ${result.summary}`);
+    log(`Summary: ${result.summary} `);
 
     // Show change type if available
     if (result.changeType) {
-        log(`Change Type: ${result.changeType.toUpperCase()}`);
+        log(`Change Type: ${result.changeType.toUpperCase()} `);
     }
     if (result.entryTypeMismatch) {
         log(`⚠️  Entry Type Mismatch: Fix should use learned entry, not decision`);

@@ -270,4 +270,10 @@ describe('review-adapter logic', () => {
             assert.ok(resultLevel < thresholdLevel); // Should pass review
         });
     });
+
+    describe('environment checks', () => {
+        it('unit tests should not run in fast mode', () => {
+            assert.ok(!process.argv.includes('--fast'), 'Tests should run with standard configuration');
+        });
+    });
 });
