@@ -415,12 +415,14 @@ const codexAdapter = {
                 : 'Harness.md not found';
             writeFileSync(join(sandboxDir, 'HARNESS_RULES.md'), harnessMd);
 
-            const prompt = `You are a META-LEVEL reviewer enforcing the 3-STEP CHAIN:
+            const prompt = `ENVIRONMENT: All files are pre-staged in this directory. Use only cat/echo/shell commands. DO NOT run npm, node, or harness commands - they will fail in this sandbox.
+
+You are a META-LEVEL reviewer enforcing the 3-STEP CHAIN:
   1. BANDAID → Immediate fix applied
   2. META-ANALYSIS → Infrastructure gap identified  
   3. CLOSE GAP → Test/validation added to prevent this issue CLASS
 
-FILES TO READ:
+FILES TO READ (use cat):
 - DIFF.txt: The code changes
 - LEARNED_ENTRIES.txt: Memory entries created  
 - HARNESS_RULES.md: The rules
@@ -444,28 +446,39 @@ ANALYSIS:
 
 4. QUALITY (1-10): Is Context real? Is Decision specific? Is Systemic Gap deep?
 
-MANDATORY: Create COMPLIANCE_REVIEW.json with this format:
+MANDATORY: Create COMPLIANCE_REVIEW.json with this format (build up evidence FIRST, then conclude):
 {
-  "compliant": true,
+  // STEP 1: Classify the change
   "change_type": "fix|feature|unknown",
-  "entry_type_mismatch": false,
-  "missing_tests_for_fix": false,
+  
+  // STEP 2: Check evidence (run grep to verify before claiming false)
   "systemic_gap_present": true,
-  "systemic_gap_quality": "deep|shallow|missing",  
+  "systemic_gap_quality": "deep|shallow|missing",
   "gap_closure_file": "path/to/file.mjs or 'None'",
   "gap_closure_in_diff": true,
+  
+  // STEP 3: Score quality
   "quality_score": 7,
   "quality_breakdown": "Why not 10: explain what's missing",
+  
+  // STEP 4: Check for issues
+  "entry_type_mismatch": false,
+  "missing_tests_for_fix": false,
   "gaming_detected": false,
   "critical_issues": "None",
   "violations": [],
-  "summary": "one line assessment"
+  
+  // STEP 5: Summarize
+  "summary": "one line assessment",
+  
+  // STEP 6: FINAL VERDICT (only after completing all above)
+  "compliant": true
 }
 
 IMPORTANT: 
-- If learned entry has no Systemic Gap section → compliant=false
-- If Systemic Gap says "None" or is shallow → flag in quality_breakdown
-- If Gap Closure file not in diff → flag as violation
+- Run "grep <filename> DIFF.txt" BEFORE setting gap_closure_in_diff
+- Only set compliant=false if you have verified evidence
+- compliant=false requires specific violations listed
 
 Run: echo '{JSON content here}' > COMPLIANCE_REVIEW.json
 
@@ -723,6 +736,13 @@ async function main() {
                 log(`    Fix: ${finding.suggestedFix}`);
             }
         }
+    }
+
+    // On failure, print FULL review JSON for debugging
+    if (result.severity === 'high') {
+        log('\n--- FULL REVIEW JSON (for debugging) ---');
+        log(JSON.stringify(result, null, 2));
+        log('--- END REVIEW JSON ---\n');
     }
 
     // Determine exit based on threshold
