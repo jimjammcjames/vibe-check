@@ -326,6 +326,7 @@ function cmdIterate() {
  */
 function isParallelizableAgent(command) {
     return command.includes('undocumented-detector') ||
+        command.includes('memory-coherence-checker') ||
         command.includes('review-adapter');
 }
 

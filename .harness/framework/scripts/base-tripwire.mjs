@@ -174,7 +174,9 @@ function matchesAnyGlob(file, patterns) {
 }
 
 function getLearnedEntries(diffFiles, config) {
-    return diffFiles.filter(f => matchesAnyGlob(f, config.globs.learned));
+    return diffFiles
+        .filter(f => matchesAnyGlob(f, config.globs.learned))
+        .filter(f => existsSync(join(REPO_ROOT, f)));
 }
 
 function getTestFiles(diffFiles, config) {

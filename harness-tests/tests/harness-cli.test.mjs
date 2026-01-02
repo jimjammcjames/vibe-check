@@ -57,7 +57,7 @@ describe('harness CLI', () => {
     });
 
     describe('new:learned command', () => {
-        const testSlug = 'cli-test-learned';
+        const testSlug = `cli-test-learned-${Math.random().toString(36).slice(2, 8)}`;
         let createdFile = null;
 
         afterEach(() => {
@@ -125,7 +125,7 @@ describe('harness CLI', () => {
     });
 
     describe('new:decision command', () => {
-        const testSlug = 'cli-test-decision';
+        const testSlug = `cli-test-decision-${Math.random().toString(36).slice(2, 8)}`;
         let createdFile = null;
 
         afterEach(() => {

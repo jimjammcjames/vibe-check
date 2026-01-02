@@ -71,7 +71,7 @@ async function main() {
 
     // Get learned entries content
     const learnedDir = join(HARNESS_ROOT, 'context', 'learned');
-    let learnedContent = '';
+    let memoryContent = '';
     if (existsSync(learnedDir)) {
         const files = execSync(`find "${learnedDir}" -name "*.md" -type f`, { encoding: 'utf-8' })
             .trim().split('\n').filter(Boolean);
@@ -79,7 +79,21 @@ async function main() {
         for (const file of files) {
             if (file.endsWith('TIMELINE.md')) continue;
             try {
-                learnedContent += `\n### ${file}\n${readFileSync(file, 'utf-8')}\n`;
+                memoryContent += `\n### [LEARNED] ${file}\n${readFileSync(file, 'utf-8')}\n`;
+            } catch { }
+        }
+    }
+
+    // Get decision entries content
+    const decisionsDir = join(HARNESS_ROOT, 'context', 'decisions');
+    if (existsSync(decisionsDir)) {
+        const files = execSync(`find "${decisionsDir}" -name "*.md" -type f`, { encoding: 'utf-8' })
+            .trim().split('\n').filter(Boolean);
+
+        for (const file of files) {
+            if (file.endsWith('TIMELINE.md')) continue;
+            try {
+                memoryContent += `\n### [DECISION] ${file}\n${readFileSync(file, 'utf-8')}\n`;
             } catch { }
         }
     }
@@ -93,7 +107,7 @@ async function main() {
 
     // Write files to sandbox
     writeFileSync(join(sandboxDir, 'DIFF.txt'), diff);
-    writeFileSync(join(sandboxDir, 'LEARNED_ENTRIES.txt'), learnedContent || 'No learned entries found');
+    writeFileSync(join(sandboxDir, 'MEMORY_ENTRIES.txt'), memoryContent || 'No memory entries found');
 
     const prompt = `ENVIRONMENT: Use only cat/grep/echo. DO NOT run npm/node commands.
 
@@ -101,15 +115,17 @@ TASK: Detect undocumented changes.
 
 FILES:
 - DIFF.txt: All code changes
-- LEARNED_ENTRIES.txt: Existing documentation
+- MEMORY_ENTRIES.txt: Existing documentation (both [LEARNED] and [DECISION] entries)
 
 INSTRUCTIONS:
 1. Read DIFF.txt and identify distinct LOGICAL CHANGE CLUSTERS
    (e.g., "error handling improvements", "model validation", "test additions")
 
-2. Read LEARNED_ENTRIES.txt and check which clusters are documented
+2. Read MEMORY_ENTRIES.txt and check which clusters are documented
+   - LEARNED entries document bug fixes
+   - DECISION entries document new features/architectural choices
 
-3. List any clusters that appear in DIFF but NOT in LEARNED_ENTRIES
+3. List any clusters that appear in DIFF but NOT in MEMORY_ENTRIES
 
 MANDATORY: Create RESULT.json:
 {
