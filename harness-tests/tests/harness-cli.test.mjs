@@ -173,6 +173,46 @@ describe('harness CLI', () => {
         });
     });
 
+    describe('post command', () => {
+        it('starts post verification', () => {
+            // Note: post command runs npm test as first step, which would cause recursion.
+            // We use a short timeout to just verify the command is recognized.
+            try {
+                execSync(`node "${HARNESS_CLI}" post`, {
+                    cwd: REPO_ROOT,
+                    encoding: 'utf-8',
+                    timeout: 500,  // Kill after 500ms - enough to print header
+                    stdio: ['pipe', 'pipe', 'pipe']
+                });
+                assert.fail('Expected timeout to kill the command');
+            } catch (error) {
+                // Either timeout or actual failure, both are fine
+                const output = (error.stdout || '') + (error.stderr || '');
+                assert.ok(output.includes('harness:post'), 'should recognize post command');
+            }
+        });
+    });
+
+    describe('ci command', () => {
+        it('starts ci verification', () => {
+            // Note: ci command runs npm test, which would cause recursion.
+            // We use a short timeout to just verify the command is recognized.
+            try {
+                execSync(`node "${HARNESS_CLI}" ci`, {
+                    cwd: REPO_ROOT,
+                    encoding: 'utf-8',
+                    timeout: 500,  // Kill after 500ms - enough to print header
+                    stdio: ['pipe', 'pipe', 'pipe']
+                });
+                assert.fail('Expected timeout to kill the command');
+            } catch (error) {
+                // Either timeout or actual failure, both are fine
+                const output = (error.stdout || '') + (error.stderr || '');
+                assert.ok(output.includes('harness:ci'), 'should recognize ci command');
+            }
+        });
+    });
+
     describe('help/usage', () => {
         it('shows usage when no command given', () => {
             const result = runHarness('');

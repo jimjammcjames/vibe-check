@@ -48,12 +48,15 @@ function logWarning(msg) {
 async function main() {
     log('\n\x1b[36m=== Undocumented Changes Detector ===\x1b[0m\n');
 
-    // Get diff
+    // Get diff - compare against origin/main to see all uncommitted work
+    // This avoids false positives from already-committed changes
     let diff = '';
     try {
-        diff = execSync('git diff HEAD~1', { cwd: REPO_ROOT, encoding: 'utf-8' });
+        // First try staged + unstaged against origin/main
+        diff = execSync('git diff origin/main', { cwd: REPO_ROOT, encoding: 'utf-8' });
     } catch {
         try {
+            // Fall back to staged changes only
             diff = execSync('git diff --cached', { cwd: REPO_ROOT, encoding: 'utf-8' });
         } catch {
             log('No diff available');

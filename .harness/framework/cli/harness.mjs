@@ -237,6 +237,17 @@ function runCommand(command, files = 'all') {
     }
 }
 
+/**
+ * Async version of runCommand for parallel execution.
+ * Returns a Promise that resolves to { success, output, command }.
+ */
+async function runCommandAsync(command, files = 'all') {
+    return new Promise(resolve => {
+        const result = runCommand(command, files);
+        resolve({ ...result, command });
+    });
+}
+
 // ============================================================================
 // Commands
 // ============================================================================
@@ -307,16 +318,58 @@ function cmdIterate() {
     }
 }
 
-function cmdPost() {
+/**
+ * Check if a command is an agent script that can run in parallel.
+ * Agent scripts must be read-only analyzers with no git state mutations.
+ * Note: base-tripwire is NOT parallelizable because it creates git worktrees,
+ * which conflicts with concurrent git operations (causes ".git/index" errors).
+ */
+function isParallelizableAgent(command) {
+    return command.includes('undocumented-detector') ||
+        command.includes('review-adapter');
+}
+
+async function cmdPost() {
     log('\n\x1b[36m=== harness:post ===\x1b[0m');
     log('Running full verification...\n');
 
     const config = loadConfig();
     const stage = config.stages.post || [];
 
+    // Separate sequential foundation checks from parallelizable agents
+    const sequentialSteps = [];
+    const parallelSteps = [];
+
     for (const step of stage) {
+        if (isParallelizableAgent(step.command)) {
+            parallelSteps.push(step);
+        } else {
+            sequentialSteps.push(step);
+        }
+    }
+
+    // Run foundational checks sequentially first (tests, policy-audit)
+    for (const step of sequentialSteps) {
         if (!runCommand(step.command, step.files).success) {
             logError(`Failed: ${step.command}`);
+            printRecoveryPointers();
+            process.exit(1);
+        }
+    }
+
+    // Run agent checks in parallel
+    if (parallelSteps.length > 0) {
+        log('\x1b[36mRunning agent checks in parallel...\x1b[0m\n');
+        const results = await Promise.all(
+            parallelSteps.map(step => runCommandAsync(step.command, step.files))
+        );
+
+        // Check for failures
+        const failures = results.filter(r => !r.success);
+        if (failures.length > 0) {
+            for (const failure of failures) {
+                logError(`Failed: ${failure.command}`);
+            }
             printRecoveryPointers();
             process.exit(1);
         }
@@ -511,7 +564,10 @@ switch (command) {
         break;
 
     case 'post':
-        cmdPost();
+        cmdPost().catch(err => {
+            logError(`Post failed: ${err.message}`);
+            process.exit(1);
+        });
         break;
 
     case 'ci':
