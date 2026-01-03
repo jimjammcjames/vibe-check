@@ -386,44 +386,34 @@ const sharedAdapter = {
     },
 
     async review(context) {
-        const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs');
-        const { tmpdir } = await import('node:os');
         const { getProvider } = await import('../providers/index.mjs');
-
-        // Use workspace-local temp dir for debuggability and access
-        const tempBase = join(HARNESS_ROOT, '..', 'harness-tests', 'simulation', 'temp');
-        if (!existsSync(tempBase)) {
-            mkdirSync(tempBase, { recursive: true });
-        }
-
-        const sandboxDir = mkdtempSync(join(tempBase, 'harness-review-'));
+        // Use in-memory file map instead of disk sandbox
         const providerName = process.env.HARNESS_PROVIDER;
-
+        const files = {};
         try {
-            // Write context files to sandbox
-            writeFileSync(join(sandboxDir, 'DIFF.txt'), context.diff || 'No diff available');
-            writeFileSync(join(sandboxDir, 'TEST_FILES.txt'), context.testFiles.join('\n'));
+            files['DIFF.txt'] = context.diff || 'No diff available';
+            files['TEST_FILES.txt'] = context.testFiles.join('\n');
 
             const learnedContent = context.learnedEntries
                 .map(e => `### ${e.file}\n${e.content}`)
                 .join('\n\n');
-            writeFileSync(join(sandboxDir, 'LEARNED_ENTRIES.txt'), learnedContent || 'None');
+            files['LEARNED_ENTRIES.txt'] = learnedContent || 'None';
 
             // Read Harness.md for the compliance prompt
             const harnessDocPath = join(HARNESS_ROOT, 'Harness.md');
             const harnessMd = existsSync(harnessDocPath)
                 ? readFileSync(harnessDocPath, 'utf-8')
                 : 'Harness.md not found';
-            writeFileSync(join(sandboxDir, 'HARNESS_RULES.md'), harnessMd);
+            files['HARNESS_RULES.md'] = harnessMd;
 
-            const prompt = `ENVIRONMENT: All files are pre-staged in this directory. Use only cat/echo/shell commands. DO NOT run npm, node, or harness commands - they will fail in this sandbox.
-
+            const prompt = `ENVIRONMENT: All content is provided in the message context.
+    
 You are a META-LEVEL reviewer enforcing the 3-STEP CHAIN:
   1. BANDAID → Immediate fix applied
   2. META-ANALYSIS → Infrastructure gap identified  
   3. CLOSE GAP → Test/validation added to prevent this issue CLASS
 
-FILES TO READ (use cat):
+FILES PROVIDED:
 - DIFF.txt: The code changes
 - LEARNED_ENTRIES.txt: Memory entries created  
 - HARNESS_RULES.md: The rules
@@ -480,11 +470,11 @@ IMPORTANT:
 - Only set compliant=false if you have verified evidence
 - compliant=false requires specific violations listed
 
-Run: echo '{JSON content here}' > COMPLIANCE_REVIEW.json
+Run: Output ONLY the JSON object.
 
 Then edit with your assessment. DO NOT SKIP THIS FILE.`;
 
-            writeFileSync(join(sandboxDir, 'PROMPT.txt'), prompt);
+
 
             // Perform fast review if requested
             const isFastMode = process.argv.includes('--fast');
@@ -516,12 +506,15 @@ Then edit with your assessment. DO NOT SKIP THIS FILE.`;
             const provider = getProvider(providerName || configProvider);
             log(`Invoking provider: ${provider.name}`);
 
+            const startTime = Date.now();
             const result = await provider.invoke({
                 prompt,
-                sandboxDir,
+                files,
                 outputFile: 'COMPLIANCE_REVIEW.json',
                 config: providerConfig
             });
+            const duration = Date.now() - startTime;
+            logInfo(`Execution time: ${duration}ms`);
 
             // ALL failures return high severity - no exceptions
             if (result.rateLimited) {
@@ -591,9 +584,8 @@ Then edit with your assessment. DO NOT SKIP THIS FILE.`;
                 findings: [],
                 summary: `Review adapter error: ${error.message}`
             };
-        } finally {
             // Keep the sandbox for inspection (user requested this as default)
-            logInfo(`Review sandbox preserved at: ${sandboxDir} `);
+            // No info log needed for in-memory
         }
     }
 };

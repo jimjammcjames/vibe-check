@@ -5,8 +5,7 @@
  * Useful for CI environments and unit tests.
  */
 
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+
 
 /**
  * Default stub responses for different agent types
@@ -66,26 +65,18 @@ export const stubProvider = {
      * @param {object} options.config - Optional: { response: {...} } to override
      * @returns {object} { success, result, stdout, stderr, error }
      */
-    async invoke({ prompt, sandboxDir, outputFile, config = {} }) {
+    async invoke({ prompt, files, outputFile, config = {} }) {
         // Allow custom response via config
+        // Note: files are ignored in stub
         const response = config.response || DEFAULT_RESPONSES[outputFile] || {
             success: true,
             message: 'Stub provider: no specific response configured'
         };
 
-        // Write the response to the sandbox
-        const resultPath = join(sandboxDir, outputFile);
-        writeFileSync(resultPath, JSON.stringify(response, null, 2));
-
-        // Also write debug info
-        writeFileSync(join(sandboxDir, 'PROVIDER_STDOUT.txt'), '[stub] Response written');
-        writeFileSync(join(sandboxDir, 'PROVIDER_STDERR.txt'), '');
-        writeFileSync(join(sandboxDir, 'PROVIDER_EXIT_CODE.txt'), '0');
-
         return {
             success: true,
             result: response,
-            stdout: '[stub] Response written',
+            stdout: '[stub] In-memory response returned',
             stderr: '',
             error: null
         };

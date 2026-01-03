@@ -14,7 +14,8 @@ import { join } from 'node:path';
  * Default configuration for Gemini
  */
 const DEFAULT_CONFIG = {
-    timeout: 300000  // 5 minutes
+    timeout: 300000,  // 5 minutes
+    diffOnly: false   // If true, only read HARNESS_DIFF.txt for context
 };
 
 /**
@@ -51,8 +52,14 @@ export const geminiProvider = {
         // Build the context by reading staged files
         let contextFiles = '';
         try {
-            const files = execSync(`ls -1 "${sandboxDir}"`, { encoding: 'utf-8' })
-                .trim().split('\n').filter(f => f && !f.startsWith('PROVIDER_') && !f.startsWith('PROMPT'));
+            let files;
+            if (cfg.diffOnly) {
+                // Only read the diff file
+                files = ['HARNESS_DIFF.txt'];
+            } else {
+                files = execSync(`ls -1 "${sandboxDir}"`, { encoding: 'utf-8' })
+                    .trim().split('\n').filter(f => f && !f.startsWith('PROVIDER_') && !f.startsWith('PROMPT'));
+            }
 
             for (const file of files) {
                 const filePath = join(sandboxDir, file);
@@ -77,14 +84,18 @@ You MUST respond with ONLY valid JSON matching the ${jsonOutputName} schema desc
 Do NOT include any explanation, markdown formatting, or code blocks.
 Output ONLY the raw JSON object, nothing else.`;
 
+        // Hardcoded to gemini-3-flash-preview as requested
+        const modelName = 'gemini-3-flash-preview';
+
         let stdout = '';
         let stderr = '';
         let exitCode = 0;
 
         try {
             // Use gemini CLI with stdin piping to avoid shell escaping issues
+            // Use -m flag to select the model
             stdout = execSync(
-                `gemini`,
+                `gemini -m "${modelName}"`,
                 {
                     cwd: sandboxDir,
                     encoding: 'utf-8',

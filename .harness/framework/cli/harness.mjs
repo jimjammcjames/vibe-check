@@ -166,12 +166,13 @@ function getChangedFiles() {
 }
 
 function runCommand(command, files = 'all') {
+    const start = Date.now();
     const changedFiles = files === 'changed' ? getChangedFiles() : [];
 
     if (files === 'changed') {
         if (changedFiles.length === 0) {
             if (VERBOSE) logInfo(`Skipping (no changed files): ${command}`);
-            return true;
+            return { success: true, output: '', duration: 0 };
         }
         // Filter to relevant files for the command
         const relevantFiles = changedFiles.filter(f =>
@@ -181,7 +182,7 @@ function runCommand(command, files = 'all') {
         );
         if (relevantFiles.length === 0) {
             if (VERBOSE) logInfo(`Skipping (no relevant files): ${command}`);
-            return true;
+            return { success: true, output: '', duration: 0 };
         }
         command = `${command} ${relevantFiles.join(' ')}`;
     }
@@ -197,7 +198,8 @@ function runCommand(command, files = 'all') {
                 stdio: 'inherit',
                 shell: true
             });
-            return { success: true, output: '' };
+            const duration = Date.now() - start;
+            return { success: true, output: '', duration };
         } else {
             // Quiet mode: capture output, print summary lines on success
             const output = execSync(command, {
@@ -226,14 +228,15 @@ function runCommand(command, files = 'all') {
                 log(importantLines.join('\n'));
             }
 
-            return { success: true, output };
+            return { success: true, output, duration: Date.now() - start };
         }
+        let out = ''; // capture for scope
     } catch (error) {
         // On failure, always print the command and full output
         log(`\n\x1b[90m$ ${command}\x1b[0m`);
         if (error.stdout) log(error.stdout.toString());
         if (error.stderr) log(error.stderr.toString());
-        return { success: false, output: error.stdout?.toString() || '' };
+        return { success: false, output: error.stdout?.toString() || '', duration: Date.now() - start };
     }
 }
 
@@ -351,8 +354,12 @@ async function cmdPost() {
     }
 
     // Run foundational checks sequentially first (tests, policy-audit)
+    // Run foundational checks sequentially first (tests, policy-audit)
+    const sequentialResults = [];
     for (const step of sequentialSteps) {
-        if (!runCommand(step.command, step.files).success) {
+        const result = runCommand(step.command, step.files);
+        sequentialResults.push({ ...result, command: step.command });
+        if (!result.success) {
             logError(`Failed: ${step.command}`);
             printRecoveryPointers();
             process.exit(1);
@@ -366,8 +373,28 @@ async function cmdPost() {
             parallelSteps.map(step => runCommandAsync(step.command, step.files))
         );
 
+        // Collect all results for timing
+        const allResults = [...sequentialResults, ...results];
+
         // Check for failures
         const failures = results.filter(r => !r.success);
+
+        if (SHOW_TIMING) {
+            log('\n\x1b[36m=== Execution Timing ===\x1b[0m');
+            // Sort by duration descending
+            allResults.sort((a, b) => b.duration - a.duration);
+
+            for (const r of allResults) {
+                // Clean up command name for display
+                let name = r.command.replace('node .harness/framework/scripts/', '').replace('.mjs', '');
+                if (name.length > 50) name = name.substring(0, 47) + '...';
+
+                const seconds = (r.duration / 1000).toFixed(2);
+                log(`${name.padEnd(30)} : ${seconds}s`);
+            }
+            log('');
+        }
+
         if (failures.length > 0) {
             for (const failure of failures) {
                 logError(`Failed: ${failure.command}`);
@@ -579,10 +606,14 @@ const command = args[0];
 
 // Parse additional flags
 let slug = null;
+let SHOW_TIMING = false;
 for (let i = 1; i < args.length; i++) {
     if (args[i] === '--slug' && args[i + 1]) {
         slug = args[i + 1];
         i++;
+    }
+    if (args[i] === '--timing') {
+        SHOW_TIMING = true;
     }
 }
 

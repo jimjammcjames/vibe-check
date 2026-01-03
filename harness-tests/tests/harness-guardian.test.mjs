@@ -26,7 +26,8 @@ test('Harness Guardian: Enforcement Protocol', async (t) => {
         try {
             const output = execSync('node .harness/framework/scripts/harness-guardian.mjs', {
                 cwd: REPO_ROOT,
-                encoding: 'utf-8'
+                encoding: 'utf-8',
+                env: { ...process.env, HARNESS_PROVIDER: 'stub' }
             });
             assert.ok(output.includes('Integrity verified'), 'Should verify existing legitimate changes');
         } catch (error) {

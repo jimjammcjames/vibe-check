@@ -62,7 +62,7 @@ MANDATORY: Create RESULT.json:
   "all_documented": true
 }
 
-Run: echo '{JSON}' > RESULT.json`;
+Run: Output ONLY the JSON object.`;
 
 // ============================================================================
 // Main
@@ -135,13 +135,11 @@ async function main() {
     // Handle result - ALL failures block, no exceptions
     if (agentResult.rateLimited) {
         logError('AI review unavailable (rate limit/network). Cannot proceed.');
-        logError(`Sandbox preserved: ${agentResult.sandboxDir}`);
         process.exit(1);
     }
 
     if (!agentResult.success) {
         logError('Agent did not produce RESULT.json. Cannot verify documentation.');
-        logError(`Sandbox preserved at: ${agentResult.sandboxDir}`);
         process.exit(1);
     }
 

@@ -5,7 +5,7 @@
  * Handles sandbox creation, file staging, provider invocation, and result parsing.
  */
 
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getProvider } from '../providers/index.mjs';
@@ -31,7 +31,7 @@ function logInfo(msg) { console.log(`\x1b[36mℹ ${msg}\x1b[0m`); }
 function loadConfig() {
     const configPath = join(HARNESS_ROOT, 'config.yml');
     if (!existsSync(configPath)) {
-        return { agents: { provider: 'codex' } };
+        return { agents: { provider: 'http' } };
     }
 
     const content = readFileSync(configPath, 'utf-8');
@@ -39,7 +39,7 @@ function loadConfig() {
     const providerMatch = content.match(/provider:\s*(\w+)/);
     return {
         agents: {
-            provider: providerMatch ? providerMatch[1] : 'codex'
+            provider: providerMatch ? providerMatch[1] : 'http'
         }
     };
 }
@@ -61,62 +61,49 @@ function loadConfig() {
  * @returns {object} { success, result, rateLimited, sandboxDir, error }
  */
 export async function runAgent({ name, files, prompt, outputFile, providerConfig = {}, providerOverride }) {
-    // Create sandbox
-    const sandboxBase = join(REPO_ROOT, 'harness-tests', 'simulation', 'temp');
-    if (!existsSync(sandboxBase)) {
-        mkdirSync(sandboxBase, { recursive: true });
-    }
-    const sandboxDir = mkdtempSync(join(sandboxBase, `${name}-`));
-
-    // Stage files
-    for (const [filename, content] of Object.entries(files)) {
-        writeFileSync(join(sandboxDir, filename), content);
-    }
-
-    // Save prompt for debugging
-    writeFileSync(join(sandboxDir, 'PROMPT.txt'), prompt);
-
     // Get provider
     const config = loadConfig();
-    const providerName = providerOverride || process.env.HARNESS_PROVIDER || config.agents?.provider || 'codex';
+    const providerName = providerOverride || process.env.HARNESS_PROVIDER || config.agents?.provider || 'http';
 
-    let provider;
-    try {
-        provider = getProvider(providerName);
-    } catch (error) {
-        logWarning(`Provider '${providerName}' not found, falling back to codex`);
-        provider = getProvider('codex');
-    }
+    const provider = getProvider(providerName);
 
     logInfo(`Using provider: ${provider.name}`);
 
     // Invoke provider
+    const startTime = Date.now();
     const result = await provider.invoke({
         prompt,
-        sandboxDir,
+        files,
         outputFile,
         config: providerConfig
     });
+    const duration = Date.now() - startTime;
+    logInfo(`Execution time: ${duration}ms`);
 
     // Handle result
     if (result.rateLimited) {
-        logWarning('Provider unavailable (rate limit/network). Proceeding with fallback.');
+        logWarning('Provider unavailable (rate limit/network).');
+        if (result.error) logError(result.error);
         return {
             success: false,
             rateLimited: true,
             result: null,
-            sandboxDir,
             error: result.error
         };
     }
 
     if (!result.success) {
-        logWarning(`Agent did not produce expected output. Sandbox: ${sandboxDir}`);
+        logWarning('Agent did not produce expected output.');
+        if (result.error) logError(`Error: ${result.error}`);
+        if (result.stderr) {
+            logInfo('--- STDERR ---');
+            console.log(result.stderr);
+            logInfo('--------------');
+        }
         return {
             success: false,
             rateLimited: false,
             result: null,
-            sandboxDir,
             error: result.error
         };
     }
@@ -125,7 +112,6 @@ export async function runAgent({ name, files, prompt, outputFile, providerConfig
         success: true,
         rateLimited: false,
         result: result.result,
-        sandboxDir,
         error: null
     };
 }

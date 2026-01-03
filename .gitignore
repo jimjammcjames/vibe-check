@@ -5,3 +5,4 @@ harness-tests/simulation/latest
 harness-tests/simulation/logs/.last_sandbox_path
 harness-tests/simulation/logs/*
 harness-tests/simulation/temp/
+key.txt

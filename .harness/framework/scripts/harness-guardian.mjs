@@ -48,7 +48,7 @@ MANDATORY: Create RESULT.json:
   "gaming_detected": boolean
 }
 
-Run: echo '{JSON}' > RESULT.json`;
+Run: Output ONLY the JSON object.`;
 
 // ============================================================================
 // Main
@@ -149,13 +149,11 @@ async function main() {
     // Handle result - ALL failures block, no exceptions
     if (agentResult.rateLimited) {
         logError('AI review unavailable (rate limit/network). Cannot proceed.');
-        logError(`Sandbox preserved for debugging: ${agentResult.sandboxDir}`);
         process.exit(1);
     }
 
     if (!agentResult.success) {
-        logError(`Agent did not produce verdict. Sandbox preserved: ${agentResult.sandboxDir}`);
-        logError('Could not verify integrity of harness changes. Blocking.');
+        logError('Agent did not produce verdict. Could not verify integrity of harness changes. Blocking.');
         process.exit(1);
     }
 

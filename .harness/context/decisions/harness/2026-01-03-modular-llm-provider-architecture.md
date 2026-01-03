@@ -29,7 +29,7 @@ Created a shared provider abstraction layer:
 
 **Provider Interface:**
 ```javascript
-async invoke({ prompt, sandboxDir, outputFile, config }) → { success, result, rateLimited, error }
+async invoke({ prompt, files, outputFile, config }) → { success, result, rateLimited, error }
 ```
 
 ## Security & Integrity Impact
@@ -47,7 +47,10 @@ async invoke({ prompt, sandboxDir, outputFile, config }) → { success, result, 
 harness, meta, provider, LLM, modular, architecture, codex, anthropic, openai
 
 ## Related
+- [Execution Timing Visibility](./2026-01-03-execution-timing-visibility.md)
+- [Gemini Model Configuration](./2026-01-03-gemini-model-configuration.md)
 - [Implement LLM-Based Harness Guardian](./2026-01-02-implement-llm-based-harness-guardian.md)
+- [Zero-Sandbox Architecture](./2026-01-03-zero-sandbox-architecture.md)
 
 ## Tags
 - #harness-meta

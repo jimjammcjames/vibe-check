@@ -55,23 +55,7 @@ describe('review-adapter integration', () => {
         });
     });
 
-    describe('sandbox preservation for debugging', () => {
-        it('should have harness-tests/simulation/temp directory', () => {
-            const tempDir = 'harness-tests/simulation/temp';
-            // This might not exist yet, which is fine - we're just documenting the expected path
-            assert.ok(tempDir.includes('temp'), 'Should use temp directory for sandboxes');
-        });
 
-        it('should preserve sandbox after execution', () => {
-            const content = readFileSync(
-                '.harness/framework/scripts/review-adapter.mjs',
-                'utf-8'
-            );
-
-            assert.ok(content.includes('Review sandbox preserved'),
-                'Must log sandbox location for debugging');
-        });
-    });
 
     describe('fast mode configuration', () => {
         it('should use a working mini model for fast mode', () => {

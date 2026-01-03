@@ -8,11 +8,13 @@
 import { codexProvider } from './codex.mjs';
 import { stubProvider } from './stub.mjs';
 import { geminiProvider } from './gemini.mjs';
+import { httpApiProvider } from './http-api.mjs';
 
 const providers = {
     codex: codexProvider,
     stub: stubProvider,
-    gemini: geminiProvider
+    gemini: geminiProvider,
+    http: httpApiProvider
 };
 
 /**
