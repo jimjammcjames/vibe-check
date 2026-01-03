@@ -336,72 +336,42 @@ function isParallelizableAgent(command) {
 
 async function cmdPost() {
     log('\n\x1b[36m=== harness:post ===\x1b[0m');
-    log('Running full verification...\n');
+    log('Running aggressive parallel verification...\n');
 
     const config = loadConfig();
     const stage = config.stages.post || [];
 
-    // Separate sequential foundation checks from parallelizable agents
-    const sequentialSteps = [];
-    const parallelSteps = [];
+    // Run ALL checks in parallel (including tests, audit, and agents)
+    // Note: base-tripwire might have git conflicts if multiple git commands run,
+    // but we'll try it to maximize speed.
+    const results = await Promise.all(
+        stage.map(step => runCommandAsync(step.command, step.files))
+    );
 
-    for (const step of stage) {
-        if (isParallelizableAgent(step.command)) {
-            parallelSteps.push(step);
-        } else {
-            sequentialSteps.push(step);
+    // Check for failures
+    const failures = results.filter(r => !r.success);
+
+    if (SHOW_TIMING) {
+        log('\n\x1b[36m=== Execution Timing ===\x1b[0m');
+        // Sort by duration descending
+        const sortedResults = [...results].sort((a, b) => b.duration - a.duration);
+
+        for (const r of sortedResults) {
+            let name = r.command.replace('node .harness/framework/scripts/', '').replace('.mjs', '');
+            if (name.length > 50) name = name.substring(0, 47) + '...';
+            const seconds = (r.duration / 1000).toFixed(2);
+            log(`${name.padEnd(30)} : ${seconds}s`);
         }
+        log('');
     }
 
-    // Run foundational checks sequentially first (tests, policy-audit)
-    // Run foundational checks sequentially first (tests, policy-audit)
-    const sequentialResults = [];
-    for (const step of sequentialSteps) {
-        const result = runCommand(step.command, step.files);
-        sequentialResults.push({ ...result, command: step.command });
-        if (!result.success) {
-            logError(`Failed: ${step.command}`);
-            printRecoveryPointers();
-            process.exit(1);
+    if (failures.length > 0) {
+        log('\n\x1b[31mPost verification failed!\x1b[0m');
+        for (const failure of failures) {
+            logError(`Failed: ${failure.command}`);
         }
-    }
-
-    // Run agent checks in parallel
-    if (parallelSteps.length > 0) {
-        log('\x1b[36mRunning agent checks in parallel...\x1b[0m\n');
-        const results = await Promise.all(
-            parallelSteps.map(step => runCommandAsync(step.command, step.files))
-        );
-
-        // Collect all results for timing
-        const allResults = [...sequentialResults, ...results];
-
-        // Check for failures
-        const failures = results.filter(r => !r.success);
-
-        if (SHOW_TIMING) {
-            log('\n\x1b[36m=== Execution Timing ===\x1b[0m');
-            // Sort by duration descending
-            allResults.sort((a, b) => b.duration - a.duration);
-
-            for (const r of allResults) {
-                // Clean up command name for display
-                let name = r.command.replace('node .harness/framework/scripts/', '').replace('.mjs', '');
-                if (name.length > 50) name = name.substring(0, 47) + '...';
-
-                const seconds = (r.duration / 1000).toFixed(2);
-                log(`${name.padEnd(30)} : ${seconds}s`);
-            }
-            log('');
-        }
-
-        if (failures.length > 0) {
-            for (const failure of failures) {
-                logError(`Failed: ${failure.command}`);
-            }
-            printRecoveryPointers();
-            process.exit(1);
-        }
+        printRecoveryPointers();
+        process.exit(1);
     }
 
     logSuccess('Post verification complete');

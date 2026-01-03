@@ -303,18 +303,17 @@ function applyPatch(worktreePath, patch) {
 function runTestsOnWorktree(worktreePath, testFiles, config) {
     const testCommand = config.reviewers?.base_tripwire?.run_tests_cmd || 'npm test';
 
-    // Install deps if needed
+    // Link node_modules instead of slow npm install
     try {
-        if (existsSync(join(worktreePath, 'package.json'))) {
-            execSync('npm install --silent', {
+        const hostNodeModules = join(REPO_ROOT, 'node_modules');
+        if (existsSync(hostNodeModules)) {
+            execSync(`ln -s "${hostNodeModules}" "${join(worktreePath, 'node_modules')}"`, {
                 cwd: worktreePath,
-                encoding: 'utf-8',
-                stdio: ['pipe', 'pipe', 'pipe'],
-                timeout: 120000 // 2 min timeout for install
+                stdio: ['pipe', 'pipe', 'pipe']
             });
         }
-    } catch {
-        // Continue even if install fails - might work anyway
+    } catch (e) {
+        logWarning(`Failed to symlink node_modules: ${e.message}`);
     }
 
     // Run the tests

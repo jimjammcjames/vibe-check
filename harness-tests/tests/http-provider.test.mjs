@@ -97,6 +97,6 @@ test('HTTP API Provider: Live API Call', async (t) => {
 
         assert.strictEqual(result.success, true, 'Should succeed with valid API key');
         assert.ok(result.result, 'Should have a result object');
-        assert.ok(result.result.status, 'Result should have status field');
+        assert.ok(result.result.verdict, 'Result should have verdict field');
     });
 });

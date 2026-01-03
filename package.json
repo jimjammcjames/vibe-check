@@ -4,7 +4,7 @@
   "description": "Agent harness for safe, compounding AI-assisted development",
   "type": "module",
   "scripts": {
-    "test": "node --import tsx --test harness-tests/tests/*.test.mjs",
+    "test": "node --import tsx --test --test-concurrency=4 harness-tests/tests/*.test.mjs",
     "harness:prep": "node .harness/framework/cli/harness.mjs prep",
     "harness:iterate": "node .harness/framework/cli/harness.mjs iterate",
     "harness:post": "node .harness/framework/cli/harness.mjs post",

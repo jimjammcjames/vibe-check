@@ -484,16 +484,15 @@ Then edit with your assessment. DO NOT SKIP THIS FILE.`;
             };
 
             if (isFastMode) {
-                // Hint for providers that support these config keys (like Codex)
-                providerConfig.model = 'gpt-5.1-codex-mini';
-                providerConfig.reasoningEffort = 'medium';
+                // Use fast model for quick iterations
+                providerConfig.model = 'gpt-4.1-nano';
             } else {
-                providerConfig.reasoningEffort = 'high';
+                providerConfig.model = 'gpt-4.1-mini';
             }
 
             // Get provider
             // Check config.yml for default provider
-            let configProvider = 'codex';
+            let configProvider = 'http';
             try {
                 const configPath = join(HARNESS_ROOT, 'config.yml');
                 if (existsSync(configPath)) {

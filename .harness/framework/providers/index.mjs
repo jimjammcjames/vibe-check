@@ -22,7 +22,7 @@ const providers = {
  * @param {string} name - Provider name ('codex', 'stub', etc.)
  * @returns {object} Provider instance
  */
-export function getProvider(name = 'codex') {
+export function getProvider(name = 'http') {
     const provider = providers[name];
     if (!provider) {
         throw new Error(`Unknown provider: ${name}. Available: ${Object.keys(providers).join(', ')}`);

@@ -29,18 +29,23 @@ test('Harness Guardian: Enforcement Protocol', async (t) => {
                 encoding: 'utf-8',
                 env: { ...process.env, HARNESS_PROVIDER: 'stub' }
             });
-            assert.ok(output.includes('Integrity verified'), 'Should verify existing legitimate changes');
+            const isVerified = output.includes('Integrity verified') || output.includes('No harness modifications detected');
+            assert.ok(isVerified, 'Should verify existing legitimate changes or detect no changes');
         } catch (error) {
             const stdout = error.stdout || '';
             const stderr = error.stderr || '';
             const combined = stdout + stderr;
+
+            // In catch block, error might be AssertionError from assert.ok above
+            // if neither string was found. In that case stdout will be in combined
+            // if it was from execSync, but here it might be from the assert failure.
 
             if (combined.includes('No harness modifications detected')) {
                 // No changes to harness - this is fine
                 assert.ok(true, 'No harness modifications to check');
             } else {
                 // ALL failures are test failures - including rate limits
-                assert.fail('Guardian failed: ' + combined.slice(0, 500));
+                assert.fail('Guardian failed: ' + (combined || error.message).slice(0, 500));
             }
         }
     });

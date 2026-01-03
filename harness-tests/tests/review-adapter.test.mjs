@@ -280,31 +280,27 @@ describe('review-adapter logic', () => {
     describe('error visibility and debug outputs', () => {
         // These tests verify the error handling improvements from 2025-12-31
 
-        it('validates supported models list includes recommended Codex models', () => {
+        it('validates supported models list includes recommended models', () => {
             const SUPPORTED_MODELS = [
-                'gpt-5.2-codex',
-                'gpt-5.1-codex-max',
-                'gpt-5.1-codex-mini',
-                'gpt-5.2',
-                'gpt-5.1',
-                'gpt-5.1-codex',
-                'gpt-5-codex',
-                'gpt-5-codex-mini',
-                'gpt-5'
+                'gpt-4.1-nano',
+                'gpt-4.1-mini',
+                'gpt-4.1',
+                'gpt-4o',
+                'gpt-4o-mini'
             ];
 
             // Verify recommended models are included
-            assert.ok(SUPPORTED_MODELS.includes('gpt-5.2-codex'));
-            assert.ok(SUPPORTED_MODELS.includes('gpt-5.1-codex-mini'));
-            assert.ok(SUPPORTED_MODELS.includes('gpt-5.1-codex-max'));
+            assert.ok(SUPPORTED_MODELS.includes('gpt-4.1-nano'));
+            assert.ok(SUPPORTED_MODELS.includes('gpt-4.1-mini'));
+            assert.ok(SUPPORTED_MODELS.includes('gpt-4o'));
         });
 
         it('detects unsupported model names', () => {
-            const SUPPORTED_MODELS = ['gpt-5.2-codex', 'gpt-5.1-codex-mini'];
-            const testModel = 'gpt-5.2-mini'; // Known unsupported model
+            const SUPPORTED_MODELS = ['gpt-4.1-nano', 'gpt-4.1-mini'];
+            const testModel = 'gpt-5.2-mini'; // Known deprecated model
 
             assert.ok(!SUPPORTED_MODELS.includes(testModel),
-                'Should reject gpt-5.2-mini (not supported with ChatGPT accounts)');
+                'Should reject deprecated gpt-5.x models');
         });
 
         it('stderr should be logged prominently on exec errors', () => {
@@ -321,47 +317,44 @@ describe('review-adapter logic', () => {
                 'stderr should explain model incompatibility');
         });
 
-        it('detects completely empty codex output as error condition', () => {
-            const codexStdout = '';
-            const codexStderr = '';
+        it('detects completely empty API output as error condition', () => {
+            const apiStdout = '';
+            const apiStderr = '';
 
-            const isEmpty = !codexStdout && !codexStderr;
-            assert.ok(isEmpty, 'Should detect when codex produces no output at all');
+            const isEmpty = !apiStdout && !apiStderr;
+            assert.ok(isEmpty, 'Should detect when API produces no output at all');
         });
 
-        it('sandbox should preserve debug files for post-mortem', () => {
+        it('debug files should be preserved for post-mortem', () => {
             const requiredDebugFiles = [
-                'CODEX_STDOUT.txt',
-                'CODEX_STDERR.txt',
-                'CODEX_EXIT_CODE.txt',
+                'PROVIDER_STDOUT.txt',
+                'PROVIDER_STDERR.txt',
+                'PROVIDER_EXIT_CODE.txt',
                 'PROMPT.txt',
                 'DIFF.txt'
             ];
 
             // Verify all required debug files are in our checklist
-            assert.ok(requiredDebugFiles.includes('CODEX_STDERR.txt'),
+            assert.ok(requiredDebugFiles.includes('PROVIDER_STDERR.txt'),
                 'Must save stderr for debugging model errors');
-            assert.ok(requiredDebugFiles.includes('CODEX_EXIT_CODE.txt'),
+            assert.ok(requiredDebugFiles.includes('PROVIDER_EXIT_CODE.txt'),
                 'Must save exit code to distinguish failures');
         });
 
-        it('fast mode uses supported mini model', () => {
-            const fastModeModel = 'gpt-5.1-codex-mini';
-            const SUPPORTED_MODELS = ['gpt-5.1-codex-mini', 'gpt-5.2-codex'];
+        it('fast mode uses gpt-4.1-nano', () => {
+            const fastModeModel = 'gpt-4.1-nano';
+            const SUPPORTED_MODELS = ['gpt-4.1-nano', 'gpt-4.1-mini'];
 
             assert.ok(SUPPORTED_MODELS.includes(fastModeModel),
-                'Fast mode should use gpt-5.1-codex-mini (confirmed working)');
+                'Fast mode should use gpt-4.1-nano');
         });
 
-        it('reasoning effort is appropriate for fast vs standard', () => {
-            const fastEffort = 'medium';
-            const standardEffort = 'high';
+        it('standard mode uses gpt-4.1-mini', () => {
+            const standardModeModel = 'gpt-4.1-mini';
+            const SUPPORTED_MODELS = ['gpt-4.1-nano', 'gpt-4.1-mini'];
 
-            const validEfforts = ['low', 'medium', 'high'];
-
-            assert.ok(validEfforts.includes(fastEffort), 'Fast effort should be valid');
-            assert.ok(validEfforts.includes(standardEffort), 'Standard effort should be valid');
-            assert.ok(fastEffort !== standardEffort, 'Fast and standard should differ');
+            assert.ok(SUPPORTED_MODELS.includes(standardModeModel),
+                'Standard mode should use gpt-4.1-mini');
         });
     });
 });

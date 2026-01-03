@@ -12,7 +12,7 @@ import { join } from 'node:path';
  * Default configuration for Codex
  */
 const DEFAULT_CONFIG = {
-    model: 'gpt-5.1-codex-mini',
+    model: 'gpt-4.1-nano',
     reasoningEffort: 'low',
     timeout: 300000,  // 5 minutes
     sandbox: 'workspace-write'

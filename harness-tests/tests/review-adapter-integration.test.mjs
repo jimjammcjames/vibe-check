@@ -58,30 +58,25 @@ describe('review-adapter integration', () => {
 
 
     describe('fast mode configuration', () => {
-        it('should use a working mini model for fast mode', () => {
+        it('should use gpt-4.1-nano for fast mode', () => {
             const content = readFileSync(
                 '.harness/framework/scripts/review-adapter.mjs',
                 'utf-8'
             );
 
-            // Should use gpt-5.1-codex-mini (confirmed working)
-            // Should NOT use gpt-5.2-mini (not supported with ChatGPT accounts)
-            assert.ok(content.includes('gpt-5.1-codex-mini'),
-                'Fast mode should use gpt-5.1-codex-mini');
-            assert.ok(!content.includes("'gpt-5.2-mini'"),
-                'Should not use unsupported gpt-5.2-mini');
+            // Should use gpt-4.1-nano for fast mode
+            assert.ok(content.includes('gpt-4.1-nano'),
+                'Fast mode should use gpt-4.1-nano');
         });
 
-        it('should have appropriate reasoning effort for fast mode', () => {
+        it('should use gpt-4.1-mini for standard mode', () => {
             const content = readFileSync(
                 '.harness/framework/scripts/review-adapter.mjs',
                 'utf-8'
             );
 
-            assert.ok(content.includes('reasoningEffort'),
-                'Must configure reasoning effort');
-            assert.ok(content.includes("'medium'") || content.includes("'low'"),
-                'Fast mode should use medium or low effort');
+            assert.ok(content.includes('gpt-4.1-mini'),
+                'Standard mode should use gpt-4.1-mini');
         });
     });
 
