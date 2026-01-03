@@ -17,10 +17,11 @@
  */
 
 import { execSync } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { minimatch } from './minimatch.mjs';
+import { getProvider } from '../providers/index.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -374,21 +375,20 @@ OUTPUT (JSON only, no markdown):
 };
 
 /** @type {ReviewerAdapter} */
-const codexAdapter = {
-    name: 'codex',
+/** @type {ReviewerAdapter} */
+const sharedAdapter = {
+    name: 'shared',
 
     async isConfigured() {
-        try {
-            execSync('which codex', { stdio: 'pipe' });
-            return true;
-        } catch {
-            return false;
-        }
+        // Always considered configured because it delegates to the provider system
+        // which has its own fallbacks
+        return true;
     },
 
     async review(context) {
         const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs');
         const { tmpdir } = await import('node:os');
+        const { getProvider } = await import('../providers/index.mjs');
 
         // Use workspace-local temp dir for debuggability and access
         const tempBase = join(HARNESS_ROOT, '..', 'harness-tests', 'simulation', 'temp');
@@ -397,6 +397,7 @@ const codexAdapter = {
         }
 
         const sandboxDir = mkdtempSync(join(tempBase, 'harness-review-'));
+        const providerName = process.env.HARNESS_PROVIDER;
 
         try {
             // Write context files to sandbox
@@ -476,7 +477,6 @@ MANDATORY: Create COMPLIANCE_REVIEW.json with this format (build up evidence FIR
 }
 
 IMPORTANT: 
-- Run "grep <filename> DIFF.txt" BEFORE setting gap_closure_in_diff
 - Only set compliant=false if you have verified evidence
 - compliant=false requires specific violations listed
 
@@ -486,139 +486,110 @@ Then edit with your assessment. DO NOT SKIP THIS FILE.`;
 
             writeFileSync(join(sandboxDir, 'PROMPT.txt'), prompt);
 
-            // Validate model is supported (fail fast with helpful error)
-            const SUPPORTED_MODELS = [
-                'gpt-5.2-codex',
-                'gpt-5.1-codex-max',
-                'gpt-5.1-codex-mini',
-                'gpt-5.2',
-                'gpt-5.1',
-                'gpt-5.1-codex',
-                'gpt-5-codex',
-                'gpt-5-codex-mini',
-                'gpt-5'
-            ];
-
             // Perform fast review if requested
             const isFastMode = process.argv.includes('--fast');
-            const model = isFastMode ? 'gpt-5.1-codex-mini' : undefined; // undefined uses user config
-            const reasoningEffort = isFastMode ? 'medium' : 'high';
+            // If using shared/codex provider, this config helps select the right model
+            const providerConfig = {
+                timeout: 300000
+            };
 
-            if (model && !SUPPORTED_MODELS.includes(model)) {
-                logWarning(`Model '${model}' may not be supported. Recommended: ${SUPPORTED_MODELS.slice(0, 3).join(', ')}`);
+            if (isFastMode) {
+                // Hint for providers that support these config keys (like Codex)
+                providerConfig.model = 'gpt-5.1-codex-mini';
+                providerConfig.reasoningEffort = 'medium';
+            } else {
+                providerConfig.reasoningEffort = 'high';
             }
 
-            const modelArgs = model ? `-m ${model}` : '';
-            const effortArg = `-c model_reasoning_effort="${reasoningEffort}"`;
-
-            // Run Codex in the sandbox with workspace-write sandbox
-            let codexStdout = '';
-            let codexStderr = '';
-            let codexExitCode = 0;
-
+            // Get provider
+            // Check config.yml for default provider
+            let configProvider = 'codex';
             try {
-                const codexOutput = execSync(
-                    `codex exec -s workspace-write ${effortArg} ${modelArgs} --skip-git-repo-check -C "${sandboxDir}" -`,
-                    {
-                        cwd: sandboxDir,
-                        encoding: 'utf-8',
-                        timeout: 300000, // 5 minutes
-                        stdio: ['pipe', 'pipe', 'pipe'],
-                        input: prompt
-                    }
-                );
-                codexStdout = codexOutput;
-                log(`Codex output: ${codexOutput.slice(0, 500)}`);
-            } catch (execError) {
-                codexExitCode = execError.status || 1;
-                codexStdout = execError.stdout || '';
-                codexStderr = execError.stderr || '';
-
-                // CRITICAL: Surface stderr prominently (this is where model errors appear)
-                if (codexStderr) {
-                    logError(`Codex STDERR (exit ${codexExitCode}):`);
-                    logError(codexStderr.slice(0, 1000));
+                const configPath = join(HARNESS_ROOT, 'config.yml');
+                if (existsSync(configPath)) {
+                    const content = readFileSync(configPath, 'utf-8');
+                    const match = content.match(/provider:\s*(\w+)/);
+                    if (match) configProvider = match[1];
                 }
+            } catch (e) { /* ignore config read errors */ }
 
-                // Also log stdout if present
-                if (codexStdout) {
-                    log(`Codex stdout: ${codexStdout.slice(0, 500)}`);
-                }
+            const provider = getProvider(providerName || configProvider);
+            log(`Invoking provider: ${provider.name}`);
 
-                // If completely empty output, that's a major red flag
-                if (!codexStdout && !codexStderr) {
-                    logError('Codex produced NO output at all - check model/API configuration');
-                }
+            const result = await provider.invoke({
+                prompt,
+                sandboxDir,
+                outputFile: 'COMPLIANCE_REVIEW.json',
+                config: providerConfig
+            });
+
+            // ALL failures return high severity - no exceptions
+            if (result.rateLimited) {
+                logError('AI review unavailable (rate limit/network). Cannot proceed.');
+                return {
+                    severity: 'high',
+                    findings: [],
+                    summary: 'AI review unavailable (rate limit/network). Review failed.'
+                };
             }
 
-            // Save full debug output to sandbox for post-mortem analysis
-            writeFileSync(join(sandboxDir, 'CODEX_STDOUT.txt'), codexStdout);
-            writeFileSync(join(sandboxDir, 'CODEX_STDERR.txt'), codexStderr);
-            writeFileSync(join(sandboxDir, 'CODEX_EXIT_CODE.txt'), String(codexExitCode));
+            if (!result.success) {
+                logError(result.error || 'Provider failed');
+                return {
+                    severity: 'high',
+                    findings: [],
+                    summary: 'Provider did not produce COMPLIANCE_REVIEW.json - Manual Code Review REQUIRED (Agent Failed)'
+                };
+            }
 
             // Read the result
-            const resultPath = join(sandboxDir, 'COMPLIANCE_REVIEW.json');
-            if (existsSync(resultPath)) {
-                const result = JSON.parse(readFileSync(resultPath, 'utf-8'));
+            // The provider.invoke() writes the result to the output file, but also returns it as result.result
+            const reviewData = result.result;
 
+            if (reviewData) {
                 // Determine severity based on gaming detection, mismatches, and quality
                 let severity = 'none';
-                if (result.gaming_detected) {
+                if (reviewData.gaming_detected) {
                     severity = 'high';
-                } else if (!result.compliant) {
+                } else if (!reviewData.compliant) {
                     severity = 'high';
-                } else if (result.entry_type_mismatch || result.missing_tests_for_fix) {
+                } else if (reviewData.entry_type_mismatch || reviewData.missing_tests_for_fix) {
                     severity = 'high';
-                } else if (result.quality_score && result.quality_score < 5) {
+                } else if (reviewData.quality_score && reviewData.quality_score < 5) {
                     severity = 'medium';
                 }
 
                 return {
                     severity,
-                    findings: (result.violations || []).map(v => ({
+                    findings: (reviewData.violations || []).map(v => ({
                         file: 'N/A',
                         pattern: v.rule,
                         description: v.description
                     })),
-                    summary: result.summary || 'Meta-review complete',
-                    changeType: result.change_type,
-                    entryTypeMismatch: result.entry_type_mismatch,
-                    missingTestsForFix: result.missing_tests_for_fix,
-                    qualityScore: result.quality_score,
-                    qualityBreakdown: result.quality_breakdown,
-                    criticalIssues: result.critical_issues,
-                    gamingDetected: result.gaming_detected,
-                    systemicFlawDetected: result.systemic_flaw_detected
-                };
-            }
-
-            // Check for transient errors (rate limit, network issue)
-            const isRateLimited = codexStderr.includes('usage_limit_reached') ||
-                codexStderr.includes('429') ||
-                codexStderr.includes('rate limit');
-            const isNetworkIssue = codexStderr.includes('ECONNREFUSED') ||
-                codexStderr.includes('ETIMEDOUT');
-
-            if (isRateLimited || isNetworkIssue) {
-                logWarning('AI review unavailable (rate limit/network). Proceeding without deep review.');
-                return {
-                    severity: 'none',
-                    findings: [],
-                    summary: 'AI review unavailable (rate limit). Basic validation passed.',
-                    rateLimit: true
+                    summary: reviewData.summary || 'Meta-review complete',
+                    changeType: reviewData.change_type,
+                    entryTypeMismatch: reviewData.entry_type_mismatch,
+                    missingTestsForFix: reviewData.missing_tests_for_fix,
+                    qualityScore: reviewData.quality_score,
+                    qualityBreakdown: reviewData.quality_breakdown,
+                    criticalIssues: reviewData.critical_issues,
+                    gamingDetected: reviewData.gaming_detected,
+                    systemicFlawDetected: reviewData.systemic_flaw_detected
                 };
             }
 
             return {
                 severity: 'high',
                 findings: [],
-                summary: 'Codex did not produce COMPLIANCE_REVIEW.json - Manual Code Review REQUIRED (Agent Failed)'
+                summary: 'Provider produced empty result'
             };
+
         } catch (error) {
+            logError(`Review adapter error: ${error.message}`);
             return {
-                severity: 'none',
+                severity: 'high',
                 findings: [],
-                summary: `Codex adapter error: ${error.message} `
+                summary: `Review adapter error: ${error.message}`
             };
         } finally {
             // Keep the sandbox for inspection (user requested this as default)
@@ -631,7 +602,9 @@ Then edit with your assessment. DO NOT SKIP THIS FILE.`;
 const adapters = {
     stub: stubAdapter,
     openai: openaiAdapter,
-    codex: codexAdapter
+    shared: sharedAdapter,
+    // Legacy alias
+    codex: sharedAdapter
 };
 
 // ============================================================================
@@ -639,21 +612,26 @@ const adapters = {
 // ============================================================================
 
 async function selectAdapter(configuredAdapter) {
+    // If HARNESS_PROVIDER env var is set, prefer the shared adapter
+    if (process.env.HARNESS_PROVIDER) {
+        return sharedAdapter;
+    }
+
     // Explicit adapter in config
     if (configuredAdapter && configuredAdapter !== 'auto' && adapters[configuredAdapter]) {
         const adapter = adapters[configuredAdapter];
         if (await adapter.isConfigured()) {
             return adapter;
         }
-        logWarning(`Configured adapter '${configuredAdapter}' is not available, falling back to auto - detection`);
+        logWarning(`Configured adapter '${configuredAdapter}' is not available, falling back to auto-detection`);
     }
 
-    // Auto-detect: prefer Codex CLI if available
-    if (await codexAdapter.isConfigured()) {
-        return codexAdapter;
+    // Auto-detect: prefer shared (which defaults to codex if configured)
+    if (await sharedAdapter.isConfigured()) {
+        return sharedAdapter;
     }
 
-    // Fall back to OpenAI if configured
+    // Fall back to OpenAI if configured (legacy path)
     if (await openaiAdapter.isConfigured()) {
         return openaiAdapter;
     }

@@ -1,5 +1,8 @@
 # Harness Configuration
 
+agents:
+  provider: gemini
+
 # Anti-Gamification Review Layer
 reviewers:
   # Deterministic: tests must fail on base commit when learned entry present

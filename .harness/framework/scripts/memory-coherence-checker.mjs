@@ -9,35 +9,63 @@
  */
 
 import { execSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
-import { join, dirname, basename } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdtempSync } from 'node:fs';
+import { runAgent, log, logError, logSuccess, logWarning, REPO_ROOT, HARNESS_ROOT } from '../lib/agent-runner.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const HARNESS_ROOT = join(__dirname, '..', '..');
-const REPO_ROOT = join(HARNESS_ROOT, '..');
 
 // ============================================================================
-// Utilities
+// Coherence Prompt
 // ============================================================================
 
-function log(msg) {
-    console.log(msg);
+const COHERENCE_PROMPT = `ENVIRONMENT: Use only cat/grep/echo. DO NOT run npm/node commands.
+
+TASK: Check memory entry coherence.
+
+FILES:
+- DIFF.txt: Code changes being committed
+- ENTRIES.txt: Memory entries (marked as [LEARNED] or [DECISION])
+
+RULES:
+1. ENTRY TYPE CORRECTNESS:
+   - "learned" entries are for BUGS/FIXES (something broke, we fixed it)
+   - "decision" entries are for FEATURES/CHANGES (new capability, architectural choice)
+   - If a learned entry describes a NEW FEATURE → flag as "wrong_entry_type"
+   - If a decision entry describes a BUG FIX → flag as "wrong_entry_type"
+
+2. TOPIC COHERENCE:
+   - Each entry should cover ONE logical change
+   - If entry mixes multiple UNRELATED changes → flag as "multiple_topics"
+   - Exception: Related changes (e.g., fix + test for that fix) are OK together
+   - If multiple topics are properly linked via "## Related" section → OK
+
+3. Check each entry and report issues.
+
+MANDATORY: Create COHERENCE.json:
+{
+  "entries_checked": ["list of entry file paths"],
+  "issues": [
+    {
+      "file": "path/to/entry.md",
+      "issue_type": "wrong_entry_type | multiple_topics | missing_links",
+      "description": "what's wrong",
+      "suggestion": "how to fix"
+    }
+  ],
+  "all_coherent": true
 }
 
-function logError(msg) {
-    console.error(`\x1b[31m✗ ${msg}\x1b[0m`);
-}
+- If no issues found, set all_coherent=true and issues=[]
+- Be pragmatic: minor bundling of closely-related fixes is fine
 
-function logSuccess(msg) {
-    console.log(`\x1b[32m✓ ${msg}\x1b[0m`);
-}
+Run: echo '{JSON}' > COHERENCE.json`;
 
-function logWarning(msg) {
-    console.log(`\x1b[33m⚠ ${msg}\x1b[0m`);
-}
+// ============================================================================
+// Helpers
+// ============================================================================
 
 function getChangedLearnedEntries() {
     try {
@@ -102,121 +130,51 @@ async function main() {
         }
     }
 
-    // Create sandbox
-    const sandboxBase = join(REPO_ROOT, 'harness-tests', 'simulation', 'temp');
-    if (!existsSync(sandboxBase)) {
-        mkdirSync(sandboxBase, { recursive: true });
-    }
-    const sandboxDir = mkdtempSync(join(sandboxBase, 'coherence-'));
-
-    // Write files to sandbox
-    writeFileSync(join(sandboxDir, 'DIFF.txt'), diff || 'No diff available');
-    writeFileSync(join(sandboxDir, 'ENTRIES.txt'), entryContents);
-
-    const prompt = `ENVIRONMENT: Use only cat/grep/echo. DO NOT run npm/node commands.
-
-TASK: Check memory entry coherence.
-
-FILES:
-- DIFF.txt: Code changes being committed
-- ENTRIES.txt: Memory entries (marked as [LEARNED] or [DECISION])
-
-RULES:
-1. ENTRY TYPE CORRECTNESS:
-   - "learned" entries are for BUGS/FIXES (something broke, we fixed it)
-   - "decision" entries are for FEATURES/CHANGES (new capability, architectural choice)
-   - If a learned entry describes a NEW FEATURE → flag as "wrong_entry_type"
-   - If a decision entry describes a BUG FIX → flag as "wrong_entry_type"
-
-2. TOPIC COHERENCE:
-   - Each entry should cover ONE logical change
-   - If entry mixes multiple UNRELATED changes → flag as "multiple_topics"
-   - Exception: Related changes (e.g., fix + test for that fix) are OK together
-   - If multiple topics are properly linked via "## Related" section → OK
-
-3. Check each entry and report issues.
-
-MANDATORY: Create COHERENCE.json:
-{
-  "entries_checked": ["list of entry file paths"],
-  "issues": [
-    {
-      "file": "path/to/entry.md",
-      "issue_type": "wrong_entry_type | multiple_topics | missing_links",
-      "description": "what's wrong",
-      "suggestion": "how to fix"
-    }
-  ],
-  "all_coherent": true
-}
-
-- If no issues found, set all_coherent=true and issues=[]
-- Be pragmatic: minor bundling of closely-related fixes is fine
-
-Run: echo '{JSON}' > COHERENCE.json`;
-
-    writeFileSync(join(sandboxDir, 'PROMPT.txt'), prompt);
-
-    // Invoke Codex
     log('Analyzing entry coherence...\n');
 
-    let codexOutput = '';
-    let codexStderr = '';
-    try {
-        codexOutput = execSync(
-            `codex exec -s workspace-write -c model_reasoning_effort="low" -m gpt-5.1-codex-mini --skip-git-repo-check -C "${sandboxDir}" -`,
-            {
-                cwd: sandboxDir,
-                encoding: 'utf-8',
-                timeout: 120000,
-                stdio: ['pipe', 'pipe', 'pipe'],
-                input: prompt
-            }
-        );
-    } catch (error) {
-        codexOutput = error.stdout || '';
-        codexStderr = error.stderr || '';
-        if (codexStderr) {
-            logError(`Codex stderr: ${codexStderr.slice(0, 500)}`);
-        }
+    // Use the shared agent runner
+    const agentResult = await runAgent({
+        name: 'coherence',
+        files: {
+            'DIFF.txt': diff || 'No diff available',
+            'ENTRIES.txt': entryContents
+        },
+        prompt: COHERENCE_PROMPT,
+        outputFile: 'COHERENCE.json',
+        providerConfig: { timeout: 120000 }
+    });
+
+    // Handle result - ALL failures block, no exceptions
+    if (agentResult.rateLimited) {
+        logError('AI review unavailable (rate limit/network). Cannot proceed.');
+        logError(`Sandbox preserved: ${agentResult.sandboxDir}`);
+        process.exit(1);
     }
 
-    // Save debug output
-    writeFileSync(join(sandboxDir, 'CODEX_STDOUT.txt'), codexOutput);
-    writeFileSync(join(sandboxDir, 'CODEX_STDERR.txt'), codexStderr);
+    if (!agentResult.success) {
+        logError('Agent did not produce COHERENCE.json. Cannot verify entry coherence.');
+        logError(`Sandbox preserved at: ${agentResult.sandboxDir}`);
+        process.exit(1);
+    }
 
-    log(`Sandbox: ${sandboxDir}`);
+    const result = agentResult.result;
+    log('--- Coherence Analysis ---\n');
+    log(`Entries Checked: ${result.entries_checked?.length || 0}`);
 
-    // Read result
-    const resultPath = join(sandboxDir, 'COHERENCE.json');
-    if (existsSync(resultPath)) {
-        const result = JSON.parse(readFileSync(resultPath, 'utf-8'));
-
-        log('--- Coherence Analysis ---\n');
-        log(`Entries Checked: ${result.entries_checked?.length || 0}`);
-
-        if (result.issues && result.issues.length > 0) {
-            log(`\nIssues Found: ${result.issues.length}`);
-            for (const issue of result.issues) {
-                logWarning(`[${issue.issue_type}] ${issue.file}`);
-                log(`  ${issue.description}`);
-                if (issue.suggestion) {
-                    log(`  → ${issue.suggestion}`);
-                }
+    if (result.issues && result.issues.length > 0) {
+        log(`\nIssues Found: ${result.issues.length}`);
+        for (const issue of result.issues) {
+            logWarning(`[${issue.issue_type}] ${issue.file}`);
+            log(`  ${issue.description}`);
+            if (issue.suggestion) {
+                log(`  → ${issue.suggestion}`);
             }
-            log('\nFix the issues above or add justification.');
-            process.exit(1);
-        } else {
-            logSuccess('All entries are coherent');
-            process.exit(0);
         }
+        log('\nFix the issues above or add justification.');
+        process.exit(1);
     } else {
-        logWarning('Agent did not produce COHERENCE.json - manual review recommended');
-        log(`Sandbox preserved at: ${sandboxDir}`);
-        if (codexOutput) {
-            log(`\nCodex output preview:\n${codexOutput.slice(0, 500)}`);
-        }
-        process.exit(0); // Don't fail, just warn
+        logSuccess('All entries are coherent');
+        process.exit(0);
     }
 }
 

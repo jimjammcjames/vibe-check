@@ -5,111 +5,22 @@
  * 
  * A focused agent that ONLY checks if all changes in the diff
  * are covered by corresponding learned/decision entries.
- * 
- * This is separate from the compliance review agent to improve reliability.
  */
 
 import { execSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { runAgent, log, logError, logSuccess, logWarning, REPO_ROOT, HARNESS_ROOT } from '../lib/agent-runner.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const HARNESS_ROOT = join(__dirname, '..', '..');
-const REPO_ROOT = join(HARNESS_ROOT, '..');
 
 // ============================================================================
-// Utilities
+// Detector Prompt
 // ============================================================================
 
-function log(msg) {
-    console.log(msg);
-}
-
-function logError(msg) {
-    console.error(`\x1b[31m✗ ${msg}\x1b[0m`);
-}
-
-function logSuccess(msg) {
-    console.log(`\x1b[32m✓ ${msg}\x1b[0m`);
-}
-
-function logWarning(msg) {
-    console.log(`\x1b[33m⚠ ${msg}\x1b[0m`);
-}
-
-// ============================================================================
-// Main
-// ============================================================================
-
-async function main() {
-    log('\n\x1b[36m=== Undocumented Changes Detector ===\x1b[0m\n');
-
-    // Get diff - compare against origin/main to see all uncommitted work
-    // This avoids false positives from already-committed changes
-    let diff = '';
-    try {
-        // First try staged + unstaged against origin/main
-        diff = execSync('git diff origin/main', { cwd: REPO_ROOT, encoding: 'utf-8' });
-    } catch {
-        try {
-            // Fall back to staged changes only
-            diff = execSync('git diff --cached', { cwd: REPO_ROOT, encoding: 'utf-8' });
-        } catch {
-            log('No diff available');
-            process.exit(0);
-        }
-    }
-
-    if (!diff.trim()) {
-        logSuccess('No changes to check');
-        process.exit(0);
-    }
-
-    // Get learned entries content
-    const learnedDir = join(HARNESS_ROOT, 'context', 'learned');
-    let memoryContent = '';
-    if (existsSync(learnedDir)) {
-        const files = execSync(`find "${learnedDir}" -name "*.md" -type f`, { encoding: 'utf-8' })
-            .trim().split('\n').filter(Boolean);
-
-        for (const file of files) {
-            if (file.endsWith('TIMELINE.md')) continue;
-            try {
-                memoryContent += `\n### [LEARNED] ${file}\n${readFileSync(file, 'utf-8')}\n`;
-            } catch { }
-        }
-    }
-
-    // Get decision entries content
-    const decisionsDir = join(HARNESS_ROOT, 'context', 'decisions');
-    if (existsSync(decisionsDir)) {
-        const files = execSync(`find "${decisionsDir}" -name "*.md" -type f`, { encoding: 'utf-8' })
-            .trim().split('\n').filter(Boolean);
-
-        for (const file of files) {
-            if (file.endsWith('TIMELINE.md')) continue;
-            try {
-                memoryContent += `\n### [DECISION] ${file}\n${readFileSync(file, 'utf-8')}\n`;
-            } catch { }
-        }
-    }
-
-    // Create sandbox
-    const sandboxBase = join(REPO_ROOT, 'harness-tests', 'simulation', 'temp');
-    if (!existsSync(sandboxBase)) {
-        mkdirSync(sandboxBase, { recursive: true });
-    }
-    const sandboxDir = mkdtempSync(join(sandboxBase, 'undocumented-'));
-
-    // Write files to sandbox
-    writeFileSync(join(sandboxDir, 'DIFF.txt'), diff);
-    writeFileSync(join(sandboxDir, 'MEMORY_ENTRIES.txt'), memoryContent || 'No memory entries found');
-
-    const prompt = `ENVIRONMENT: Use only cat/grep/echo. DO NOT run npm/node commands.
+const DETECTOR_PROMPT = `ENVIRONMENT: Use only cat/grep/echo. DO NOT run npm/node commands.
 
 TASK: Detect undocumented CODE changes.
 
@@ -153,70 +64,106 @@ MANDATORY: Create RESULT.json:
 
 Run: echo '{JSON}' > RESULT.json`;
 
-    writeFileSync(join(sandboxDir, 'PROMPT.txt'), prompt);
+// ============================================================================
+// Main
+// ============================================================================
 
-    // Invoke Codex
-    log('Analyzing changes for documentation coverage...\n');
+async function main() {
+    log('\n\x1b[36m=== Undocumented Changes Detector ===\x1b[0m\n');
 
-    let codexOutput = '';
-    let codexStderr = '';
+    // Get diff
+    let diff = '';
     try {
-        codexOutput = execSync(
-            `codex exec -s workspace-write -c model_reasoning_effort="low" -m gpt-5.1-codex-mini --skip-git-repo-check -C "${sandboxDir}" -`,
-            {
-                cwd: sandboxDir,
-                encoding: 'utf-8',
-                timeout: 120000,
-                stdio: ['pipe', 'pipe', 'pipe'],
-                input: prompt
-            }
-        );
-    } catch (error) {
-        codexOutput = error.stdout || '';
-        codexStderr = error.stderr || '';
-        if (codexStderr) {
-            logError(`Codex stderr: ${codexStderr.slice(0, 500)}`);
+        diff = execSync('git diff origin/main', { cwd: REPO_ROOT, encoding: 'utf-8' });
+    } catch {
+        try {
+            diff = execSync('git diff --cached', { cwd: REPO_ROOT, encoding: 'utf-8' });
+        } catch {
+            log('No diff available');
+            process.exit(0);
         }
     }
 
-    // Save debug output
-    writeFileSync(join(sandboxDir, 'CODEX_STDOUT.txt'), codexOutput);
-    writeFileSync(join(sandboxDir, 'CODEX_STDERR.txt'), codexStderr);
+    if (!diff.trim()) {
+        logSuccess('No changes to check');
+        process.exit(0);
+    }
 
-    log(`Codex output saved to: ${sandboxDir}`);
+    // Get learned entries content
+    const learnedDir = join(HARNESS_ROOT, 'context', 'learned');
+    let memoryContent = '';
+    if (existsSync(learnedDir)) {
+        const files = execSync(`find "${learnedDir}" -name "*.md" -type f`, { encoding: 'utf-8' })
+            .trim().split('\n').filter(Boolean);
 
-    // Read result
-    const resultPath = join(sandboxDir, 'RESULT.json');
-    if (existsSync(resultPath)) {
-        const result = JSON.parse(readFileSync(resultPath, 'utf-8'));
-
-        log('--- Change Coverage Analysis ---\n');
-        log(`Change Clusters Found: ${result.change_clusters_found?.length || 0}`);
-        if (result.change_clusters_found) {
-            result.change_clusters_found.forEach(c => log(`  • ${c}`));
+        for (const file of files) {
+            if (file.endsWith('TIMELINE.md')) continue;
+            try {
+                memoryContent += `\n### [LEARNED] ${file}\n${readFileSync(file, 'utf-8')}\n`;
+            } catch { }
         }
+    }
 
-        log(`\nDocumented: ${result.documented_clusters?.length || 0}`);
-        log(`Undocumented: ${result.undocumented_clusters?.length || 0}`);
+    // Get decision entries content
+    const decisionsDir = join(HARNESS_ROOT, 'context', 'decisions');
+    if (existsSync(decisionsDir)) {
+        const files = execSync(`find "${decisionsDir}" -name "*.md" -type f`, { encoding: 'utf-8' })
+            .trim().split('\n').filter(Boolean);
 
-        if (result.undocumented_clusters && result.undocumented_clusters.length > 0) {
-            log('\n\x1b[33mUndocumented changes detected:\x1b[0m');
-            result.undocumented_clusters.forEach(c => logWarning(c));
-            log('\nCreate learned entries for these changes:');
-            log('  npm run harness:new:learned -- --slug "descriptive-slug"');
-            process.exit(1);
-        } else {
-            logSuccess('All changes are documented');
-            process.exit(0);
+        for (const file of files) {
+            if (file.endsWith('TIMELINE.md')) continue;
+            try {
+                memoryContent += `\n### [DECISION] ${file}\n${readFileSync(file, 'utf-8')}\n`;
+            } catch { }
         }
+    }
+
+    log('Analyzing changes for documentation coverage...\n');
+
+    // Use the shared agent runner
+    const agentResult = await runAgent({
+        name: 'undocumented',
+        files: {
+            'DIFF.txt': diff,
+            'MEMORY_ENTRIES.txt': memoryContent || 'No memory entries found'
+        },
+        prompt: DETECTOR_PROMPT,
+        outputFile: 'RESULT.json',
+        providerConfig: { timeout: 120000 }
+    });
+
+    // Handle result - ALL failures block, no exceptions
+    if (agentResult.rateLimited) {
+        logError('AI review unavailable (rate limit/network). Cannot proceed.');
+        logError(`Sandbox preserved: ${agentResult.sandboxDir}`);
+        process.exit(1);
+    }
+
+    if (!agentResult.success) {
+        logError('Agent did not produce RESULT.json. Cannot verify documentation.');
+        logError(`Sandbox preserved at: ${agentResult.sandboxDir}`);
+        process.exit(1);
+    }
+
+    const result = agentResult.result;
+    log('--- Change Coverage Analysis ---\n');
+    log(`Change Clusters Found: ${result.change_clusters_found?.length || 0}`);
+    if (result.change_clusters_found) {
+        result.change_clusters_found.forEach(c => log(`  • ${c}`));
+    }
+
+    log(`\nDocumented: ${result.documented_clusters?.length || 0}`);
+    log(`Undocumented: ${result.undocumented_clusters?.length || 0}`);
+
+    if (result.undocumented_clusters && result.undocumented_clusters.length > 0) {
+        log('\n\x1b[33mUndocumented changes detected:\x1b[0m');
+        result.undocumented_clusters.forEach(c => logWarning(c));
+        log('\nCreate learned entries for these changes:');
+        log('  npm run harness:new:learned -- --slug "descriptive-slug"');
+        process.exit(1);
     } else {
-        logWarning('Agent did not produce RESULT.json - manual review recommended');
-        log(`Sandbox preserved at: ${sandboxDir}`);
-        // Show first 500 chars of output for debugging
-        if (codexOutput) {
-            log(`\nCodex output preview:\n${codexOutput.slice(0, 500)}`);
-        }
-        process.exit(0); // Don't fail, just warn
+        logSuccess('All changes are documented');
+        process.exit(0);
     }
 }
 
