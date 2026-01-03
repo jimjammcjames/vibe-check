@@ -28,6 +28,7 @@ stages:
   post:
     - command: "npm test"
     - command: "node .harness/framework/scripts/policy-audit.mjs"
+    - command: "node .harness/framework/scripts/harness-guardian.mjs"
     - command: "node .harness/framework/scripts/undocumented-detector.mjs"
     - command: "node .harness/framework/scripts/memory-coherence-checker.mjs"
     - command: "node .harness/framework/scripts/base-tripwire.mjs"
@@ -39,6 +40,7 @@ stages:
     - command: "npx tsc --noEmit"
     - command: "npm test"
     - command: "node .harness/framework/scripts/policy-audit.mjs"
+    - command: "node .harness/framework/scripts/harness-guardian.mjs"
     - command: "node .harness/framework/scripts/undocumented-detector.mjs"
     - command: "node .harness/framework/scripts/memory-coherence-checker.mjs"
     - command: "node .harness/framework/scripts/base-tripwire.mjs"

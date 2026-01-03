@@ -327,6 +327,7 @@ function cmdIterate() {
 function isParallelizableAgent(command) {
     return command.includes('undocumented-detector') ||
         command.includes('memory-coherence-checker') ||
+        command.includes('harness-guardian') ||
         command.includes('review-adapter');
 }
 
@@ -539,6 +540,36 @@ NONE
     log('\nDon\'t forget to fill in the Search terms, Related, and Tags fields');
 }
 
+function cmdNewMeta(slug) {
+    const date = new Date().toISOString().slice(0, 10);
+    const filename = `${date}-${slug}.md`;
+    const targetDir = join(HARNESS_ROOT, 'context', 'decisions', 'harness');
+    const targetPath = join(targetDir, filename);
+    const templatePath = join(HARNESS_ROOT, 'framework', 'templates', 'harness-decision.md');
+
+    if (!existsSync(targetDir)) {
+        mkdirSync(targetDir, { recursive: true });
+    }
+
+    if (existsSync(targetPath)) {
+        logError(`File already exists: ${targetPath}`);
+        process.exit(1);
+    }
+
+    if (!existsSync(templatePath)) {
+        logError(`Template not found: ${templatePath}`);
+        process.exit(1);
+    }
+
+    let template = readFileSync(templatePath, 'utf-8');
+    template = template.replace(/{{date}}/g, date);
+    template = template.replace(/{{slug}}/g, slug);
+
+    writeFileSync(targetPath, template);
+    logSuccess(`Created: ${targetPath}`);
+    log('\nDon\'t forget to complete the Security & Integrity Impact section');
+}
+
 // ============================================================================
 // Main
 // ============================================================================
@@ -595,6 +626,14 @@ switch (command) {
         cmdNewDecision(slug);
         break;
 
+    case 'new:meta':
+        if (!slug) {
+            logError('Usage: harness new:meta --slug <slug>');
+            process.exit(1);
+        }
+        cmdNewMeta(slug);
+        break;
+
     default:
         log('Harness CLI');
         log('');
@@ -608,6 +647,7 @@ switch (command) {
         log('  review            Anti-gamification review (tripwire + adapter)');
         log('  new:learned       Create a learned entry');
         log('  new:decision      Create a decision entry');
+        log('  new:meta          Create a harness meta-decision entry');
         log('');
         log('Options:');
         log('  --verbose, -v     Print full output (default: quiet, prints only on failure)');

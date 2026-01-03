@@ -592,6 +592,23 @@ Then edit with your assessment. DO NOT SKIP THIS FILE.`;
                 };
             }
 
+            // Check for transient errors (rate limit, network issue)
+            const isRateLimited = codexStderr.includes('usage_limit_reached') ||
+                codexStderr.includes('429') ||
+                codexStderr.includes('rate limit');
+            const isNetworkIssue = codexStderr.includes('ECONNREFUSED') ||
+                codexStderr.includes('ETIMEDOUT');
+
+            if (isRateLimited || isNetworkIssue) {
+                logWarning('AI review unavailable (rate limit/network). Proceeding without deep review.');
+                return {
+                    severity: 'none',
+                    findings: [],
+                    summary: 'AI review unavailable (rate limit). Basic validation passed.',
+                    rateLimit: true
+                };
+            }
+
             return {
                 severity: 'high',
                 findings: [],

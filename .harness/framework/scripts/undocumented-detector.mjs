@@ -111,25 +111,41 @@ async function main() {
 
     const prompt = `ENVIRONMENT: Use only cat/grep/echo. DO NOT run npm/node commands.
 
-TASK: Detect undocumented changes.
+TASK: Detect undocumented CODE changes.
 
 FILES:
-- DIFF.txt: All code changes
+- DIFF.txt: All changes (code and documentation)
 - MEMORY_ENTRIES.txt: Existing documentation (both [LEARNED] and [DECISION] entries)
 
-INSTRUCTIONS:
-1. Read DIFF.txt and identify distinct LOGICAL CHANGE CLUSTERS
-   (e.g., "error handling improvements", "model validation", "test additions")
+CRITICAL DISTINCTION:
+- "Documentation files" = README.md, markdown files describing the project, LICENSE
+- "Code files" = .js, .ts, .mjs, .py, .yml config, harness scripts, etc.
 
-2. Read MEMORY_ENTRIES.txt and check which clusters are documented
+WHAT NEEDS LEARNED/DECISION ENTRIES:
+- Bug fixes, new features, architectural decisions in CODE files
+- Changes to harness framework scripts (.harness/framework/*) - these are code!
+- Changes to config files that affect behavior
+
+WHAT DOES NOT NEED ENTRIES:
+- Updates to README.md that only explain existing functionality
+- Purely cosmetic markdown formatting changes
+- Documentation that doesn't introduce new code behavior
+
+INSTRUCTIONS:
+1. Read DIFF.txt and identify distinct LOGICAL CODE CHANGE CLUSTERS
+   (e.g., "error handling improvements", "model validation", "new API endpoint")
+   
+2. SKIP any clusters that are purely documentation updates (README changes, markdown reformatting)
+
+3. Read MEMORY_ENTRIES.txt and check which CODE clusters are documented
    - LEARNED entries document bug fixes
    - DECISION entries document new features/architectural choices
 
-3. List any clusters that appear in DIFF but NOT in MEMORY_ENTRIES
+4. List any CODE clusters that appear in DIFF but NOT in MEMORY_ENTRIES
 
 MANDATORY: Create RESULT.json:
 {
-  "change_clusters_found": ["list of distinct changes in diff"],
+  "change_clusters_found": ["list of distinct CODE changes in diff"],
   "documented_clusters": ["which ones have entries"],
   "undocumented_clusters": ["which ones are MISSING entries"],
   "all_documented": true

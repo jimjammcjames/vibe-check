@@ -218,10 +218,17 @@ function createWorktree(baseRef) {
     const worktreePath = mkdtempSync(join(tmpdir(), 'harness-tripwire-'));
 
     try {
+        // Unset GIT_INDEX_FILE and GIT_DIR to avoid conflicts with commit hooks.
+        // During a commit, Git sets these env vars which can interfere with worktree creation.
+        const cleanEnv = { ...process.env };
+        delete cleanEnv.GIT_INDEX_FILE;
+        delete cleanEnv.GIT_DIR;
+
         execSync(`git worktree add --detach "${worktreePath}" ${baseRef}`, {
             cwd: REPO_ROOT,
             encoding: 'utf-8',
-            stdio: ['pipe', 'pipe', 'pipe']
+            stdio: ['pipe', 'pipe', 'pipe'],
+            env: cleanEnv
         });
         return worktreePath;
     } catch (error) {

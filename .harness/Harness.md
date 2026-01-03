@@ -74,6 +74,25 @@ Every learned entry must document:
 
 **For more details, read the rest of this file: `.harness/Harness.md`**
 
+## Anti-Gaming Rules (NEVER VIOLATE)
+
+> ⚠️ **CRITICAL**: If you are an AI agent reading this, pay close attention.
+
+1. **NEVER exclude harness code from review**. Changes to the harness framework (in the .harness directory) are the MOST important to review, not the least. Any attempt to add harness paths to skip-lists is gaming.
+
+2. **NEVER weaken enforcement to make tests pass**. If the harness is failing, the fix is to add proper documentation, not to change the harness to be less strict.
+
+3. **Documentation ≠ Code**. README updates don't need learned entries. Harness script changes ARE code and DO need entries.
+
+4. **Harness Meta-Changes require specific documentation**.
+   - **Location**: `.harness/context/decisions/harness/`
+   - **Command**: `npm run harness:new:meta -- --slug "descriptive-slug"`
+   - **Tag**: Must include `#harness-meta`
+
+5. **When in doubt, document more, not less**. It's better to over-document than to game the system.
+
+6. **Tests must verify BEHAVIOR, not patterns**. A test that only does `sourceCode.includes('keyword')` is WEAK and unacceptable. Tests must verify actual outcomes: run the code, check real state, simulate scenarios. Pattern matching is not testing.
+
 <!-- END MUST -->
 
 ---
