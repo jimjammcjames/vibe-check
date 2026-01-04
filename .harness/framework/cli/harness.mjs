@@ -25,6 +25,11 @@ const REPO_ROOT = join(HARNESS_ROOT, '..');
 // Global verbose flag - default to quiet mode
 const VERBOSE = process.argv.includes('--verbose') || process.argv.includes('-v');
 
+// Set environment for child processes
+if (!VERBOSE) {
+    process.env.HARNESS_QUIET = '1';
+}
+
 // ============================================================================
 // Utilities
 // ============================================================================
@@ -201,42 +206,86 @@ function runCommand(command, files = 'all') {
             const duration = Date.now() - start;
             return { success: true, output: '', duration };
         } else {
-            // Quiet mode: capture output, print summary lines on success
+            // Quiet mode: capture output, print ONLY essential status
             const output = execSync(command, {
                 cwd: REPO_ROOT,
                 encoding: 'utf-8',
                 shell: true
             });
 
-            // Extract and print key result lines (✓ or ✗ or "---" sections)
-            const importantLines = output.split('\n').filter(line =>
-                line.includes('✓') ||
-                line.includes('✗') ||
-                line.includes('⚠️') ||
-                line.includes('PASS') ||
-                line.includes('FAIL') ||
-                line.includes('Severity:') ||
-                line.includes('Change Type:') ||
-                line.includes('Quality Score:') ||
-                line.includes('Why not 10:') ||
-                line.includes('Gaming Detected:') ||
-                line.includes('Critical Issues:') ||
-                line.includes('Summary:') ||
-                line.includes('--- Agent')
-            );
-            if (importantLines.length > 0) {
-                log(importantLines.join('\n'));
+            // Extract only the most essential lines
+            const lines = output.split('\n');
+            const essentialLines = lines.filter(line => {
+                const trimmed = line.trim();
+                // Only show: Rule pass/fail, Verdict, final summary
+                return (
+                    (trimmed.startsWith('✓ Rule') || trimmed.startsWith('✗ Rule')) ||
+                    trimmed.startsWith('✓ Policy') ||
+                    trimmed.startsWith('✓ All changes') ||
+                    trimmed.startsWith('✓ All entries') ||
+                    trimmed.includes('Verdict:') ||
+                    trimmed.startsWith('Severity:') ||
+                    trimmed.startsWith('✗ Review failed') ||
+                    trimmed.includes('INTEGRITY BREACH')
+                );
+            });
+
+            if (essentialLines.length > 0) {
+                log(essentialLines.join('\n'));
             }
 
             return { success: true, output, duration: Date.now() - start };
         }
         let out = ''; // capture for scope
     } catch (error) {
-        // On failure, always print the command and full output
-        log(`\n\x1b[90m$ ${command}\x1b[0m`);
-        if (error.stdout) log(error.stdout.toString());
-        if (error.stderr) log(error.stderr.toString());
-        return { success: false, output: error.stdout?.toString() || '', duration: Date.now() - start };
+        // On failure, print only the agent's response unless verbose
+        const stdout = error.stdout?.toString() || '';
+        const stderr = error.stderr?.toString() || '';
+
+        if (VERBOSE) {
+            log(`\n\x1b[90m$ ${command}\x1b[0m`);
+            if (stdout) log(stdout);
+            if (stderr) log(stderr);
+        } else {
+            // In quiet mode, show ONLY agent responses and key results
+            const combined = stdout + stderr;
+            const lines = combined.split('\n');
+
+            // Only keep agent output lines
+            const relevantLines = lines.filter(line => {
+                const t = line.trim();
+                if (!t) return false;
+
+                // Agent response markers
+                if (t.startsWith('Verdict:')) return true;
+                if (t.startsWith('Reasoning:')) return true;
+                if (t.startsWith('Severity:')) return true;
+                if (t.startsWith('Summary:')) return true;
+                if (t.startsWith('Change Type:')) return true;
+                if (t.startsWith('Quality Score:')) return true;
+                if (t.includes('Why not 10:')) return true;
+                if (t.startsWith('Gaming Detected:')) return true;
+                if (t.startsWith('Critical Issues:')) return true;
+
+                // Key status markers
+                if (t.startsWith('✗')) return true;
+                if (t.startsWith('⚠')) return true;
+                if (t.includes('INTEGRITY BREACH')) return true;
+                if (t.includes('Review failed')) return true;
+                if (t.includes('Policy audit')) return true;
+
+                // Test summary only (not individual tests)
+                if (t.startsWith('# tests')) return true;
+                if (t.startsWith('# fail') && !t.includes('# fail 0')) return true;
+
+                return false;
+            });
+
+            if (relevantLines.length > 0) {
+                log(relevantLines.join('\n'));
+            }
+        }
+        return { success: false, output: stdout, duration: Date.now() - start };
     }
 }
 
@@ -336,7 +385,9 @@ function isParallelizableAgent(command) {
 
 async function cmdPost() {
     log('\n\x1b[36m=== harness:post ===\x1b[0m');
-    log('Running aggressive parallel verification...\n');
+    if (VERBOSE) {
+        log('Running verification (verbose)...\n');
+    }
 
     const config = loadConfig();
     const stage = config.stages.post || [];

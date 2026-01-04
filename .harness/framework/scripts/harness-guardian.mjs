@@ -44,7 +44,7 @@ INSTRUCTIONS:
 2. Verify META_ENTRY.txt documents the rationale.
 3. If changes are performance-related, refactoring, or strengthening validation, that is NOT gaming.
 
-MANDATORY: Create RESULT.json:
+MANDATORY: Create GUARDIAN_RESULT.json:
 {
   "verdict": "pass" | "fail",
   "reasoning": "detailed explanation of your judgment",
@@ -88,7 +88,7 @@ async function main() {
         process.exit(0);
     }
 
-    log(`Modifications to harness core detected:\n${harnessWork.map(f => `  - ${f}`).join('\n')}\n`);
+    log(`Modifications to harness core detected (${harnessWork.length} files)...`);
 
     // Verify Meta-Entry exists in the correct folder with the correct tag
     const metaDir = join(HARNESS_ROOT, 'context', 'decisions', 'harness');
@@ -148,7 +148,7 @@ async function main() {
             'RULES.txt': harnessRules
         },
         prompt: GUARDIAN_PROMPT,
-        outputFile: 'RESULT.json'
+        outputFile: 'GUARDIAN_RESULT.json'
     });
 
     // Handle result - ALL failures block, no exceptions
@@ -163,16 +163,19 @@ async function main() {
     }
 
     const result = agentResult.result;
-    log('--- Integrity Review Result ---\n');
-    log(`Verdict: ${result.verdict === 'pass' ? '\x1b[32mPASS\x1b[0m' : '\x1b[31mFAIL\x1b[0m'}`);
-    log(`Reasoning: ${result.reasoning}`);
 
-    if (result.verdict === 'fail' || result.gaming_detected) {
-        logError('\nINTEGRITY BREACH DETECTED: ACCESS DENIED');
-        process.exit(1);
+    // Normalize verdict to lowercase for comparison
+    const verdict = (result.verdict || '').toLowerCase();
+    const isPassing = verdict === 'pass' && !result.gaming_detected;
+
+    if (isPassing) {
+        logSuccess('Integrity verified');
     } else {
-        logSuccess('\nIntegrity verified. Harness modification approved.');
-        process.exit(0);
+        // Always show full agent response on failure (bypass quiet mode)
+        console.log('--- Integrity Review Result ---');
+        console.log(JSON.stringify(result, null, 2));
+        logError('INTEGRITY BREACH DETECTED: ACCESS DENIED');
+        process.exit(1);
     }
 }
 

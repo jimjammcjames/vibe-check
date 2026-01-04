@@ -24,8 +24,10 @@ const REPO_ROOT = join(HARNESS_ROOT, '..');
 // Utilities
 // ============================================================================
 
+const QUIET = process.env.HARNESS_QUIET === '1';
+
 function log(msg) {
-    console.log(msg);
+    if (!QUIET) console.log(msg);
 }
 
 function logError(msg) {

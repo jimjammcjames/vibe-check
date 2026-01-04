@@ -19,11 +19,13 @@ const REPO_ROOT = join(HARNESS_ROOT, '..');
 // Utilities
 // ============================================================================
 
-function log(msg) { console.log(msg); }
-function logError(msg) { console.error(`\x1b[31m✗ ${msg}\x1b[0m`); }
-function logSuccess(msg) { console.log(`\x1b[32m✓ ${msg}\x1b[0m`); }
-function logWarning(msg) { console.log(`\x1b[33m⚠ ${msg}\x1b[0m`); }
-function logInfo(msg) { console.log(`\x1b[36mℹ ${msg}\x1b[0m`); }
+const QUIET = process.env.HARNESS_QUIET === '1';
+
+function log(msg) { if (!QUIET) console.log(msg); }
+function logError(msg) { console.error(`\x1b[31m✗ ${msg}\x1b[0m`); }  // Always show errors
+function logSuccess(msg) { console.log(`\x1b[32m✓ ${msg}\x1b[0m`); }  // Always show success
+function logWarning(msg) { console.log(`\x1b[33m⚠ ${msg}\x1b[0m`); }  // Always show warnings
+function logInfo(msg) { if (!QUIET) console.log(`\x1b[36mℹ ${msg}\x1b[0m`); }
 
 /**
  * Load harness config

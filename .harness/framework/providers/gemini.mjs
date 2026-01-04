@@ -46,34 +46,28 @@ export const geminiProvider = {
      * @param {object} options.config - Provider config overrides
      * @returns {object} { success, result, stdout, stderr, error }
      */
-    async invoke({ prompt, sandboxDir, outputFile, config = {} }) {
+    async invoke({ prompt, files = {}, outputFile, config = {} }) {
         const cfg = { ...DEFAULT_CONFIG, ...config };
 
-        // Build the context by reading staged files
-        let contextFiles = '';
-        try {
-            let files;
-            if (cfg.diffOnly) {
-                // Only read the diff file
-                files = ['HARNESS_DIFF.txt'];
-            } else {
-                files = execSync(`ls -1 "${sandboxDir}"`, { encoding: 'utf-8' })
-                    .trim().split('\n').filter(f => f && !f.startsWith('PROVIDER_') && !f.startsWith('PROMPT'));
-            }
+        // Create a temporary sandbox for debug logs
+        const tempDir = execSync('mktemp -d -t harness-gemini-XXXXXX', { encoding: 'utf-8' }).trim();
 
-            for (const file of files) {
-                const filePath = join(sandboxDir, file);
-                if (existsSync(filePath)) {
-                    const content = readFileSync(filePath, 'utf-8');
-                    contextFiles += `\n\n=== ${file} ===\n${content}`;
+        // Build the context from in-memory files
+        let contextFiles = '';
+        if (cfg.diffOnly) {
+            // Only include HARNESS_DIFF.txt if present
+            if (files['HARNESS_DIFF.txt']) {
+                contextFiles += `\n\n=== HARNESS_DIFF.txt ===\n${files['HARNESS_DIFF.txt']}`;
+            }
+        } else {
+            for (const [filename, content] of Object.entries(files)) {
+                if (content) {
+                    contextFiles += `\n\n=== ${filename} ===\n${content}`;
                 }
             }
-        } catch (e) {
-            // No files to read, that's fine
         }
 
-        // Build the enhanced prompt with file contents inline
-        // Since Gemini doesn't write files, we need JSON in response
+        // Build the enhanced prompt
         const jsonOutputName = outputFile.replace('.json', '');
         const enhancedPrompt = `${prompt}
 
@@ -84,7 +78,7 @@ You MUST respond with ONLY valid JSON matching the ${jsonOutputName} schema desc
 Do NOT include any explanation, markdown formatting, or code blocks.
 Output ONLY the raw JSON object, nothing else.`;
 
-        // Hardcoded to gemini-3-flash-preview as requested
+        // Hardcoded model
         const modelName = 'gemini-3-flash-preview';
 
         let stdout = '';
@@ -92,17 +86,15 @@ Output ONLY the raw JSON object, nothing else.`;
         let exitCode = 0;
 
         try {
-            // Use gemini CLI with stdin piping to avoid shell escaping issues
-            // Use -m flag to select the model
             stdout = execSync(
                 `gemini -m "${modelName}"`,
                 {
-                    cwd: sandboxDir,
+                    cwd: tempDir, // Run in temp dir
                     encoding: 'utf-8',
                     timeout: cfg.timeout,
                     stdio: ['pipe', 'pipe', 'pipe'],
                     input: enhancedPrompt,
-                    maxBuffer: 10 * 1024 * 1024 // 10MB buffer
+                    maxBuffer: 10 * 1024 * 1024
                 }
             );
         } catch (error) {
@@ -111,31 +103,30 @@ Output ONLY the raw JSON object, nothing else.`;
             stderr = error.stderr || '';
         }
 
-        // Save debug output
-        writeFileSync(join(sandboxDir, 'PROVIDER_STDOUT.txt'), stdout);
-        writeFileSync(join(sandboxDir, 'PROVIDER_STDERR.txt'), stderr);
-        writeFileSync(join(sandboxDir, 'PROVIDER_EXIT_CODE.txt'), String(exitCode));
-
-        // Try to parse JSON from the response FIRST
-        // This prevents false positives if the JSON response content contains words like "rate limit"
+        // Save debug logs to temp dir
         try {
-            // Try to extract JSON from the response (might be wrapped in markdown code blocks)
-            let jsonStr = stdout.trim();
+            writeFileSync(join(tempDir, 'PROVIDER_STDOUT.txt'), stdout);
+            writeFileSync(join(tempDir, 'PROVIDER_STDERR.txt'), stderr);
+            writeFileSync(join(tempDir, 'PROMPT.txt'), enhancedPrompt); // Save prompt for debugging
+        } catch (e) { /* ignore write errors */ }
 
-            // Remove markdown code blocks if present
+        // Clean up temp dir log (optional, or print path for debug)
+        // console.log(`[Gemini] Debug logs at: ${tempDir}`);
+
+        // Try to parse JSON
+        try {
+            let jsonStr = stdout.trim();
             if (jsonStr.startsWith('```json')) {
                 jsonStr = jsonStr.replace(/^```json\n?/, '').replace(/\n?```$/, '');
             } else if (jsonStr.startsWith('```')) {
                 jsonStr = jsonStr.replace(/^```\n?/, '').replace(/\n?```$/, '');
             }
 
-            // Find JSON object in the response
             const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 const result = JSON.parse(jsonMatch[0]);
-
-                // Write the result to the expected output file for consistency
-                writeFileSync(join(sandboxDir, outputFile), JSON.stringify(result, null, 2));
+                // Write result to temp file just in case
+                writeFileSync(join(tempDir, outputFile), JSON.stringify(result, null, 2));
 
                 return {
                     success: true,
@@ -145,28 +136,17 @@ Output ONLY the raw JSON object, nothing else.`;
                     error: null
                 };
             }
-        } catch (parseError) {
-            // JSON parsing failed, continue to check for errors
-        }
+        } catch (parseError) { }
 
-        // Only check for rate limiting if we didn't get valid JSON
-        // Check stderr (not stdout) to avoid false positives from response content
-        const isRateLimited = stderr.includes('rate limit') ||
-            stderr.includes('quota') ||
-            stderr.includes('429') ||
-            stderr.includes('RESOURCE_EXHAUSTED');
-        const isNetworkError = stderr.includes('ECONNREFUSED') ||
-            stderr.includes('ETIMEDOUT') ||
-            stderr.includes('network error');
+        const isRateLimited = stderr.includes('rate limit') || stderr.includes('429');
+        const isNetworkError = stderr.includes('network error');
 
         if (isRateLimited || isNetworkError) {
             return {
                 success: false,
                 rateLimited: true,
                 result: null,
-                stdout,
-                stderr,
-                error: 'Provider unavailable (rate limit or network)'
+                error: 'Provider unavailable'
             };
         }
 
@@ -175,7 +155,7 @@ Output ONLY the raw JSON object, nothing else.`;
             result: null,
             stdout,
             stderr,
-            error: `Could not parse JSON from response. Response: ${stdout.slice(0, 200)}`
+            error: `Could not parse JSON. Logs: ${tempDir}`
         };
     }
 };

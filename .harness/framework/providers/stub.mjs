@@ -11,8 +11,8 @@
  * Default stub responses for different agent types
  */
 const DEFAULT_RESPONSES = {
-    // Guardian response
-    'RESULT.json': {
+    // Guardian response - uses GUARDIAN_RESULT.json to avoid conflict
+    'GUARDIAN_RESULT.json': {
         verdict: 'pass',
         reasoning: 'Stub provider: auto-approved for testing',
         gaming_detected: false
@@ -23,7 +23,7 @@ const DEFAULT_RESPONSES = {
         issues: [],
         all_coherent: true
     },
-    // Undocumented detector response  
+    // Undocumented detector response (uses RESULT.json)
     'RESULT.json': {
         change_clusters_found: [],
         documented_clusters: [],

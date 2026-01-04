@@ -32,8 +32,10 @@ const REPO_ROOT = join(HARNESS_ROOT, '..');
 // Utilities
 // ============================================================================
 
+const QUIET = process.env.HARNESS_QUIET === '1';
+
 function log(msg) {
-    console.log(msg);
+    if (!QUIET) console.log(msg);
 }
 
 function logError(msg) {
@@ -49,7 +51,7 @@ function logWarning(msg) {
 }
 
 function logInfo(msg) {
-    console.log(`\x1b[36mℹ ${msg}\x1b[0m`);
+    if (!QUIET) console.log(`\x1b[36mℹ ${msg}\x1b[0m`);
 }
 
 function loadConfig() {
@@ -682,54 +684,49 @@ async function main() {
     // Run review
     const result = await adapter.review(context);
 
-    // Output results - always show the agent response
-    log('--- Agent Review Results ---\n');
-    log(`Severity: ${result.severity.toUpperCase()}`);
-    log(`Summary: ${result.summary} `);
+    // Output results - always show the agent response (bypass quiet mode)
+    console.log('--- Agent Review Results ---');
+    console.log(`Severity: ${result.severity.toUpperCase()}`);
+    console.log(`Summary: ${result.summary}`);
 
     // Show change type if available
     if (result.changeType) {
-        log(`Change Type: ${result.changeType.toUpperCase()} `);
+        console.log(`Change Type: ${result.changeType.toUpperCase()}`);
     }
     if (result.entryTypeMismatch) {
-        log(`⚠️  Entry Type Mismatch: Fix should use learned entry, not decision`);
+        console.log(`⚠️  Entry Type Mismatch: Fix should use learned entry, not decision`);
     }
     if (result.missingTestsForFix) {
-        log(`⚠️  Missing Tests: Fixes require test coverage`);
+        console.log(`⚠️  Missing Tests: Fixes require test coverage`);
     }
 
     // Show quality metrics if available
     if (result.qualityScore !== undefined) {
-        log(`Quality Score: ${result.qualityScore}/10`);
+        console.log(`Quality Score: ${result.qualityScore}/10`);
     }
     if (result.qualityBreakdown) {
         const breakdown = result.qualityBreakdown.replace(/^Why not 10:\s*/i, '');
-        log(`  Why not 10: ${breakdown}`);
+        console.log(`  Why not 10: ${breakdown}`);
     }
     if (result.gamingDetected !== undefined) {
-        log(`Gaming Detected: ${result.gamingDetected ? 'YES ⚠️' : 'No'}`);
+        console.log(`Gaming Detected: ${result.gamingDetected ? 'YES ⚠️' : 'No'}`);
     }
     if (result.criticalIssues) {
-        log(`Critical Issues: ${result.criticalIssues}`);
+        console.log(`Critical Issues: ${result.criticalIssues}`);
     }
 
     if (result.findings.length > 0) {
-        log('\nFindings:');
+        console.log('\nFindings:');
         for (const finding of result.findings) {
-            log(`  - [${finding.pattern}] ${finding.file}${finding.line ? `:${finding.line}` : ''}`);
-            log(`    ${finding.description}`);
+            console.log(`  - [${finding.pattern}] ${finding.file}${finding.line ? `:${finding.line}` : ''}`);
+            console.log(`    ${finding.description}`);
             if (finding.suggestedFix) {
-                log(`    Fix: ${finding.suggestedFix}`);
+                console.log(`    Fix: ${finding.suggestedFix}`);
             }
         }
     }
 
-    // On failure, print FULL review JSON for debugging
-    if (result.severity === 'high') {
-        log('\n--- FULL REVIEW JSON (for debugging) ---');
-        log(JSON.stringify(result, null, 2));
-        log('--- END REVIEW JSON ---\n');
-    }
+    // Skip the full JSON dump - too verbose
 
     // Determine exit based on threshold
     const severityLevels = { none: 0, low: 1, medium: 2, high: 3 };

@@ -57,19 +57,12 @@ describe('harness CLI', () => {
     });
 
     describe('new:learned command', () => {
-        const testSlug = `cli-test-learned-${Math.random().toString(36).slice(2, 8)}`;
         let createdFile = null;
 
         afterEach(() => {
             // Clean up any created files
             if (createdFile && existsSync(createdFile)) {
                 rmSync(createdFile);
-            }
-            // Also try to clean up any potential residual test files
-            const today = new Date().toISOString().slice(0, 10);
-            const potentialFile = join(REPO_ROOT, '.harness', 'context', 'learned', `${today}-${testSlug}.md`);
-            if (existsSync(potentialFile)) {
-                rmSync(potentialFile);
             }
             createdFile = null;
         });
@@ -82,24 +75,29 @@ describe('harness CLI', () => {
         });
 
         it('creates a learned entry with date prefix', () => {
-            const result = runHarness(`new:learned --slug ${testSlug}`);
+            const slug = 'test-fixture-learned-basic';
+            const today = new Date().toISOString().slice(0, 10);
+            const targetFile = join(REPO_ROOT, '.harness', 'context', 'learned', `${today}-${slug}.md`);
+            if (existsSync(targetFile)) rmSync(targetFile);
+
+            const result = runHarness(`new:learned --slug ${slug}`);
 
             assert.strictEqual(result.exitCode, 0, `should succeed with --slug, got: ${result.output}`);
             assert.ok(result.output.includes('Created'), 'should confirm creation');
 
             // Find the created file
-            const today = new Date().toISOString().slice(0, 10);
-            createdFile = join(REPO_ROOT, '.harness', 'context', 'learned', `${today}-${testSlug}.md`);
+            createdFile = join(REPO_ROOT, '.harness', 'context', 'learned', `${today}-${slug}.md`);
 
             assert.ok(existsSync(createdFile), `file should exist at ${createdFile}`);
         });
 
         it('creates entry with required field sections', () => {
-            const result = runHarness(`new:learned --slug ${testSlug}`);
+            const slug = 'test-fixture-learned-fields';
+            const result = runHarness(`new:learned --slug ${slug}`);
             assert.strictEqual(result.exitCode, 0, 'should succeed');
 
             const today = new Date().toISOString().slice(0, 10);
-            createdFile = join(REPO_ROOT, '.harness', 'context', 'learned', `${today}-${testSlug}.md`);
+            createdFile = join(REPO_ROOT, '.harness', 'context', 'learned', `${today}-${slug}.md`);
 
             const content = readFileSync(createdFile, 'utf-8');
 
@@ -109,60 +107,68 @@ describe('harness CLI', () => {
         });
 
         it('fails if file already exists', () => {
-            // Create first
-            const result1 = runHarness(`new:learned --slug ${testSlug}`);
-            assert.strictEqual(result1.exitCode, 0, 'first creation should succeed');
+            const slug = 'test-fixture-learned-collision';
 
+            // Clean up start state just in case
             const today = new Date().toISOString().slice(0, 10);
-            createdFile = join(REPO_ROOT, '.harness', 'context', 'learned', `${today}-${testSlug}.md`);
+            const collisionFile = join(REPO_ROOT, '.harness', 'context', 'learned', `${today}-${slug}.md`);
+            if (existsSync(collisionFile)) rmSync(collisionFile);
 
-            // Try to create again
-            const result2 = runHarness(`new:learned --slug ${testSlug}`);
+            // Create first (should succeed)
+            const result1 = runHarness(`new:learned --slug ${slug}`);
+            assert.strictEqual(result1.exitCode, 0, `first creation should succeed. Output: ${result1.output}`);
 
-            assert.strictEqual(result2.exitCode, 1, 'second creation should fail');
+            // Update createdFile for afterEach cleanup
+            createdFile = collisionFile;
+
+            // Try to create again (should fail)
+            const result2 = runHarness(`new:learned --slug ${slug}`);
+
+            assert.strictEqual(result2.exitCode, 1, `second creation should fail. Output: ${result2.output}`);
             assert.ok(result2.output.includes('exists'), 'should mention file exists');
         });
     });
 
     describe('new:decision command', () => {
-        const testSlug = `cli-test-decision-${Math.random().toString(36).slice(2, 8)}`;
         let createdFile = null;
 
         afterEach(() => {
             if (createdFile && existsSync(createdFile)) {
                 rmSync(createdFile);
             }
-            const today = new Date().toISOString().slice(0, 10);
-            const potentialFile = join(REPO_ROOT, '.harness', 'context', 'decisions', `${today}-${testSlug}.md`);
-            if (existsSync(potentialFile)) {
-                rmSync(potentialFile);
-            }
             createdFile = null;
         });
 
         it('requires --slug argument', () => {
             const result = runHarness('new:decision');
-
             assert.strictEqual(result.exitCode, 1, 'should fail without --slug');
         });
 
         it('creates a decision entry with date prefix', () => {
-            const result = runHarness(`new:decision --slug ${testSlug}`);
+            const slug = 'test-fixture-decision-basic';
+            const today = new Date().toISOString().slice(0, 10);
+            const targetFile = join(REPO_ROOT, '.harness', 'context', 'decisions', `${today}-${slug}.md`);
+            if (existsSync(targetFile)) rmSync(targetFile);
+
+            const result = runHarness(`new:decision --slug ${slug}`);
 
             assert.strictEqual(result.exitCode, 0, `should succeed with --slug, got: ${result.output}`);
 
-            const today = new Date().toISOString().slice(0, 10);
-            createdFile = join(REPO_ROOT, '.harness', 'context', 'decisions', `${today}-${testSlug}.md`);
+            createdFile = join(REPO_ROOT, '.harness', 'context', 'decisions', `${today}-${slug}.md`);
 
             assert.ok(existsSync(createdFile), 'file should exist');
         });
 
         it('creates entry with decision-specific sections', () => {
-            const result = runHarness(`new:decision --slug ${testSlug}`);
+            const slug = 'test-fixture-decision-sections';
+            const today = new Date().toISOString().slice(0, 10);
+            const targetFile = join(REPO_ROOT, '.harness', 'context', 'decisions', `${today}-${slug}.md`);
+            if (existsSync(targetFile)) rmSync(targetFile);
+
+            const result = runHarness(`new:decision --slug ${slug}`);
             assert.strictEqual(result.exitCode, 0, 'should succeed');
 
-            const today = new Date().toISOString().slice(0, 10);
-            createdFile = join(REPO_ROOT, '.harness', 'context', 'decisions', `${today}-${testSlug}.md`);
+            createdFile = join(REPO_ROOT, '.harness', 'context', 'decisions', `${today}-${slug}.md`);
 
             const content = readFileSync(createdFile, 'utf-8');
 

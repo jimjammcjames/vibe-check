@@ -38,8 +38,10 @@ const REPO_ROOT = join(HARNESS_ROOT, '..');
 // Utilities
 // ============================================================================
 
+const QUIET = process.env.HARNESS_QUIET === '1';
+
 function log(msg) {
-    console.log(msg);
+    if (!QUIET) console.log(msg);
 }
 
 function logError(msg) {
@@ -55,7 +57,7 @@ function logWarning(msg) {
 }
 
 function logInfo(msg) {
-    console.log(`\x1b[36mℹ ${msg}\x1b[0m`);
+    if (!QUIET) console.log(`\x1b[36mℹ ${msg}\x1b[0m`);
 }
 
 function loadConfig() {
@@ -378,6 +380,33 @@ function classifyResult(testResult) {
 // Main
 // ============================================================================
 
+// Track worktree path for cleanup on unexpected termination
+let activeWorktreePath = null;
+
+function cleanupOnExit() {
+    if (activeWorktreePath) {
+        try {
+            execSync(`git worktree remove --force "${activeWorktreePath}"`, {
+                cwd: REPO_ROOT,
+                stdio: 'ignore'
+            });
+        } catch {
+            // Best-effort cleanup, ignore errors
+        }
+        activeWorktreePath = null;
+    }
+}
+
+// Register cleanup handlers for unexpected termination
+process.on('SIGINT', () => {
+    cleanupOnExit();
+    process.exit(130);
+});
+process.on('SIGTERM', () => {
+    cleanupOnExit();
+    process.exit(143);
+});
+
 async function main() {
     log('\n\x1b[36m=== Base-Commit Tripwire ===\x1b[0m\n');
 
@@ -432,6 +461,7 @@ async function main() {
     let worktreePath;
     try {
         worktreePath = createWorktree(baseRef);
+        activeWorktreePath = worktreePath; // Track for signal handler cleanup
         logSuccess(`Worktree created at ${worktreePath}`);
     } catch (error) {
         logError(`Failed to create worktree: ${error.message}`);
@@ -501,6 +531,7 @@ async function main() {
         // Cleanup
         log('\nCleaning up worktree...');
         cleanupWorktree(worktreePath);
+        activeWorktreePath = null; // Clear tracked path after cleanup
     }
 }
 

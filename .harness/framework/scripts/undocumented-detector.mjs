@@ -125,20 +125,15 @@ async function main() {
     }
 
     const result = agentResult.result;
-    log('--- Change Coverage Analysis ---\n');
-    log(`Change Clusters Found: ${result.change_clusters_found?.length || 0}`);
-    if (result.change_clusters_found) {
-        result.change_clusters_found.forEach(c => log(`  • ${c}`));
-    }
 
-    log(`\nDocumented: ${result.documented_clusters?.length || 0}`);
-    log(`Undocumented: ${result.undocumented_clusters?.length || 0}`);
-
+    // Only show analysis on failure (bypass quiet mode)
     if (result.undocumented_clusters && result.undocumented_clusters.length > 0) {
-        log('\n\x1b[33mUndocumented changes detected:\x1b[0m');
+        console.log('--- Change Coverage Analysis ---');
+        console.log(`Undocumented: ${result.undocumented_clusters.length}`);
+        console.log('\x1b[33mUndocumented changes detected:\x1b[0m');
         result.undocumented_clusters.forEach(c => logWarning(c));
-        log('\nCreate learned entries for these changes:');
-        log('  npm run harness:new:learned -- --slug "descriptive-slug"');
+        console.log('\nCreate learned entries for these changes:');
+        console.log('  npm run harness:new:learned -- --slug "descriptive-slug"');
         process.exit(1);
     } else {
         logSuccess('All changes are documented');

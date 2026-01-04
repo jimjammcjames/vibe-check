@@ -168,11 +168,7 @@ function buildContext(files) {
     const sortedFiles = Object.keys(files).sort();
 
     for (const filename of sortedFiles) {
-        let content = files[filename];
-        // Truncate extremely large files to prevent token overflow while keeping context useful
-        if (content.length > 100000) {
-            content = content.slice(0, 100000) + '\n... (truncated)';
-        }
+        const content = files[filename];
         contextFiles += `\n\n=== ${filename} ===\n${content}`;
     }
     return contextFiles;
