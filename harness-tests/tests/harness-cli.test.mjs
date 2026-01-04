@@ -57,14 +57,14 @@ describe('harness CLI', () => {
     });
 
     describe('new:learned command', () => {
-        let createdFile = null;
+        let createdFiles = [];
 
         afterEach(() => {
             // Clean up any created files
-            if (createdFile && existsSync(createdFile)) {
-                rmSync(createdFile);
+            for (const file of createdFiles) {
+                if (existsSync(file)) rmSync(file);
             }
-            createdFile = null;
+            createdFiles = [];
         });
 
         it('requires --slug argument', () => {
@@ -86,9 +86,14 @@ describe('harness CLI', () => {
             assert.ok(result.output.includes('Created'), 'should confirm creation');
 
             // Find the created file
-            createdFile = join(REPO_ROOT, '.harness', 'context', 'learned', `${today}-${slug}.md`);
+            const createdFile = join(REPO_ROOT, '.harness', 'context', 'learned', `${today}-${slug}.md`);
+            const createdTest = join(REPO_ROOT, 'harness-tests', 'tests', `${slug}.test.mjs`);
+
+            createdFiles.push(createdFile);
+            createdFiles.push(createdTest);
 
             assert.ok(existsSync(createdFile), `file should exist at ${createdFile}`);
+            assert.ok(existsSync(createdTest), `test stub should exist at ${createdTest}`);
         });
 
         it('creates entry with required field sections', () => {
@@ -97,7 +102,9 @@ describe('harness CLI', () => {
             assert.strictEqual(result.exitCode, 0, 'should succeed');
 
             const today = new Date().toISOString().slice(0, 10);
-            createdFile = join(REPO_ROOT, '.harness', 'context', 'learned', `${today}-${slug}.md`);
+            const createdFile = join(REPO_ROOT, '.harness', 'context', 'learned', `${today}-${slug}.md`);
+            const createdTest = join(REPO_ROOT, 'harness-tests', 'tests', `${slug}.test.mjs`);
+            createdFiles.push(createdFile, createdTest);
 
             const content = readFileSync(createdFile, 'utf-8');
 
@@ -112,14 +119,19 @@ describe('harness CLI', () => {
             // Clean up start state just in case
             const today = new Date().toISOString().slice(0, 10);
             const collisionFile = join(REPO_ROOT, '.harness', 'context', 'learned', `${today}-${slug}.md`);
+            const collisionTest = join(REPO_ROOT, 'harness-tests', 'tests', `${slug}.test.mjs`);
+
             if (existsSync(collisionFile)) rmSync(collisionFile);
+            if (existsSync(collisionTest)) rmSync(collisionTest);
 
             // Create first (should succeed)
             const result1 = runHarness(`new:learned --slug ${slug}`);
             assert.strictEqual(result1.exitCode, 0, `first creation should succeed. Output: ${result1.output}`);
 
             // Update createdFile for afterEach cleanup
-            createdFile = collisionFile;
+            createdFiles.push(collisionFile);
+            // Also need to cleanup the test file created by the first run
+            createdFiles.push(join(REPO_ROOT, 'harness-tests', 'tests', `${slug}.test.mjs`));
 
             // Try to create again (should fail)
             const result2 = runHarness(`new:learned --slug ${slug}`);

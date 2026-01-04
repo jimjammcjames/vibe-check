@@ -424,6 +424,7 @@ ANALYSIS:
 1. CHANGE TYPE: Is this a FIX (bug/error/correction) or FEATURE (new/add/implement)?
    - Fixes MUST use "learned" entries and MUST have tests
    - Features MAY use "decision" entries and MAY skip tests
+   - Meta-changes (tagged #harness-meta) MUST use "decision" entries (even if fixing harness bugs)
    
 2. SYSTEMIC GAP ANALYSIS (CRITICAL for learned entries):
    - Does the learned entry have a "## Systemic Gap" section?
@@ -459,7 +460,9 @@ MANDATORY: Create COMPLIANCE_REVIEW.json with this format (build up evidence FIR
   "missing_tests_for_fix": false,
   "gaming_detected": false,
   "critical_issues": "None",
-  "violations": [],
+  "violations": [
+      { "rule": "pattern_name", "description": "explanation" }
+  ],
   
   // STEP 5: Summarize
   "summary": "one line assessment",
@@ -557,8 +560,8 @@ Then edit with your assessment. DO NOT SKIP THIS FILE.`;
                     severity,
                     findings: (reviewData.violations || []).map(v => ({
                         file: 'N/A',
-                        pattern: v.rule,
-                        description: v.description
+                        pattern: v.rule || 'violation',
+                        description: v.description || JSON.stringify(v)
                     })),
                     summary: reviewData.summary || 'Meta-review complete',
                     changeType: reviewData.change_type,

@@ -62,7 +62,7 @@ Run: Output ONLY the JSON object.`;
 async function main() {
     log('\n\x1b[36m=== Harness Guardian ===\x1b[0m\n');
 
-    // Get changed files against origin/main
+    // Get changed files against origin/main (or cached)
     let changedFiles = [];
     try {
         changedFiles = execSync('git diff --name-only origin/main', { cwd: REPO_ROOT, encoding: 'utf-8' })
@@ -72,9 +72,22 @@ async function main() {
             changedFiles = execSync('git diff --cached --name-only', { cwd: REPO_ROOT, encoding: 'utf-8' })
                 .trim().split('\n').filter(Boolean);
         } catch {
-            logSuccess('No changes to check');
-            process.exit(0);
+            // No git context or empty
         }
+    }
+
+    // Also include untracked files (new files not yet staged)
+    try {
+        const untracked = execSync('git ls-files --others --exclude-standard', { cwd: REPO_ROOT, encoding: 'utf-8' })
+            .trim().split('\n').filter(Boolean);
+        changedFiles = [...new Set([...changedFiles, ...untracked])];
+    } catch (e) {
+        // Ignore error if git fail
+    }
+
+    if (changedFiles.length === 0) {
+        logSuccess('No changes to check');
+        process.exit(0);
     }
 
     // Filter for harness-related files
@@ -124,13 +137,41 @@ async function main() {
         process.exit(1);
     }
 
-    // Get the diff of ONLY the harness files for the agent to review
-    const fileArgs = harnessWork.map(f => `"${f}"`).join(' ');
+    // Generate diffs (robust to untracked files)
     let harnessDiff = '';
+
+    // Identify untracked files
+    let untrackedFiles = [];
     try {
-        harnessDiff = execSync(`git diff origin/main -- ${fileArgs}`, { cwd: REPO_ROOT, encoding: 'utf-8' });
-    } catch {
-        harnessDiff = execSync(`git diff --cached -- ${fileArgs}`, { cwd: REPO_ROOT, encoding: 'utf-8' });
+        const untrackedOutput = execSync('git ls-files --others --exclude-standard', { cwd: REPO_ROOT, encoding: 'utf-8' });
+        untrackedFiles = untrackedOutput.trim().split('\n').filter(Boolean);
+    } catch { }
+
+    const trackedFilesToDiff = harnessWork.filter(f => !untrackedFiles.includes(f));
+    const untrackedFilesToDiff = harnessWork.filter(f => untrackedFiles.includes(f));
+
+    // 1. Diff tracked files
+    if (trackedFilesToDiff.length > 0) {
+        const fileArgs = trackedFilesToDiff.map(f => `"${f}"`).join(' ');
+        try {
+            harnessDiff += execSync(`git diff origin/main -- ${fileArgs}`, { cwd: REPO_ROOT, encoding: 'utf-8' });
+        } catch {
+            try {
+                harnessDiff += execSync(`git diff --cached -- ${fileArgs}`, { cwd: REPO_ROOT, encoding: 'utf-8' });
+            } catch {
+                logWarning('Could not generate git diff for tracked files');
+            }
+        }
+    }
+
+    // 2. Append untracked files as "new file" diffs
+    for (const f of untrackedFilesToDiff) {
+        try {
+            const content = readFileSync(join(REPO_ROOT, f), 'utf-8');
+            harnessDiff += `\ndiff --git a/${f} b/${f}\nnew file mode 100644\n--- /dev/null\n+++ b/${f}\n@@ -0,0 +1 @@\n${content}\n`;
+        } catch (e) {
+            logWarning(`Could not read untracked file: ${f}`);
+        }
     }
 
     // Get Harness.md rules for context

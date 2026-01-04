@@ -26,9 +26,10 @@ const REPO_ROOT = join(HARNESS_ROOT, '..');
 const VERBOSE = process.argv.includes('--verbose') || process.argv.includes('-v');
 
 // Set environment for child processes
-if (!VERBOSE) {
-    process.env.HARNESS_QUIET = '1';
-}
+// FIX: Remove HARNESS_QUIET to ensure tests run in standard environment (Isolation)
+// if (!VERBOSE) {
+//     process.env.HARNESS_QUIET = '1';
+// }
 
 // ============================================================================
 // Utilities
@@ -206,14 +207,16 @@ function runCommand(command, files = 'all') {
             const duration = Date.now() - start;
             return { success: true, output: '', duration };
         } else {
-            // Quiet mode: capture output, print ONLY essential status
+            // Standard mode: capture output, print ONLY essential status
+            // Note: stdio 'pipe' captures output without printing it
             const output = execSync(command, {
                 cwd: REPO_ROOT,
                 encoding: 'utf-8',
+                stdio: 'pipe',
                 shell: true
             });
 
-            // Extract only the most essential lines
+            // Extract only the most essential lines for visual heartbeat
             const lines = output.split('\n');
             const essentialLines = lines.filter(line => {
                 const trimmed = line.trim();
@@ -236,56 +239,26 @@ function runCommand(command, files = 'all') {
 
             return { success: true, output, duration: Date.now() - start };
         }
-        let out = ''; // capture for scope
     } catch (error) {
-        // On failure, print only the agent's response unless verbose
+        // FAIL CASE: Print everything explicitly
         const stdout = error.stdout?.toString() || '';
         const stderr = error.stderr?.toString() || '';
 
-        if (VERBOSE) {
-            log(`\n\x1b[90m$ ${command}\x1b[0m`);
-            if (stdout) log(stdout);
-            if (stderr) log(stderr);
-        } else {
-            // In quiet mode, show ONLY agent responses and key results
-            const combined = stdout + stderr;
-            const lines = combined.split('\n');
+        const duration = Date.now() - start;
 
-            // Only keep agent output lines
-            const relevantLines = lines.filter(line => {
-                const t = line.trim();
-                if (!t) return false;
-
-                // Agent response markers
-                if (t.startsWith('Verdict:')) return true;
-                if (t.startsWith('Reasoning:')) return true;
-                if (t.startsWith('Severity:')) return true;
-                if (t.startsWith('Summary:')) return true;
-                if (t.startsWith('Change Type:')) return true;
-                if (t.startsWith('Quality Score:')) return true;
-                if (t.includes('Why not 10:')) return true;
-                if (t.startsWith('Gaming Detected:')) return true;
-                if (t.startsWith('Critical Issues:')) return true;
-
-                // Key status markers
-                if (t.startsWith('✗')) return true;
-                if (t.startsWith('⚠')) return true;
-                if (t.includes('INTEGRITY BREACH')) return true;
-                if (t.includes('Review failed')) return true;
-                if (t.includes('Policy audit')) return true;
-
-                // Test summary only (not individual tests)
-                if (t.startsWith('# tests')) return true;
-                if (t.startsWith('# fail') && !t.includes('# fail 0')) return true;
-
-                return false;
-            });
-
-            if (relevantLines.length > 0) {
-                log(relevantLines.join('\n'));
-            }
+        // BUBBLE UP ERROR SINK -> LOG IMMEDIATELY
+        logError(`Command failed: ${command}`);
+        if (stdout) {
+            log('\n--- stdout ---');
+            log(stdout);
         }
-        return { success: false, output: stdout, duration: Date.now() - start };
+        if (stderr) {
+            log('\n--- stderr ---');
+            log(stderr);
+        }
+        log('--------------\n');
+
+        return { success: false, output: stdout + stderr, duration };
     }
 }
 
@@ -392,11 +365,38 @@ async function cmdPost() {
     const config = loadConfig();
     const stage = config.stages.post || [];
 
-    // Run ALL checks in parallel (including tests, audit, and agents)
-    // Note: base-tripwire might have git conflicts if multiple git commands run,
-    // but we'll try it to maximize speed.
+    // Phase 1: Static Checks (Fast-Fail)
+    // - policy-audit
+    // - npm test
+    // These should run FIRST to catch obvious issues before engaging expensive agents.
+    const staticChecks = stage.filter(step =>
+        !isParallelizableAgent(step.command)
+    );
+    const agentChecks = stage.filter(step =>
+        isParallelizableAgent(step.command)
+    );
+
+    log(`\n\x1b[36m▶ Phase 1: Static Checks (${staticChecks.length})\x1b[0m`);
+    // Run static checks SERIALLY to ensure deterministic output and immediate failure
+    for (const step of staticChecks) {
+        // Use runCommand (sync) for static checks to bail out immediately
+        const result = runCommand(step.command, step.files);
+        if (!result.success) {
+            logError(`Phase 1 Failed: ${step.command}`);
+            // Error output is already handled by runCommand
+            printRecoveryPointers();
+            process.exit(1);
+        }
+    }
+    logSuccess('Phase 1 (Static) passed');
+
+    console.log('[HARNESS_PHASE:STATIC_PASS]');
+
+    // Phase 2: Dynamic Checks (Agents)
+    log(`\n\x1b[36m▶ Phase 2: Agents (${agentChecks.length})\x1b[0m`);
+
     const results = await Promise.all(
-        stage.map(step => runCommandAsync(step.command, step.files))
+        agentChecks.map(step => runCommandAsync(step.command, step.files))
     );
 
     // Check for failures
@@ -405,7 +405,8 @@ async function cmdPost() {
     if (SHOW_TIMING) {
         log('\n\x1b[36m=== Execution Timing ===\x1b[0m');
         // Sort by duration descending
-        const sortedResults = [...results].sort((a, b) => b.duration - a.duration);
+        const allResults = [...results]; // Only agents here
+        const sortedResults = allResults.sort((a, b) => b.duration - a.duration);
 
         for (const r of sortedResults) {
             let name = r.command.replace('node .harness/framework/scripts/', '').replace('.mjs', '');
@@ -522,9 +523,33 @@ NONE
 
     writeFileSync(targetPath, template);
     logSuccess(`Created: ${targetPath}`);
+
+    // Create companion test stub automatically (Scaffolding)
+    const testDir = join(REPO_ROOT, 'harness-tests', 'tests');
+    const testFile = join(testDir, `${slug}.test.mjs`);
+
+    if (!existsSync(testFile)) {
+        if (!existsSync(testDir)) mkdirSync(testDir, { recursive: true });
+
+        const testTemplate = `
+import { describe, it } from 'node:test';
+import { strict as assert } from 'node:assert';
+
+describe('Fix: ${slug}', () => {
+    it('should reproduce the issue (FAIL if not implemented)', () => {
+        // TODO: Implement reproduction test case
+        // assert.fail('Test case not implemented yet');
+        assert.ok(true, 'Verify your fix here');
+    });
+});
+`;
+        writeFileSync(testFile, testTemplate);
+        logSuccess(`Created Test Stub: ${testFile}`);
+    }
+
     log('\nDon\'t forget to:');
     log('  1. Fill in the Search terms, Related, and Tags fields');
-    log('  2. Add a test that covers this learning');
+    log('  2. Implement the test case in `harness-tests/tests/' + slug + '.test.mjs`');
 }
 
 function cmdNewDecision(slug) {

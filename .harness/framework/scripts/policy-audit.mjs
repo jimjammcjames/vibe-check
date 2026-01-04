@@ -280,7 +280,11 @@ function checkRuleC(diffFiles, config) {
         // Check for Search terms
         const searchTermsMatch = content.match(/## Search terms\s*\n([\s\S]*?)(?=\n##|$)/);
         if (!searchTermsMatch) {
-            issues.push('Missing "## Search terms" section');
+            issues.push({
+                code: 'SEARCH_MISSING',
+                message: 'Missing "## Search terms" section',
+                fix: 'Add the section with at least one keyword to help future devs find this.'
+            });
         } else {
             const searchContent = searchTermsMatch[1].trim();
             const hasContent = searchContent.split('\n').some(line => {
@@ -318,22 +322,35 @@ function checkRuleC(diffFiles, config) {
         // SYSTEMIC GAP ENFORCEMENT (learned entries only)
         // Enforces 3-step chain: Bandaid → Meta-Analysis → Close Gap
         if (isLearnedEntry) {
-            const gapMatch = content.match(/## Systemic Gap\s*\n([\s\S]*?)(?=\n---|\n##|$)/);
+            // FIX: Robust regex that only stops at H2 (## ) or EOF, allowing H3 (###) inside the section
+            const gapMatch = content.match(/## Systemic Gap\s*\n([\s\S]*?)(?=\n---|\n## |$)/);
 
             if (!gapMatch) {
-                issues.push('Missing "## Systemic Gap" section (required for learned entries)');
+                issues.push({
+                    code: 'GAP_MISSING',
+                    message: 'Missing "## Systemic Gap" section',
+                    fix: 'Add the section. It is required for all Learned entries to prevent "bandaid" fixes.'
+                });
             } else {
                 const gapContent = gapMatch[1].trim();
 
                 // Must have substantive content (not just template text)
                 if (gapContent.length < 50 || gapContent.includes('[What infrastructure gap')) {
-                    issues.push('"Systemic Gap" section is incomplete - explain the infrastructure gap');
+                    issues.push({
+                        code: 'GAP_SHALLOW',
+                        message: '"Systemic Gap" section is too brief or contains template text',
+                        fix: 'Analyze the ROOT CAUSE only. Why did the system allow this bug? (min 50 chars)'
+                    });
                 }
 
                 // Must contain Gap Closure evidence with file path
                 if (!gapContent.includes('Gap Closure') && !gapContent.includes('Added test') &&
                     !gapContent.includes('Added validation') && !gapContent.includes('Added pre-flight')) {
-                    issues.push('"Systemic Gap" must include Gap Closure with file path evidence');
+                    issues.push({
+                        code: 'GAP_Evidence_MISSING',
+                        message: 'Systemic Gap requires explicit "Gap Closure" evidence',
+                        fix: 'Add the phrase "Gap Closure: Added validation: <filename>" or "Added test: <filename>" to the section.'
+                    });
                 } else {
                     // Extract file paths from Gap Closure section
                     const filePathMatches = gapContent.match(/(?:Added (?:test|validation|pre-flight)[:\s]+)[`"']?([^`"'\n]+(?:\.mjs|\.ts|\.js|\.md))/gi);
@@ -353,7 +370,12 @@ function checkRuleC(diffFiles, config) {
                         });
 
                         if (!foundInDiff && referencedPaths.length > 0) {
-                            issues.push(`Gap Closure file(s) not found in commit: ${referencedPaths.join(', ')}`);
+                            issues.push({
+                                code: 'GAP_FILE_NOT_IN_DIFF',
+                                message: `Gap Closure references file(s) not found in the current commit/diff`,
+                                context: referencedPaths.join(', '),
+                                fix: 'Ensure the validation file you mention is actually being committed (git add it).'
+                            });
                         }
                     }
                 }
@@ -361,13 +383,15 @@ function checkRuleC(diffFiles, config) {
         }
 
         if (issues.length > 0) {
-            violations.push({ file, issues });
+            // Normalize string issues to objects if any remain (paranoid check)
+            const normalized = issues.map(i => typeof i === 'string' ? { message: i } : i);
+            violations.push({ file, issues: normalized });
         }
     }
 
     if (violations.length > 0) {
         const details = violations.map(v =>
-            `  ${v.file}:\n${v.issues.map(i => `    - ${i}`).join('\n')}`
+            `  \x1b[1m${v.file}\x1b[0m:\n${v.issues.map(i => `    - \x1b[31m[${i.code || 'ERROR'}]\x1b[0m ${i.message}\n      \x1b[36mFix:\x1b[0m ${i.fix || 'Correct the issue.'}`).join('\n')}`
         ).join('\n\n');
 
         return {
