@@ -11,9 +11,10 @@ Expose small, deterministic helpers from policy-audit and review-adapter, and gu
 `main()` execution so tests can import logic without running CLI flows. Add a deterministic
 test-lint script to block high-confidence test anti-patterns, allow deterministic dates for
 harness entry creation via HARNESS_DATE, update harness tests to exercise real behavior through
-helpers and the stub provider, tighten memory-coherence JSON output instructions for Gemini,
-remove the legacy OpenAI adapter in favor of the provider-backed shared adapter, and remove
-live API calls from default test runs.
+helpers and the stub provider, allow tests to redirect context output via HARNESS_CONTEXT_ROOT,
+stop auto-generating learned-entry test stubs in favor of explicit test deltas, tighten
+memory-coherence JSON output instructions for Gemini, remove the legacy OpenAI adapter in favor
+of the provider-backed shared adapter, and remove live API calls from default test runs.
 
 ## Security & Integrity Impact
 This strengthens enforcement by reducing false positives/negatives and ensuring tests validate

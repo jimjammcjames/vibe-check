@@ -2,10 +2,11 @@
  * Tests for harness.mjs CLI orchestrator
  */
 
-import { describe, it, afterEach } from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { execSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -31,6 +32,14 @@ function runHarness(args, envOverrides = {}) {
             exitCode: error.status || 1
         };
     }
+}
+
+function createContextRoot(t) {
+    const dir = mkdtempSync(join(tmpdir(), 'harness-context-'));
+    t.after(() => {
+        rmSync(dir, { recursive: true, force: true });
+    });
+    return dir;
 }
 
 describe('harness CLI', { concurrency: 1 }, () => {
@@ -68,37 +77,40 @@ describe('harness CLI', { concurrency: 1 }, () => {
 
         it('creates a learned entry with date prefix', (t) => {
             const slug = 'test-fixture-learned-basic';
-            const targetFile = join(REPO_ROOT, '.harness', 'context', 'learned', `${TEST_DATE}-${slug}.md`);
+            const contextRoot = createContextRoot(t);
+            const targetFile = join(contextRoot, 'learned', `${TEST_DATE}-${slug}.md`);
             if (existsSync(targetFile)) rmSync(targetFile);
 
-            const result = runHarness(`new:learned --slug ${slug}`, { HARNESS_DATE: TEST_DATE });
+            const result = runHarness(`new:learned --slug ${slug}`, {
+                HARNESS_DATE: TEST_DATE,
+                HARNESS_CONTEXT_ROOT: contextRoot
+            });
 
             assert.strictEqual(result.exitCode, 0, `should succeed with --slug, got: ${result.output}`);
             assert.ok(result.output.includes('Created'), 'should confirm creation');
 
             // Find the created file
-            const createdFile = join(REPO_ROOT, '.harness', 'context', 'learned', `${TEST_DATE}-${slug}.md`);
-            const createdTest = join(REPO_ROOT, 'harness-tests', 'tests', `${slug}.test.mjs`);
+            const createdFile = join(contextRoot, 'learned', `${TEST_DATE}-${slug}.md`);
 
             t.after(() => {
                 if (existsSync(createdFile)) rmSync(createdFile);
-                if (existsSync(createdTest)) rmSync(createdTest);
             });
 
             assert.ok(existsSync(createdFile), `file should exist at ${createdFile}`);
-            assert.ok(existsSync(createdTest), `test stub should exist at ${createdTest}`);
         });
 
         it('creates entry with required field sections', (t) => {
             const slug = 'test-fixture-learned-fields';
-            const result = runHarness(`new:learned --slug ${slug}`, { HARNESS_DATE: TEST_DATE });
+            const contextRoot = createContextRoot(t);
+            const result = runHarness(`new:learned --slug ${slug}`, {
+                HARNESS_DATE: TEST_DATE,
+                HARNESS_CONTEXT_ROOT: contextRoot
+            });
             assert.strictEqual(result.exitCode, 0, 'should succeed');
 
-            const createdFile = join(REPO_ROOT, '.harness', 'context', 'learned', `${TEST_DATE}-${slug}.md`);
-            const createdTest = join(REPO_ROOT, 'harness-tests', 'tests', `${slug}.test.mjs`);
+            const createdFile = join(contextRoot, 'learned', `${TEST_DATE}-${slug}.md`);
             t.after(() => {
                 if (existsSync(createdFile)) rmSync(createdFile);
-                if (existsSync(createdTest)) rmSync(createdTest);
             });
 
             const content = readFileSync(createdFile, 'utf-8');
@@ -110,25 +122,28 @@ describe('harness CLI', { concurrency: 1 }, () => {
 
         it('fails if file already exists', (t) => {
             const slug = 'test-fixture-learned-collision';
+            const contextRoot = createContextRoot(t);
 
             // Clean up start state just in case
-            const collisionFile = join(REPO_ROOT, '.harness', 'context', 'learned', `${TEST_DATE}-${slug}.md`);
-            const collisionTest = join(REPO_ROOT, 'harness-tests', 'tests', `${slug}.test.mjs`);
+            const collisionFile = join(contextRoot, 'learned', `${TEST_DATE}-${slug}.md`);
 
             if (existsSync(collisionFile)) rmSync(collisionFile);
-            if (existsSync(collisionTest)) rmSync(collisionTest);
-
             // Create first (should succeed)
-            const result1 = runHarness(`new:learned --slug ${slug}`, { HARNESS_DATE: TEST_DATE });
+            const result1 = runHarness(`new:learned --slug ${slug}`, {
+                HARNESS_DATE: TEST_DATE,
+                HARNESS_CONTEXT_ROOT: contextRoot
+            });
             assert.strictEqual(result1.exitCode, 0, `first creation should succeed. Output: ${result1.output}`);
 
             t.after(() => {
                 if (existsSync(collisionFile)) rmSync(collisionFile);
-                if (existsSync(collisionTest)) rmSync(collisionTest);
             });
 
             // Try to create again (should fail)
-            const result2 = runHarness(`new:learned --slug ${slug}`, { HARNESS_DATE: TEST_DATE });
+            const result2 = runHarness(`new:learned --slug ${slug}`, {
+                HARNESS_DATE: TEST_DATE,
+                HARNESS_CONTEXT_ROOT: contextRoot
+            });
 
             assert.strictEqual(result2.exitCode, 1, `second creation should fail. Output: ${result2.output}`);
             assert.ok(result2.output.includes('exists'), 'should mention file exists');
@@ -143,14 +158,18 @@ describe('harness CLI', { concurrency: 1 }, () => {
 
         it('creates a decision entry with date prefix', (t) => {
             const slug = 'test-fixture-decision-basic';
-            const targetFile = join(REPO_ROOT, '.harness', 'context', 'decisions', `${TEST_DATE}-${slug}.md`);
+            const contextRoot = createContextRoot(t);
+            const targetFile = join(contextRoot, 'decisions', `${TEST_DATE}-${slug}.md`);
             if (existsSync(targetFile)) rmSync(targetFile);
 
-            const result = runHarness(`new:decision --slug ${slug}`, { HARNESS_DATE: TEST_DATE });
+            const result = runHarness(`new:decision --slug ${slug}`, {
+                HARNESS_DATE: TEST_DATE,
+                HARNESS_CONTEXT_ROOT: contextRoot
+            });
 
             assert.strictEqual(result.exitCode, 0, `should succeed with --slug, got: ${result.output}`);
 
-            const createdFile = join(REPO_ROOT, '.harness', 'context', 'decisions', `${TEST_DATE}-${slug}.md`);
+            const createdFile = join(contextRoot, 'decisions', `${TEST_DATE}-${slug}.md`);
             t.after(() => {
                 if (existsSync(createdFile)) rmSync(createdFile);
             });
@@ -160,13 +179,17 @@ describe('harness CLI', { concurrency: 1 }, () => {
 
         it('creates entry with decision-specific sections', (t) => {
             const slug = 'test-fixture-decision-sections';
-            const targetFile = join(REPO_ROOT, '.harness', 'context', 'decisions', `${TEST_DATE}-${slug}.md`);
+            const contextRoot = createContextRoot(t);
+            const targetFile = join(contextRoot, 'decisions', `${TEST_DATE}-${slug}.md`);
             if (existsSync(targetFile)) rmSync(targetFile);
 
-            const result = runHarness(`new:decision --slug ${slug}`, { HARNESS_DATE: TEST_DATE });
+            const result = runHarness(`new:decision --slug ${slug}`, {
+                HARNESS_DATE: TEST_DATE,
+                HARNESS_CONTEXT_ROOT: contextRoot
+            });
             assert.strictEqual(result.exitCode, 0, 'should succeed');
 
-            const createdFile = join(REPO_ROOT, '.harness', 'context', 'decisions', `${TEST_DATE}-${slug}.md`);
+            const createdFile = join(contextRoot, 'decisions', `${TEST_DATE}-${slug}.md`);
             t.after(() => {
                 if (existsSync(createdFile)) rmSync(createdFile);
             });
@@ -188,14 +211,18 @@ describe('harness CLI', { concurrency: 1 }, () => {
 
         it('creates a meta decision entry with date prefix', (t) => {
             const slug = 'test-fixture-meta-basic';
-            const targetFile = join(REPO_ROOT, '.harness', 'context', 'decisions', 'harness', `${TEST_DATE}-${slug}.md`);
+            const contextRoot = createContextRoot(t);
+            const targetFile = join(contextRoot, 'decisions', 'harness', `${TEST_DATE}-${slug}.md`);
             if (existsSync(targetFile)) rmSync(targetFile);
 
-            const result = runHarness(`new:meta --slug ${slug}`, { HARNESS_DATE: TEST_DATE });
+            const result = runHarness(`new:meta --slug ${slug}`, {
+                HARNESS_DATE: TEST_DATE,
+                HARNESS_CONTEXT_ROOT: contextRoot
+            });
 
             assert.strictEqual(result.exitCode, 0, `should succeed with --slug, got: ${result.output}`);
 
-            const createdFile = join(REPO_ROOT, '.harness', 'context', 'decisions', 'harness', `${TEST_DATE}-${slug}.md`);
+            const createdFile = join(contextRoot, 'decisions', 'harness', `${TEST_DATE}-${slug}.md`);
             t.after(() => {
                 if (existsSync(createdFile)) rmSync(createdFile);
             });
@@ -205,13 +232,17 @@ describe('harness CLI', { concurrency: 1 }, () => {
 
         it('creates entry with Security & Integrity Impact section', (t) => {
             const slug = 'test-fixture-meta-sections';
-            const targetFile = join(REPO_ROOT, '.harness', 'context', 'decisions', 'harness', `${TEST_DATE}-${slug}.md`);
+            const contextRoot = createContextRoot(t);
+            const targetFile = join(contextRoot, 'decisions', 'harness', `${TEST_DATE}-${slug}.md`);
             if (existsSync(targetFile)) rmSync(targetFile);
 
-            const result = runHarness(`new:meta --slug ${slug}`, { HARNESS_DATE: TEST_DATE });
+            const result = runHarness(`new:meta --slug ${slug}`, {
+                HARNESS_DATE: TEST_DATE,
+                HARNESS_CONTEXT_ROOT: contextRoot
+            });
             assert.strictEqual(result.exitCode, 0, 'should succeed');
 
-            const createdFile = join(REPO_ROOT, '.harness', 'context', 'decisions', 'harness', `${TEST_DATE}-${slug}.md`);
+            const createdFile = join(contextRoot, 'decisions', 'harness', `${TEST_DATE}-${slug}.md`);
             t.after(() => {
                 if (existsSync(createdFile)) rmSync(createdFile);
             });

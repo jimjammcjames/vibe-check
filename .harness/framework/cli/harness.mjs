@@ -14,7 +14,7 @@
 
 import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -473,10 +473,18 @@ function getCurrentDate() {
     return process.env.HARNESS_DATE || new Date().toISOString().slice(0, 10);
 }
 
+function getContextRoot() {
+    const override = process.env.HARNESS_CONTEXT_ROOT;
+    if (!override) {
+        return join(HARNESS_ROOT, 'context');
+    }
+    return isAbsolute(override) ? override : join(REPO_ROOT, override);
+}
+
 function cmdNewLearned(slug) {
     const date = getCurrentDate();
     const filename = `${date}-${slug}.md`;
-    const targetDir = join(HARNESS_ROOT, 'context', 'learned');
+    const targetDir = join(getContextRoot(), 'learned');
     const targetPath = join(targetDir, filename);
     const templatePath = join(HARNESS_ROOT, 'framework', 'templates', 'learned.md');
 
@@ -528,38 +536,15 @@ NONE
     writeFileSync(targetPath, template);
     logSuccess(`Created: ${targetPath}`);
 
-    // Create companion test stub automatically (Scaffolding)
-    const testDir = join(REPO_ROOT, 'harness-tests', 'tests');
-    const testFile = join(testDir, `${slug}.test.mjs`);
-
-    if (!existsSync(testFile)) {
-        if (!existsSync(testDir)) mkdirSync(testDir, { recursive: true });
-
-        const testTemplate = `
-import { describe, it } from 'node:test';
-import { strict as assert } from 'node:assert';
-
-describe('Fix: ${slug}', () => {
-    it('should reproduce the issue (FAIL if not implemented)', () => {
-        // TODO: Implement reproduction test case
-        // assert.fail('Test case not implemented yet');
-        assert.ok(true, 'Verify your fix here');
-    });
-});
-`;
-        writeFileSync(testFile, testTemplate);
-        logSuccess(`Created Test Stub: ${testFile}`);
-    }
-
     log('\nDon\'t forget to:');
     log('  1. Fill in the Search terms, Related, and Tags fields');
-    log('  2. Implement the test case in `harness-tests/tests/' + slug + '.test.mjs`');
+    log('  2. Add or update a test that proves the learning');
 }
 
 function cmdNewDecision(slug) {
     const date = getCurrentDate();
     const filename = `${date}-${slug}.md`;
-    const targetDir = join(HARNESS_ROOT, 'context', 'decisions');
+    const targetDir = join(getContextRoot(), 'decisions');
     const targetPath = join(targetDir, filename);
     const templatePath = join(HARNESS_ROOT, 'framework', 'templates', 'decision.md');
 
@@ -620,7 +605,7 @@ NONE
 function cmdNewMeta(slug) {
     const date = getCurrentDate();
     const filename = `${date}-${slug}.md`;
-    const targetDir = join(HARNESS_ROOT, 'context', 'decisions', 'harness');
+    const targetDir = join(getContextRoot(), 'decisions', 'harness');
     const targetPath = join(targetDir, filename);
     const templatePath = join(HARNESS_ROOT, 'framework', 'templates', 'harness-decision.md');
 
