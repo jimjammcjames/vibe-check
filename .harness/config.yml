@@ -30,6 +30,7 @@ stages:
 
   post:
     - command: "npm test"
+    - command: "node .harness/framework/scripts/test-lint.mjs"
     - command: "node .harness/framework/scripts/policy-audit.mjs"
     - command: "node .harness/framework/scripts/harness-guardian.mjs"
     - command: "node .harness/framework/scripts/undocumented-detector.mjs"
@@ -42,6 +43,7 @@ stages:
     - command: "npx eslint ."
     - command: "npx tsc --noEmit"
     - command: "npm test"
+    - command: "node .harness/framework/scripts/test-lint.mjs"
     - command: "node .harness/framework/scripts/policy-audit.mjs"
     - command: "node .harness/framework/scripts/harness-guardian.mjs"
     - command: "node .harness/framework/scripts/undocumented-detector.mjs"
@@ -103,4 +105,3 @@ globs:
     - "**/__mocks__/**"
     - "**/test-utils/**"
     - "**/fixtures/**"
-

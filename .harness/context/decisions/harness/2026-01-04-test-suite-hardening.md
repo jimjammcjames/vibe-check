@@ -8,9 +8,11 @@ making it hard to unit-test real logic without invoking git or network dependenc
 
 ## Technical Decision
 Expose small, deterministic helpers from policy-audit and review-adapter, and guard their
-`main()` execution so tests can import logic without running CLI flows. Update harness tests to
-exercise real behavior through these helpers and through the stub provider, and remove live API
-calls from default test runs.
+`main()` execution so tests can import logic without running CLI flows. Add a deterministic
+test-lint script to block high-confidence test anti-patterns, allow deterministic dates for
+harness entry creation via HARNESS_DATE, update harness tests to exercise real behavior through
+helpers and the stub provider, tighten memory-coherence JSON output instructions for Gemini,
+and remove live API calls from default test runs.
 
 ## Security & Integrity Impact
 This strengthens enforcement by reducing false positives/negatives and ensuring tests validate
@@ -20,11 +22,12 @@ avoid network reliance while still validating schema and adapter flow.
 
 ## Conformance & Enforcement
 Behavioral tests now cover review result normalization, provider config selection, adapter
-selection, and systemic gap validation. The harness CLI adds coverage for `new:meta` creation.
-These changes ensure CI exercises the actual enforcement logic with hermetic inputs.
+selection, systemic gap validation, and deterministic test-lint rules. The harness CLI adds
+coverage for `new:meta` creation. These changes ensure CI exercises the actual enforcement
+logic with hermetic inputs and blocks obvious gaming.
 
 ## Search terms
-harness meta, review-adapter, policy-audit, hermetic tests, stub provider, main guard
+harness meta, review-adapter, policy-audit, test-lint, hermetic tests, stub provider, main guard
 
 ## Related
 NONE

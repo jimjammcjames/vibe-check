@@ -44,7 +44,7 @@ RULES:
 
 3. Check each entry and report issues.
 
-MANDATORY: Create COHERENCE.json:
+MANDATORY: Produce COHERENCE.json as a JSON object (no extra text):
 {
   "entries_checked": ["list of entry file paths"],
   "issues": [
@@ -60,8 +60,7 @@ MANDATORY: Create COHERENCE.json:
 
 - If no issues found, set all_coherent=true and issues=[]
 - Be pragmatic: minor bundling of closely-related fixes is fine
-
-Run: echo '{JSON}' > COHERENCE.json`;
+`;
 
 // ============================================================================
 // Helpers

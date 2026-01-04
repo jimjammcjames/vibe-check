@@ -376,6 +376,9 @@ DETECTION PATTERNS:
 4. Swallowed exceptions / disabled error handling
 5. Snapshot-only tests without behavioral verification
 6. "Fix" that loosens validation rather than handling the edge case
+7. Source-inspection tests that read files and assert string includes
+8. Network calls in tests without HARNESS_ALLOW_NETWORK_TESTS gating
+9. Reliance on key.txt or local key files in tests
 
 OUTPUT (JSON only, no markdown):
 {
@@ -490,6 +493,10 @@ ANALYSIS:
    Bad example: "None" (unacceptable for learned entries)
 
 3. GAMING: Are entries hollow/generic? Do they match the actual code change?
+   - Flag no-op assertions (e.g., assert.ok(true), expect(true).toBe(true))
+   - Flag tests that read source files and assert string includes instead of behavior
+   - Flag network calls in tests without HARNESS_ALLOW_NETWORK_TESTS gating
+   - Flag reliance on key.txt or local key files in tests
 
 4. QUALITY (1-10): Is Context real? Is Decision specific? Is Systemic Gap deep?
 

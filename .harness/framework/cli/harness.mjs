@@ -469,8 +469,12 @@ function cmdReview() {
     logSuccess('Review complete');
 }
 
+function getCurrentDate() {
+    return process.env.HARNESS_DATE || new Date().toISOString().slice(0, 10);
+}
+
 function cmdNewLearned(slug) {
-    const date = new Date().toISOString().slice(0, 10);
+    const date = getCurrentDate();
     const filename = `${date}-${slug}.md`;
     const targetDir = join(HARNESS_ROOT, 'context', 'learned');
     const targetPath = join(targetDir, filename);
@@ -553,7 +557,7 @@ describe('Fix: ${slug}', () => {
 }
 
 function cmdNewDecision(slug) {
-    const date = new Date().toISOString().slice(0, 10);
+    const date = getCurrentDate();
     const filename = `${date}-${slug}.md`;
     const targetDir = join(HARNESS_ROOT, 'context', 'decisions');
     const targetPath = join(targetDir, filename);
@@ -614,7 +618,7 @@ NONE
 }
 
 function cmdNewMeta(slug) {
-    const date = new Date().toISOString().slice(0, 10);
+    const date = getCurrentDate();
     const filename = `${date}-${slug}.md`;
     const targetDir = join(HARNESS_ROOT, 'context', 'decisions', 'harness');
     const targetPath = join(targetDir, filename);
