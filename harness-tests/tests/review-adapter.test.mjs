@@ -128,13 +128,6 @@ describe('review-adapter logic', () => {
             assert.strictEqual(adapter.name, adapters.shared.name);
         });
 
-        it('uses openai adapter when configured and key present', async () => {
-            const adapter = await withEnv({ HARNESS_PROVIDER: null, HARNESS_OPENAI_API_KEY: 'test-key' }, () =>
-                selectAdapter('openai')
-            );
-            assert.strictEqual(adapter.name, adapters.openai.name);
-        });
-
         it('uses stub adapter when explicitly configured', async () => {
             const adapter = await withEnv({ HARNESS_PROVIDER: null }, () =>
                 selectAdapter('stub')

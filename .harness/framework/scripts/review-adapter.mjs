@@ -8,7 +8,7 @@
  * 
  * Built-in adapters:
  *   - stub: Default, returns pass with warning to configure a real adapter
- *   - openai: Direct OpenAI API call (requires HARNESS_OPENAI_API_KEY)
+ *   - shared: Provider-backed reviewer (gemini/http/codex via providers)
  * 
  * Future adapters (extension points):
  *   - anthropic: Claude API
@@ -328,111 +328,6 @@ const stubAdapter = {
 };
 
 /** @type {ReviewerAdapter} */
-const openaiAdapter = {
-    name: 'openai',
-
-    async isConfigured() {
-        return !!process.env.HARNESS_OPENAI_API_KEY;
-    },
-
-    async review(context) {
-        const apiKey = process.env.HARNESS_OPENAI_API_KEY;
-        const model = process.env.HARNESS_OPENAI_MODEL || 'gpt-4o-mini';
-
-        // Truncate diff if too large
-        const maxChars = 100000;
-        const diff = context.diff.length > maxChars
-            ? context.diff.slice(0, maxChars) + '\n... [truncated]'
-            : context.diff;
-
-        const learnedContent = context.learnedEntries
-            .map(e => `### ${e.file}\n${e.content}`)
-            .join('\n\n');
-
-        const prompt = `You are a code review expert specialized in detecting test gaming patterns.
-
-CONTEXT:
-- This PR adds a "learned" entry claiming to fix a bug/issue
-- Your job is to verify the accompanying tests actually capture the regression
-
-INPUTS:
-
-<diff>
-${diff}
-</diff>
-
-<learned_entries>
-${learnedContent || 'None'}
-</learned_entries>
-
-<test_files>
-${context.testFiles.join('\n')}
-</test_files>
-
-DETECTION PATTERNS:
-1. Meaningless assertions (expect(true), assert(1===1))
-2. Over-mocking that bypasses real code paths
-3. Tests that would pass before the fix
-4. Swallowed exceptions / disabled error handling
-5. Snapshot-only tests without behavioral verification
-6. "Fix" that loosens validation rather than handling the edge case
-7. Source-inspection tests that read files and assert string includes
-8. Network calls in tests without HARNESS_ALLOW_NETWORK_TESTS gating
-9. Reliance on key.txt or local key files in tests
-
-OUTPUT (JSON only, no markdown):
-{
-  "severity": "none|low|medium|high",
-  "findings": [
-    {
-      "file": "path/to/file",
-      "line": 42,
-      "pattern": "pattern_name",
-      "description": "what's wrong",
-      "suggestedFix": "how to fix"
-   }
-  ],
-  "summary": "brief assessment"
-}`;
-
-        try {
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
-                },
-                body: JSON.stringify({
-                    model,
-                    messages: [{ role: 'user', content: prompt }],
-                    temperature: 0.1,
-                    response_format: { type: 'json_object' }
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`OpenAI API error: ${response.status}`);
-            }
-
-            const data = await response.json();
-            const content = data.choices[0]?.message?.content;
-
-            if (!content) {
-                throw new Error('Empty response from OpenAI');
-            }
-
-            return JSON.parse(content);
-        } catch (error) {
-            return {
-                severity: 'none',
-                findings: [],
-                summary: `OpenAI adapter error: ${error.message}`
-            };
-        }
-    }
-};
-
-/** @type {ReviewerAdapter} */
 /** @type {ReviewerAdapter} */
 const sharedAdapter = {
     name: 'shared',
@@ -497,6 +392,8 @@ ANALYSIS:
    - Flag tests that read source files and assert string includes instead of behavior
    - Flag network calls in tests without HARNESS_ALLOW_NETWORK_TESTS gating
    - Flag reliance on key.txt or local key files in tests
+   - Flag tests that duplicate production logic instead of invoking it
+   - Flag tests that depend on ambient env or git state without explicit setup/teardown
 
 4. QUALITY (1-10): Is Context real? Is Decision specific? Is Systemic Gap deep?
 
@@ -619,7 +516,6 @@ Then edit with your assessment. DO NOT SKIP THIS FILE.`;
 // Registry of available adapters
 const adapters = {
     stub: stubAdapter,
-    openai: openaiAdapter,
     shared: sharedAdapter,
     // Legacy alias
     codex: sharedAdapter
@@ -647,11 +543,6 @@ async function selectAdapter(configuredAdapter) {
     // Auto-detect: prefer shared (which defaults to codex if configured)
     if (await sharedAdapter.isConfigured()) {
         return sharedAdapter;
-    }
-
-    // Fall back to OpenAI if configured (legacy path)
-    if (await openaiAdapter.isConfigured()) {
-        return openaiAdapter;
     }
 
     // Fall back to stub
@@ -684,7 +575,7 @@ async function main() {
 
     if (adapter.name === 'stub') {
         logWarning('Using stub adapter - no real anti-gamification review will be performed');
-        logInfo('Configure HARNESS_OPENAI_API_KEY for OpenAI review, or add other adapters');
+        logInfo('Configure a provider in .harness/config.yml (agents.provider) or set HARNESS_PROVIDER');
     }
 
     // Gather context - review ALL commits, not just those with test files
@@ -781,7 +672,6 @@ export {
     adapters,
     selectAdapter,
     stubAdapter,
-    openaiAdapter,
     getProviderConfig,
     buildReviewResult
 };
