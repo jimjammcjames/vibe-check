@@ -51,6 +51,32 @@ function logInfo(msg) {
     console.log(`\x1b[36mℹ ${msg}\x1b[0m`);
 }
 
+/**
+ * Kill orphaned processes from previous failed harness runs.
+ * This ensures idempotency - iterate always starts from a clean state.
+ */
+function killOrphanedProcesses() {
+    const patterns = [
+        'prettier',
+        'eslint',
+        'tsc'
+    ];
+
+    for (const pattern of patterns) {
+        try {
+            // Find processes matching the pattern that are related to this repo
+            // Using pkill with -f to match command line arguments
+            execSync(`pkill -f "${pattern}.*--write\\|--check\\|--fix" 2>/dev/null || true`, {
+                cwd: REPO_ROOT,
+                stdio: 'ignore',
+                shell: true
+            });
+        } catch {
+            // pkill returns non-zero if no processes matched - that's fine
+        }
+    }
+}
+
 function printRecoveryPointers() {
     log(`
 \x1b[33m───────────────────────────────────────────────────────────────────────\x1b[0m
@@ -246,6 +272,20 @@ function runCommand(command, files = 'all') {
 
         const duration = Date.now() - start;
 
+        // Detect if process was killed externally (SIGTERM/SIGKILL)
+        const wasTerminated = error.signal === 'SIGTERM' ||
+            error.signal === 'SIGKILL' ||
+            stderr.toLowerCase().includes('terminated') ||
+            stderr.toLowerCase().includes('killed');
+
+        if (wasTerminated) {
+            logError(`Command was terminated externally: ${command}`);
+            log('\n\x1b[33m⚠️  PROCESS COLLISION DETECTED\x1b[0m');
+            log('Another harness instance may have killed this process.');
+            log('\x1b[36m→ ACTION: Simply rerun the command. This is safe.\x1b[0m\n');
+            return { success: false, output: stdout + stderr, duration, terminated: true };
+        }
+
         // BUBBLE UP ERROR SINK -> LOG IMMEDIATELY
         logError(`Command failed: ${command}`);
         if (stdout) {
@@ -321,6 +361,10 @@ function cmdPrep() {
 
 function cmdIterate() {
     log('\n\x1b[36m=== harness:iterate ===\x1b[0m');
+
+    // Clean up orphaned processes from previous failed runs (idempotency)
+    killOrphanedProcesses();
+
     log('Running format + lint fix on changed files...\n');
 
     const config = loadConfig();
@@ -358,6 +402,10 @@ function isParallelizableAgent(command) {
 
 async function cmdPost() {
     log('\n\x1b[36m=== harness:post ===\x1b[0m');
+
+    // Clean up orphaned processes from previous failed runs
+    killOrphanedProcesses();
+
     if (VERBOSE) {
         log('Running verification (verbose)...\n');
     }
@@ -432,6 +480,10 @@ async function cmdPost() {
 
 function cmdCi() {
     log('\n\x1b[36m=== harness:ci ===\x1b[0m');
+
+    // Clean up orphaned processes from previous failed runs
+    killOrphanedProcesses();
+
     log('Running CI verification...\n');
 
     const config = loadConfig();
