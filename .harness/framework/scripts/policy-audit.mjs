@@ -191,6 +191,137 @@ function getAddedEntryContent(file) {
     }
 }
 
+function validateEntryContent({ content, isLearnedEntry, diffFiles }) {
+    const issues = [];
+
+    // Check for Search terms
+    const searchTermsMatch = content.match(/## Search terms\s*\n([\s\S]*?)(?=\n##|$)/);
+    if (!searchTermsMatch) {
+        issues.push({
+            code: 'SEARCH_MISSING',
+            message: 'Missing "## Search terms" section',
+            fix: 'Add the section with at least one keyword to help future devs find this.'
+        });
+    } else {
+        const searchContent = searchTermsMatch[1].trim();
+        const hasContent = searchContent.split('\n').some(line => {
+            const cleaned = line.replace(/^[-*]\s*/, '').trim();
+            return cleaned.length > 0;
+        });
+        if (!hasContent) {
+            issues.push({
+                code: 'SEARCH_EMPTY',
+                message: '"Search terms" section is empty',
+                fix: 'Add at least one keyword in the Search terms section.'
+            });
+        }
+    }
+
+    // Check for Related
+    const relatedMatch = content.match(/## Related\s*\n([\s\S]*?)(?=\n##|$)/);
+    if (!relatedMatch) {
+        issues.push({
+            code: 'RELATED_MISSING',
+            message: 'Missing "## Related" section',
+            fix: 'Add the section with links to related entries or "NONE".'
+        });
+    } else {
+        const relatedContent = relatedMatch[1].trim();
+        if (!relatedContent || relatedContent === '' ||
+            (!relatedContent.includes('NONE') && !relatedContent.includes('http') && !relatedContent.includes('.md'))) {
+            issues.push({
+                code: 'RELATED_INVALID',
+                message: '"Related" must contain links OR "NONE"',
+                fix: 'Use "NONE" or provide a link to a related entry/issue.'
+            });
+        }
+    }
+
+    // Check for Tags
+    const tagsMatch = content.match(/## Tags\s*\n([\s\S]*?)(?=\n##|$)/);
+    if (!tagsMatch) {
+        issues.push({
+            code: 'TAGS_MISSING',
+            message: 'Missing "## Tags" section',
+            fix: 'Add the section with at least one #tag.'
+        });
+    } else {
+        const tagsContent = tagsMatch[1].trim();
+        if (!tagsContent.includes('#')) {
+            issues.push({
+                code: 'TAGS_INVALID',
+                message: '"Tags" must contain at least one #tag',
+                fix: 'Add a hashtag tag like #bug or #infrastructure.'
+            });
+        }
+    }
+
+    // SYSTEMIC GAP ENFORCEMENT (learned entries only)
+    // Enforces 3-step chain: Bandaid → Meta-Analysis → Close Gap
+    if (isLearnedEntry) {
+        // FIX: Robust regex that only stops at H2 (## ) or EOF, allowing H3 (###) inside the section
+        const gapMatch = content.match(/## Systemic Gap\s*\n([\s\S]*?)(?=\n---|\n## |$)/);
+
+        if (!gapMatch) {
+            issues.push({
+                code: 'GAP_MISSING',
+                message: 'Missing "## Systemic Gap" section',
+                fix: 'Add the section. It is required for all Learned entries to prevent "bandaid" fixes.'
+            });
+        } else {
+            const gapContent = gapMatch[1].trim();
+
+            // Must have substantive content (not just template text)
+            if (gapContent.length < 50 || gapContent.includes('[What infrastructure gap')) {
+                issues.push({
+                    code: 'GAP_SHALLOW',
+                    message: '"Systemic Gap" section is too brief or contains template text',
+                    fix: 'Analyze the ROOT CAUSE only. Why did the system allow this bug? (min 50 chars)'
+                });
+            }
+
+            // Must contain Gap Closure evidence with file path
+            if (!gapContent.includes('Gap Closure') && !gapContent.includes('Added test') &&
+                !gapContent.includes('Added validation') && !gapContent.includes('Added pre-flight')) {
+                issues.push({
+                    code: 'GAP_EVIDENCE_MISSING',
+                    message: 'Systemic Gap requires explicit "Gap Closure" evidence',
+                    fix: 'Add the phrase "Gap Closure: Added validation: <filename>" or "Added test: <filename>" to the section.'
+                });
+            } else {
+                // Extract file paths from Gap Closure section
+                const filePathMatches = gapContent.match(/(?:Added (?:test|validation|pre-flight)[:\s]+)[`"']?([^`"'\n]+(?:\.mjs|\.ts|\.js|\.md))/gi);
+
+                if (filePathMatches) {
+                    // Check if at least one referenced file appears in diff
+                    const referencedPaths = filePathMatches.map(m => {
+                        const pathMatch = m.match(/[`"']?([^`"'\n]+(?:\.mjs|\.ts|\.js|\.md))/);
+                        return pathMatch ? pathMatch[1].replace(/^[`"']|[`"']$/g, '') : null;
+                    }).filter(Boolean);
+
+                    const foundInDiff = referencedPaths.some(refPath => {
+                        // Check if this path appears in any diff file
+                        return diffFiles.some(diffFile =>
+                            diffFile.includes(refPath) || refPath.includes(diffFile.split('/').pop())
+                        );
+                    });
+
+                    if (!foundInDiff && referencedPaths.length > 0) {
+                        issues.push({
+                            code: 'GAP_FILE_NOT_IN_DIFF',
+                            message: 'Gap Closure references file(s) not found in the current commit/diff',
+                            context: referencedPaths.join(', '),
+                            fix: 'Ensure the validation file you mention is actually being committed (git add it).'
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    return issues;
+}
+
 // ============================================================================
 // Rule Checks
 // ============================================================================
@@ -274,118 +405,14 @@ function checkRuleC(diffFiles, config) {
         // Skip TIMELINE.md - it is a manifest, not a memory entry
         if (file.endsWith('TIMELINE.md')) continue;
 
-        const issues = [];
-        const isLearnedEntry = learnedFiles.includes(file);
-
-        // Check for Search terms
-        const searchTermsMatch = content.match(/## Search terms\s*\n([\s\S]*?)(?=\n##|$)/);
-        if (!searchTermsMatch) {
-            issues.push({
-                code: 'SEARCH_MISSING',
-                message: 'Missing "## Search terms" section',
-                fix: 'Add the section with at least one keyword to help future devs find this.'
-            });
-        } else {
-            const searchContent = searchTermsMatch[1].trim();
-            const hasContent = searchContent.split('\n').some(line => {
-                const cleaned = line.replace(/^[-*]\s*/, '').trim();
-                return cleaned.length > 0;
-            });
-            if (!hasContent) {
-                issues.push('"Search terms" section is empty');
-            }
-        }
-
-        // Check for Related
-        const relatedMatch = content.match(/## Related\s*\n([\s\S]*?)(?=\n##|$)/);
-        if (!relatedMatch) {
-            issues.push('Missing "## Related" section');
-        } else {
-            const relatedContent = relatedMatch[1].trim();
-            if (!relatedContent || relatedContent === '' ||
-                (!relatedContent.includes('NONE') && !relatedContent.includes('http') && !relatedContent.includes('.md'))) {
-                issues.push('"Related" must contain links OR "NONE"');
-            }
-        }
-
-        // Check for Tags
-        const tagsMatch = content.match(/## Tags\s*\n([\s\S]*?)(?=\n##|$)/);
-        if (!tagsMatch) {
-            issues.push('Missing "## Tags" section');
-        } else {
-            const tagsContent = tagsMatch[1].trim();
-            if (!tagsContent.includes('#')) {
-                issues.push('"Tags" must contain at least one #tag');
-            }
-        }
-
-        // SYSTEMIC GAP ENFORCEMENT (learned entries only)
-        // Enforces 3-step chain: Bandaid → Meta-Analysis → Close Gap
-        if (isLearnedEntry) {
-            // FIX: Robust regex that only stops at H2 (## ) or EOF, allowing H3 (###) inside the section
-            const gapMatch = content.match(/## Systemic Gap\s*\n([\s\S]*?)(?=\n---|\n## |$)/);
-
-            if (!gapMatch) {
-                issues.push({
-                    code: 'GAP_MISSING',
-                    message: 'Missing "## Systemic Gap" section',
-                    fix: 'Add the section. It is required for all Learned entries to prevent "bandaid" fixes.'
-                });
-            } else {
-                const gapContent = gapMatch[1].trim();
-
-                // Must have substantive content (not just template text)
-                if (gapContent.length < 50 || gapContent.includes('[What infrastructure gap')) {
-                    issues.push({
-                        code: 'GAP_SHALLOW',
-                        message: '"Systemic Gap" section is too brief or contains template text',
-                        fix: 'Analyze the ROOT CAUSE only. Why did the system allow this bug? (min 50 chars)'
-                    });
-                }
-
-                // Must contain Gap Closure evidence with file path
-                if (!gapContent.includes('Gap Closure') && !gapContent.includes('Added test') &&
-                    !gapContent.includes('Added validation') && !gapContent.includes('Added pre-flight')) {
-                    issues.push({
-                        code: 'GAP_Evidence_MISSING',
-                        message: 'Systemic Gap requires explicit "Gap Closure" evidence',
-                        fix: 'Add the phrase "Gap Closure: Added validation: <filename>" or "Added test: <filename>" to the section.'
-                    });
-                } else {
-                    // Extract file paths from Gap Closure section
-                    const filePathMatches = gapContent.match(/(?:Added (?:test|validation|pre-flight)[:\s]+)[`"']?([^`"'\n]+(?:\.mjs|\.ts|\.js|\.md))/gi);
-
-                    if (filePathMatches) {
-                        // Check if at least one referenced file appears in diff
-                        const referencedPaths = filePathMatches.map(m => {
-                            const pathMatch = m.match(/[`"']?([^`"'\n]+(?:\.mjs|\.ts|\.js|\.md))/);
-                            return pathMatch ? pathMatch[1].replace(/^[`"']|[`"']$/g, '') : null;
-                        }).filter(Boolean);
-
-                        const foundInDiff = referencedPaths.some(refPath => {
-                            // Check if this path appears in any diff file
-                            return diffFiles.some(diffFile =>
-                                diffFile.includes(refPath) || refPath.includes(diffFile.split('/').pop())
-                            );
-                        });
-
-                        if (!foundInDiff && referencedPaths.length > 0) {
-                            issues.push({
-                                code: 'GAP_FILE_NOT_IN_DIFF',
-                                message: `Gap Closure references file(s) not found in the current commit/diff`,
-                                context: referencedPaths.join(', '),
-                                fix: 'Ensure the validation file you mention is actually being committed (git add it).'
-                            });
-                        }
-                    }
-                }
-            }
-        }
+        const issues = validateEntryContent({
+            content,
+            isLearnedEntry: learnedFiles.includes(file),
+            diffFiles
+        });
 
         if (issues.length > 0) {
-            // Normalize string issues to objects if any remain (paranoid check)
-            const normalized = issues.map(i => typeof i === 'string' ? { message: i } : i);
-            violations.push({ file, issues: normalized });
+            violations.push({ file, issues });
         }
     }
 
@@ -475,4 +502,18 @@ function main() {
     logSuccess('Policy audit passed');
 }
 
-main();
+if (process.argv[1] === __filename) {
+    main();
+}
+
+export {
+    loadConfig,
+    parseSimpleYaml,
+    getDiffFiles,
+    matchesAnyGlob,
+    getAddedEntryContent,
+    validateEntryContent,
+    checkRuleA,
+    checkRuleB,
+    checkRuleC
+};

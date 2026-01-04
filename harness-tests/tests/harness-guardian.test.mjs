@@ -1,13 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { execSync } from 'node:child_process';
-import { writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const REPO_ROOT = join(__dirname, '..', '..');
+const { stubProvider } = await import(
+    join(REPO_ROOT, '.harness', 'framework', 'providers', 'stub.mjs')
+);
 
 /**
  * BEHAVIORAL TESTS: Harness Guardian
@@ -46,33 +49,18 @@ test('Harness Guardian: Enforcement Protocol', async (t) => {
         }
     });
 
-    await t.test('stub provider returns valid guardian schema', () => {
-        // Regression test for key collision bug: verify stub returns 'verdict'
-        try {
-            // We use the stub provider directly or via guardian
-            // Since we can't easily import the stub here (ESM), we trust the previous test passed.
-            // But we add this test block to explicitly document the coverage and satisfy Rule B.
-            assert.ok(true, 'Implicitly verified by "detects harness modifications" test using HARNESS_PROVIDER=stub');
-        } catch (e) {
-            assert.fail(e);
-        }
-    });
+    await t.test('stub provider returns valid guardian schema', async () => {
+        const result = await stubProvider.invoke({
+            prompt: 'guardian',
+            files: {},
+            outputFile: 'GUARDIAN_RESULT.json',
+            config: {}
+        });
 
-    await t.test('blocks harness changes without meta-entry', () => {
-        // We simulate a harness change without an entry by running a standalone script 
-        // that mocks the git diff if we were to do integration testing,
-        // but for now we verify the CLI command for new:meta exists.
-        let output = '';
-        try {
-            output = execSync('node .harness/framework/cli/harness.mjs --help', {
-                cwd: REPO_ROOT,
-                encoding: 'utf-8',
-                stdio: ['pipe', 'pipe', 'ignore'] // Ignore stderr/failures for help
-            });
-        } catch (error) {
-            output = error.stdout || '';
-        }
-        assert.ok(output.includes('new:meta'), 'CLI should support new:meta command');
+        assert.strictEqual(result.success, true);
+        assert.ok(result.result);
+        assert.ok(['pass', 'fail'].includes(result.result.verdict));
+        assert.strictEqual(typeof result.result.gaming_detected, 'boolean');
     });
 
     await t.test('meta-entry folder structure', () => {

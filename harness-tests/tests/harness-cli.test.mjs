@@ -191,6 +191,55 @@ describe('harness CLI', () => {
         });
     });
 
+    describe('new:meta command', () => {
+        let createdFile = null;
+
+        afterEach(() => {
+            if (createdFile && existsSync(createdFile)) {
+                rmSync(createdFile);
+            }
+            createdFile = null;
+        });
+
+        it('requires --slug argument', () => {
+            const result = runHarness('new:meta');
+            assert.strictEqual(result.exitCode, 1, 'should fail without --slug');
+        });
+
+        it('creates a meta decision entry with date prefix', () => {
+            const slug = 'test-fixture-meta-basic';
+            const today = new Date().toISOString().slice(0, 10);
+            const targetFile = join(REPO_ROOT, '.harness', 'context', 'decisions', 'harness', `${today}-${slug}.md`);
+            if (existsSync(targetFile)) rmSync(targetFile);
+
+            const result = runHarness(`new:meta --slug ${slug}`);
+
+            assert.strictEqual(result.exitCode, 0, `should succeed with --slug, got: ${result.output}`);
+
+            createdFile = join(REPO_ROOT, '.harness', 'context', 'decisions', 'harness', `${today}-${slug}.md`);
+
+            assert.ok(existsSync(createdFile), 'file should exist');
+        });
+
+        it('creates entry with Security & Integrity Impact section', () => {
+            const slug = 'test-fixture-meta-sections';
+            const today = new Date().toISOString().slice(0, 10);
+            const targetFile = join(REPO_ROOT, '.harness', 'context', 'decisions', 'harness', `${today}-${slug}.md`);
+            if (existsSync(targetFile)) rmSync(targetFile);
+
+            const result = runHarness(`new:meta --slug ${slug}`);
+            assert.strictEqual(result.exitCode, 0, 'should succeed');
+
+            createdFile = join(REPO_ROOT, '.harness', 'context', 'decisions', 'harness', `${today}-${slug}.md`);
+
+            const content = readFileSync(createdFile, 'utf-8');
+
+            assert.ok(content.includes('## Security & Integrity Impact'), 'should have Security & Integrity Impact section');
+            assert.ok(content.includes('## Search terms'), 'should have Search terms section');
+            assert.ok(content.includes('## Tags'), 'should have Tags section');
+        });
+    });
+
     describe('post command', () => {
         it('starts post verification', () => {
             // Note: post command runs npm test as first step, which would cause recursion.

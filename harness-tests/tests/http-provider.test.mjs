@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { rmSync, mkdtempSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -21,8 +22,7 @@ const { httpApiProvider } = await import(
 /**
  * UNIT TESTS: HTTP API Provider
  * 
- * Tests the http-api provider for successful operation.
- * Requires key.txt to be present in repo root for API calls.
+ * Tests the http-api provider for successful operation without network access.
  */
 
 test('HTTP API Provider: Registration', async (t) => {
@@ -55,48 +55,32 @@ test('HTTP API Provider: Availability', async (t) => {
     });
 });
 
-test('HTTP API Provider: Key Loading', async (t) => {
+test('HTTP API Provider: Key Handling', async (t) => {
+    await t.test('returns error when no API key is available', async () => {
+        const originalCwd = process.cwd();
+        const originalKey = process.env.HARNESS_API_KEY;
+        const tempDir = mkdtempSync(join(tmpdir(), 'harness-http-'));
 
-    await t.test('loads API key from key.txt', async () => {
-        const keyPath = join(REPO_ROOT, 'key.txt');
-        assert.ok(existsSync(keyPath), 'key.txt should exist in repo root');
+        try {
+            process.chdir(tempDir);
+            delete process.env.HARNESS_API_KEY;
 
-        const key = readFileSync(keyPath, 'utf-8').trim();
-        assert.ok(key.length > 0, 'key.txt should contain an API key');
-        assert.ok(key.startsWith('sk-'), 'API key should start with sk-');
-    });
-});
+            const result = await httpApiProvider.invoke({
+                prompt: 'noop',
+                files: {},
+                config: {}
+            });
 
-test('HTTP API Provider: Live API Call', async (t) => {
-    const testDir = join(__dirname, '..', 'temp-http-live-test');
-
-    t.beforeEach(() => {
-        if (existsSync(testDir)) {
-            rmSync(testDir, { recursive: true });
+            assert.strictEqual(result.success, false, 'Should fail without API key');
+            assert.strictEqual(result.error, 'Missing API key');
+        } finally {
+            process.chdir(originalCwd);
+            if (originalKey === undefined) {
+                delete process.env.HARNESS_API_KEY;
+            } else {
+                process.env.HARNESS_API_KEY = originalKey;
+            }
+            rmSync(tempDir, { recursive: true, force: true });
         }
-        mkdirSync(testDir, { recursive: true });
-    });
-
-    t.afterEach(() => {
-        if (existsSync(testDir)) {
-            rmSync(testDir, { recursive: true });
-        }
-    });
-
-    await t.test('successfully calls OpenAI API and gets response', async () => {
-        const result = await httpApiProvider.invoke({
-            prompt: `Return a simple JSON object:
-{
-  "status": "ok",
-  "message": "test"
-}`,
-            sandboxDir: testDir,
-            outputFile: 'TEST.json',
-            config: {}
-        });
-
-        assert.strictEqual(result.success, true, 'Should succeed with valid API key');
-        assert.ok(result.result, 'Should have a result object');
-        assert.ok(result.result.verdict, 'Result should have verdict field');
     });
 });

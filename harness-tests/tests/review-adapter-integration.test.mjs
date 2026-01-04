@@ -1,102 +1,52 @@
 /**
  * Integration tests for review-adapter.mjs
- * 
- * These tests ensure the adapter can actually run and produce output.
- * This prevents issues where syntax errors or model incompatibilities
- * cause silent failures.
+ *
+ * Validates the shared adapter can execute with the stub provider.
  */
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { execSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { adapters } from '../../.harness/framework/scripts/review-adapter.mjs';
+
+async function withEnv(vars, fn) {
+    const previous = {};
+    for (const key of Object.keys(vars)) {
+        previous[key] = process.env[key];
+        if (vars[key] === null) {
+            delete process.env[key];
+        } else {
+            process.env[key] = vars[key];
+        }
+    }
+    try {
+        return await fn();
+    } finally {
+        for (const key of Object.keys(vars)) {
+            if (previous[key] === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = previous[key];
+            }
+        }
+    }
+}
 
 describe('review-adapter integration', () => {
+    it('runs shared adapter via stub provider and returns normalized result', async () => {
+        const context = {
+            diff: 'diff --git a/file b/file',
+            testFiles: ['harness-tests/tests/example.test.mjs'],
+            learnedEntries: [],
+            testCommand: 'npm test'
+        };
 
-    describe('smoke test - can adapter run at all?', () => {
-        it('should execute without syntax errors', () => {
-            // This validates the script is syntactically valid
-            const result = execSync(
-                'node --check .harness/framework/scripts/review-adapter.mjs',
-                { encoding: 'utf-8', cwd: process.cwd() }
-            );
-            assert.ok(true, 'Script has no syntax errors');
-        });
-    });
+        const result = await withEnv({ HARNESS_PROVIDER: 'stub' }, () =>
+            adapters.shared.review(context)
+        );
 
-    describe('model compatibility pre-flight', () => {
-        // Deprecated: Model constants are now provider-specific or handled dynamically
-        // it('should have SUPPORTED_MODELS constant defined', () => { ... });
-        // it('should validate model before invoking codex', () => { ... });
-    });
-
-    describe('error visibility infrastructure', () => {
-        it('should use logError for stderr (not just log)', () => {
-            const content = readFileSync(
-                '.harness/framework/scripts/review-adapter.mjs',
-                'utf-8'
-            );
-
-            assert.ok(content.includes('logError'),
-                'Must have logError calls for prominent error display');
-            // Relaxed regex to match updated simplified logic
-            assert.ok(content.includes('logError'),
-                'Must use logError specifically for stderr');
-        });
-
-        it('should delegate to provider system', () => {
-            const content = readFileSync(
-                '.harness/framework/scripts/review-adapter.mjs',
-                'utf-8'
-            );
-            assert.ok(content.includes('getProvider'), 'Must use getProvider for modular architecture');
-            assert.ok(content.includes('provider.invoke'), 'Must call provider.invoke');
-        });
-    });
-
-
-
-    describe('fast mode configuration', () => {
-        it('should use gpt-4.1-nano for fast mode', () => {
-            const content = readFileSync(
-                '.harness/framework/scripts/review-adapter.mjs',
-                'utf-8'
-            );
-
-            // Should use gpt-4.1-nano for fast mode
-            assert.ok(content.includes('gpt-4.1-nano'),
-                'Fast mode should use gpt-4.1-nano');
-        });
-
-        it('should use gpt-4.1-mini for standard mode', () => {
-            const content = readFileSync(
-                '.harness/framework/scripts/review-adapter.mjs',
-                'utf-8'
-            );
-
-            assert.ok(content.includes('gpt-4.1-mini'),
-                'Standard mode should use gpt-4.1-mini');
-        });
-    });
-
-    describe('meta-validation: does this test file itself get run?', () => {
-        it('should be in package.json test pattern', () => {
-            const packageJson = JSON.parse(readFileSync('package.json', 'utf-8'));
-            const testCommand = packageJson.scripts.test;
-
-            assert.ok(testCommand.includes('harness-tests/tests'),
-                'Test command should include harness-tests/tests directory');
-            assert.ok(testCommand.includes('*.test.mjs'),
-                'Test command should match .test.mjs files');
-        });
-
-        it('this test file should be discoverable by npm test', () => {
-            const testFiles = readdirSync('harness-tests/tests')
-                .filter(f => f.endsWith('.test.mjs'));
-
-            assert.ok(testFiles.includes('review-adapter-integration.test.mjs'),
-                'This integration test file should be in the test directory');
-        });
+        assert.strictEqual(result.severity, 'none');
+        assert.ok(result.summary.includes('Stub provider'));
+        assert.strictEqual(result.qualityScore, 8);
+        assert.strictEqual(result.gamingDetected, false);
     });
 });

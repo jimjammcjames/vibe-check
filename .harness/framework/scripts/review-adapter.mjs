@@ -218,6 +218,59 @@ function getLearnedContent(diffFiles, config) {
     }).filter(Boolean);
 }
 
+function getProviderConfig(isFastMode) {
+    const providerConfig = {
+        timeout: 300000
+    };
+
+    if (isFastMode) {
+        providerConfig.model = 'gpt-4.1-nano';
+    } else {
+        providerConfig.model = 'gpt-4.1-mini';
+    }
+
+    return providerConfig;
+}
+
+function buildReviewResult(reviewData) {
+    let severity = 'none';
+    if (reviewData.gaming_detected) {
+        severity = 'high';
+    } else if (!reviewData.compliant) {
+        severity = 'high';
+    } else if (reviewData.entry_type_mismatch || reviewData.missing_tests_for_fix) {
+        severity = 'high';
+    } else if (reviewData.quality_score && reviewData.quality_score < 5) {
+        severity = 'medium';
+    }
+
+    const violations = Array.isArray(reviewData.violations) ? reviewData.violations : [];
+    const findings = violations.map(v => {
+        if (typeof v === 'string') {
+            return { file: 'N/A', pattern: 'violation', description: v };
+        }
+        return {
+            file: 'N/A',
+            pattern: v.rule || 'violation',
+            description: v.description || JSON.stringify(v)
+        };
+    });
+
+    return {
+        severity,
+        findings,
+        summary: reviewData.summary || 'Meta-review complete',
+        changeType: reviewData.change_type,
+        entryTypeMismatch: reviewData.entry_type_mismatch,
+        missingTestsForFix: reviewData.missing_tests_for_fix,
+        qualityScore: reviewData.quality_score,
+        qualityBreakdown: reviewData.quality_breakdown,
+        criticalIssues: reviewData.critical_issues,
+        gamingDetected: reviewData.gaming_detected,
+        systemicFlawDetected: reviewData.systemic_flaw_detected
+    };
+}
+
 // ============================================================================
 // Adapter Interface
 // ============================================================================
@@ -483,17 +536,7 @@ Then edit with your assessment. DO NOT SKIP THIS FILE.`;
 
             // Perform fast review if requested
             const isFastMode = process.argv.includes('--fast');
-            // If using shared/codex provider, this config helps select the right model
-            const providerConfig = {
-                timeout: 300000
-            };
-
-            if (isFastMode) {
-                // Use fast model for quick iterations
-                providerConfig.model = 'gpt-4.1-nano';
-            } else {
-                providerConfig.model = 'gpt-4.1-mini';
-            }
+            const providerConfig = getProviderConfig(isFastMode);
 
             // Get provider
             // Check config.yml for default provider
@@ -544,35 +587,7 @@ Then edit with your assessment. DO NOT SKIP THIS FILE.`;
             const reviewData = result.result;
 
             if (reviewData) {
-                // Determine severity based on gaming detection, mismatches, and quality
-                let severity = 'none';
-                if (reviewData.gaming_detected) {
-                    severity = 'high';
-                } else if (!reviewData.compliant) {
-                    severity = 'high';
-                } else if (reviewData.entry_type_mismatch || reviewData.missing_tests_for_fix) {
-                    severity = 'high';
-                } else if (reviewData.quality_score && reviewData.quality_score < 5) {
-                    severity = 'medium';
-                }
-
-                return {
-                    severity,
-                    findings: (reviewData.violations || []).map(v => ({
-                        file: 'N/A',
-                        pattern: v.rule || 'violation',
-                        description: v.description || JSON.stringify(v)
-                    })),
-                    summary: reviewData.summary || 'Meta-review complete',
-                    changeType: reviewData.change_type,
-                    entryTypeMismatch: reviewData.entry_type_mismatch,
-                    missingTestsForFix: reviewData.missing_tests_for_fix,
-                    qualityScore: reviewData.quality_score,
-                    qualityBreakdown: reviewData.quality_breakdown,
-                    criticalIssues: reviewData.critical_issues,
-                    gamingDetected: reviewData.gaming_detected,
-                    systemicFlawDetected: reviewData.systemic_flaw_detected
-                };
+                return buildReviewResult(reviewData);
             }
 
             return {
@@ -747,10 +762,19 @@ async function main() {
     }
 }
 
-main().catch(error => {
-    logError(`Unexpected error: ${error.message}`);
-    process.exit(2);
-});
+if (process.argv[1] === __filename) {
+    main().catch(error => {
+        logError(`Unexpected error: ${error.message}`);
+        process.exit(2);
+    });
+}
 
 // Export for testing
-export { adapters, selectAdapter, stubAdapter, openaiAdapter };
+export {
+    adapters,
+    selectAdapter,
+    stubAdapter,
+    openaiAdapter,
+    getProviderConfig,
+    buildReviewResult
+};
