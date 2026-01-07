@@ -9,6 +9,7 @@ To support the scaling of the harness agent architecture, we identified the need
 ## Decision
 
 Implemented a **Memory Coherence Checker** agent that enforces architectural standards:
+
 1. Entry type correctness (fix → learned, feature → decision)
 2. Topic coherence (one logical change per entry)
 
@@ -17,6 +18,7 @@ We also updated the **Undocumented Detector** to support this architecture by co
 ## Rationale
 
 Chose a dedicated agent over enhancing review-adapter because:
+
 - Single responsibility (easier to iterate on)
 - Runs in parallel (no added latency)
 - Fails independently (doesn't break compliance review)

@@ -30,9 +30,16 @@ This was causing significant resource consumption — dozens of `npm exec pretti
 ## Conformance & Enforcement
 
 The changes are verified by:
+
 1. Running `harness:iterate`, `harness:post`, `harness:ci` successfully
 2. Confirming no orphaned processes remain after execution (`pgrep -fl prettier`)
 3. Existing test suite continues to pass
+
+## Systemic Gap
+
+**Gap**: No cleanup mechanism existed for orphaned child processes when agent sessions terminate unexpectedly (timeout, network drop, SIGKILL). This led to resource accumulation requiring manual intervention.
+
+**Gap Closure**: Added `killOrphanedProcesses()` in `harness.mjs` that runs at the start of each stage, ensuring idempotent execution regardless of prior session state.
 
 ## Search terms
 

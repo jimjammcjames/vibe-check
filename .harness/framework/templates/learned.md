@@ -19,6 +19,7 @@
 [What validation/check/test was missing that would have caught this before it became a problem?]
 
 **Gap Closure** (REQUIRED - at least one file path that appears in this commit):
+
 - Added test: `path/to/test.mjs`
 - Added validation: `path/to/check.mjs`
 - Added pre-flight: `path/to/preflight.mjs`

@@ -13,15 +13,28 @@ The harness didn't explicitly require the agent to classify changes as fix vs fe
 ## Solution
 
 Enhanced the Codex review prompt to:
+
 1. Classify changes as FIX or FEATURE based on language patterns
 2. Flag entry type mismatches (fix using decision entry)
 3. Flag missing tests for fix-type changes
 4. Set severity=HIGH for either mismatch
 
 Added comprehensive tests in `review-adapter.test.mjs` covering:
+
 - Severity calculation (gaming, compliance, quality thresholds)
 - Result parsing (violations, quality breakdown)
 - Fix-vs-feature detection (pattern matching)
+
+## Systemic Gap
+
+**What infrastructure gap allowed this issue class?**
+
+The review workflow did not require explicit fix vs feature classification, so fixes could be documented as decisions and bypass Rule B test enforcement.
+
+**Gap Closure**:
+
+- Added test: `harness-tests/tests/review-adapter.test.mjs`
+- Added validation: `.harness/framework/scripts/review-adapter.mjs`
 
 ## Search terms
 

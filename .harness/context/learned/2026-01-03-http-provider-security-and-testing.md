@@ -22,6 +22,7 @@ New features (HTTP Provider) were implemented but lacked persistent security for
 The initial implementation of the HTTP provider focused on functionality but missed standard developer ergonomics (secrets management) and regression testing. Additionally, existing tests relied on live providers, making them brittle.
 
 **Gap Closure** (REQUIRED - at least one file path that appears in this commit):
+
 - Added test: `harness-tests/tests/http-provider.test.mjs`
 - Modified test: `harness-tests/tests/harness-guardian.test.mjs`
 

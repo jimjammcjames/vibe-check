@@ -13,7 +13,7 @@ reviewers:
     allow_weak_pass: true
     exempt_tag: "#basefail-exempt"
     run_tests_cmd: "npm test"
-  
+
   # Pluggable reviewer (adapter-based)
   code_reviewer:
     enabled: true
@@ -34,9 +34,6 @@ stages:
     - command: "node .harness/framework/scripts/policy-audit.mjs"
     - command: "node .harness/framework/scripts/harness-guardian.mjs"
     - command: "node .harness/framework/scripts/undocumented-detector.mjs"
-    - command: "node .harness/framework/scripts/memory-coherence-checker.mjs"
-    - command: "node .harness/framework/scripts/base-tripwire.mjs"
-    - command: "node .harness/framework/scripts/review-adapter.mjs --fast"
 
   ci:
     - command: "npx prettier --check ."

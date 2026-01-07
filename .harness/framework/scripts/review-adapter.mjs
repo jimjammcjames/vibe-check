@@ -2,273 +2,292 @@
 
 /**
  * Review Adapter - Pluggable Anti-Gamification Reviewer
- * 
+ *
  * Provides an adapter interface for teams to plug in their existing
  * code review tools (OpenAI, Anthropic, CodeRabbit, etc.)
- * 
+ *
  * Built-in adapters:
  *   - stub: Default, returns pass with warning to configure a real adapter
  *   - shared: Provider-backed reviewer (gemini/http/codex via providers)
- * 
+ *
  * Future adapters (extension points):
  *   - anthropic: Claude API
  *   - coderabbit: CodeRabbit integration
  *   - custom: Webhook to custom endpoint
  */
 
-import { execSync } from 'node:child_process';
-import { readFileSync, existsSync, writeFileSync, mkdirSync, mkdtempSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { minimatch } from './minimatch.mjs';
-import { getProvider } from '../providers/index.mjs';
+import { execSync } from "node:child_process";
+import {
+  readFileSync,
+  existsSync,
+  writeFileSync,
+  mkdirSync,
+  mkdtempSync,
+} from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { minimatch } from "./minimatch.mjs";
+import { getProvider } from "../providers/index.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const HARNESS_ROOT = join(__dirname, '..', '..');
-const REPO_ROOT = join(HARNESS_ROOT, '..');
+const HARNESS_ROOT = join(__dirname, "..", "..");
+const REPO_ROOT = join(HARNESS_ROOT, "..");
 
 // ============================================================================
 // Utilities
 // ============================================================================
 
-const QUIET = process.env.HARNESS_QUIET === '1';
+const QUIET = process.env.HARNESS_QUIET === "1";
 
 function log(msg) {
-    if (!QUIET) console.log(msg);
+  if (!QUIET) console.log(msg);
 }
 
 function logError(msg) {
-    console.error(`\x1b[31m✗ ${msg}\x1b[0m`);
+  console.error(`\x1b[31m✗ ${msg}\x1b[0m`);
 }
 
 function logSuccess(msg) {
-    console.log(`\x1b[32m✓ ${msg}\x1b[0m`);
+  console.log(`\x1b[32m✓ ${msg}\x1b[0m`);
 }
 
 function logWarning(msg) {
-    console.log(`\x1b[33m⚠ ${msg}\x1b[0m`);
+  console.log(`\x1b[33m⚠ ${msg}\x1b[0m`);
 }
 
 function logInfo(msg) {
-    if (!QUIET) console.log(`\x1b[36mℹ ${msg}\x1b[0m`);
+  if (!QUIET) console.log(`\x1b[36mℹ ${msg}\x1b[0m`);
 }
 
 function loadConfig() {
-    const configPath = join(HARNESS_ROOT, 'config.yml');
-    if (!existsSync(configPath)) {
-        throw new Error(`Config not found: ${configPath}`);
-    }
-    const content = readFileSync(configPath, 'utf-8');
-    return parseSimpleYaml(content);
+  const configPath = join(HARNESS_ROOT, "config.yml");
+  if (!existsSync(configPath)) {
+    throw new Error(`Config not found: ${configPath}`);
+  }
+  const content = readFileSync(configPath, "utf-8");
+  return parseSimpleYaml(content);
 }
 
 function parseSimpleYaml(content) {
-    const config = { globs: {}, reviewers: {} };
-    let currentSection = null;
-    let currentGlob = null;
-    let currentReviewer = null;
+  const config = { globs: {}, reviewers: {} };
+  let currentSection = null;
+  let currentGlob = null;
+  let currentReviewer = null;
 
-    const lines = content.split('\n');
-    for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) continue;
+  const lines = content.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
 
-        if (trimmed === 'globs:') {
-            currentSection = 'globs';
-            currentReviewer = null;
-            continue;
-        }
-        if (trimmed === 'reviewers:') {
-            currentSection = 'reviewers';
-            currentGlob = null;
-            continue;
-        }
-        if (trimmed === 'stages:') {
-            currentSection = 'stages';
-            continue;
-        }
-
-        if (currentSection === 'globs') {
-            const globKeyMatch = trimmed.match(/^(\w+):(.*)$/);
-            if (globKeyMatch) {
-                const key = globKeyMatch[1];
-                const value = globKeyMatch[2].trim();
-                if (value && value !== '') {
-                    config.globs[key] = value.replace(/^["']|["']$/g, '');
-                } else {
-                    currentGlob = key;
-                    config.globs[key] = [];
-                }
-                continue;
-            }
-
-            if (currentGlob && trimmed.startsWith('-')) {
-                const pattern = trimmed.slice(1).trim().replace(/^["']|["']$/g, '');
-                config.globs[currentGlob].push(pattern);
-            }
-        }
-
-        if (currentSection === 'reviewers') {
-            const reviewerMatch = trimmed.match(/^(\w+):$/);
-            if (reviewerMatch) {
-                currentReviewer = reviewerMatch[1];
-                config.reviewers[currentReviewer] = {};
-                continue;
-            }
-
-            if (currentReviewer) {
-                const kvMatch = trimmed.match(/^(\w+):\s*(.+)$/);
-                if (kvMatch) {
-                    const key = kvMatch[1];
-                    let value = kvMatch[2].replace(/^["']|["']$/g, '');
-                    if (value === 'true') value = true;
-                    if (value === 'false') value = false;
-                    config.reviewers[currentReviewer][key] = value;
-                }
-            }
-        }
+    if (trimmed === "globs:") {
+      currentSection = "globs";
+      currentReviewer = null;
+      continue;
+    }
+    if (trimmed === "reviewers:") {
+      currentSection = "reviewers";
+      currentGlob = null;
+      continue;
+    }
+    if (trimmed === "stages:") {
+      currentSection = "stages";
+      continue;
     }
 
-    return config;
+    if (currentSection === "globs") {
+      const globKeyMatch = trimmed.match(/^(\w+):(.*)$/);
+      if (globKeyMatch) {
+        const key = globKeyMatch[1];
+        const value = globKeyMatch[2].trim();
+        if (value && value !== "") {
+          config.globs[key] = value.replace(/^["']|["']$/g, "");
+        } else {
+          currentGlob = key;
+          config.globs[key] = [];
+        }
+        continue;
+      }
+
+      if (currentGlob && trimmed.startsWith("-")) {
+        const pattern = trimmed
+          .slice(1)
+          .trim()
+          .replace(/^["']|["']$/g, "");
+        config.globs[currentGlob].push(pattern);
+      }
+    }
+
+    if (currentSection === "reviewers") {
+      const reviewerMatch = trimmed.match(/^(\w+):$/);
+      if (reviewerMatch) {
+        currentReviewer = reviewerMatch[1];
+        config.reviewers[currentReviewer] = {};
+        continue;
+      }
+
+      if (currentReviewer) {
+        const kvMatch = trimmed.match(/^(\w+):\s*(.+)$/);
+        if (kvMatch) {
+          const key = kvMatch[1];
+          let value = kvMatch[2].replace(/^["']|["']$/g, "");
+          if (value === "true") value = true;
+          if (value === "false") value = false;
+          config.reviewers[currentReviewer][key] = value;
+        }
+      }
+    }
+  }
+
+  return config;
 }
 
-function getDiff(baseRef = 'origin/main') {
+function getDiff(baseRef = "origin/main") {
+  try {
+    // Get diff from base ref to HEAD (committed changes)
+    let diff = "";
     try {
-        // Get diff from base ref to HEAD (committed changes)
-        let diff = '';
-        try {
-            diff = execSync(`git diff ${baseRef}...HEAD`, {
-                cwd: REPO_ROOT,
-                encoding: 'utf-8',
-                maxBuffer: 50 * 1024 * 1024,
-                stdio: ['pipe', 'pipe', 'pipe']
-            });
-        } catch {
-            // No common ancestor, use direct diff
-            diff = execSync(`git diff ${baseRef}`, {
-                cwd: REPO_ROOT,
-                encoding: 'utf-8',
-                maxBuffer: 50 * 1024 * 1024,
-                stdio: ['pipe', 'pipe', 'pipe']
-            });
-        }
-
-        // Also get staged and unstaged changes (working directory)
-        const stagedDiff = execSync('git diff --cached', {
-            cwd: REPO_ROOT,
-            encoding: 'utf-8',
-            maxBuffer: 50 * 1024 * 1024,
-            stdio: ['pipe', 'pipe', 'pipe']
-        });
-
-        const unstagedDiff = execSync('git diff', {
-            cwd: REPO_ROOT,
-            encoding: 'utf-8',
-            maxBuffer: 50 * 1024 * 1024,
-            stdio: ['pipe', 'pipe', 'pipe']
-        });
-
-        return [diff, stagedDiff, unstagedDiff].filter(Boolean).join('\n');
+      diff = execSync(`git diff ${baseRef}...HEAD`, {
+        cwd: REPO_ROOT,
+        encoding: "utf-8",
+        maxBuffer: 50 * 1024 * 1024,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
     } catch {
-        return '';
+      // No common ancestor, use direct diff
+      diff = execSync(`git diff ${baseRef}`, {
+        cwd: REPO_ROOT,
+        encoding: "utf-8",
+        maxBuffer: 50 * 1024 * 1024,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
     }
+
+    // Also get staged and unstaged changes (working directory)
+    const stagedDiff = execSync("git diff --cached", {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+      maxBuffer: 50 * 1024 * 1024,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    const unstagedDiff = execSync("git diff", {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+      maxBuffer: 50 * 1024 * 1024,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    return [diff, stagedDiff, unstagedDiff].filter(Boolean).join("\n");
+  } catch {
+    return "";
+  }
 }
 
-function getDiffFiles(baseRef = 'origin/main') {
-    try {
-        const base = execSync(`git merge-base HEAD ${baseRef}`, {
-            cwd: REPO_ROOT,
-            encoding: 'utf-8',
-            stdio: ['pipe', 'pipe', 'pipe']
-        }).trim();
+function getDiffFiles(baseRef = "origin/main") {
+  try {
+    const base = execSync(`git merge-base HEAD ${baseRef}`, {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
 
-        return execSync(`git diff --name-only ${base}`, {
-            cwd: REPO_ROOT,
-            encoding: 'utf-8'
-        }).trim().split('\n').filter(Boolean);
-    } catch {
-        return [];
-    }
+    return execSync(`git diff --name-only ${base}`, {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+    })
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 function matchesAnyGlob(file, patterns) {
-    if (!patterns) return false;
-    if (typeof patterns === 'string') {
-        patterns = [patterns];
-    }
-    return patterns.some(pattern => minimatch(file, pattern));
+  if (!patterns) return false;
+  if (typeof patterns === "string") {
+    patterns = [patterns];
+  }
+  return patterns.some((pattern) => minimatch(file, pattern));
 }
 
 function getTestFiles(diffFiles, config) {
-    const testGlobs = config.globs.testSide || config.globs.tests || [];
-    return diffFiles.filter(f => matchesAnyGlob(f, testGlobs));
+  const testGlobs = config.globs.testSide || config.globs.tests || [];
+  return diffFiles.filter((f) => matchesAnyGlob(f, testGlobs));
 }
 
 function getLearnedContent(diffFiles, config) {
-    const learnedGlob = config.globs.learned;
-    const learnedFiles = diffFiles.filter(f => matchesAnyGlob(f, learnedGlob));
+  const learnedGlob = config.globs.learned;
+  const learnedFiles = diffFiles.filter((f) => matchesAnyGlob(f, learnedGlob));
 
-    return learnedFiles.map(file => {
-        const fullPath = join(REPO_ROOT, file);
-        if (existsSync(fullPath)) {
-            return { file, content: readFileSync(fullPath, 'utf-8') };
-        }
-        return null;
-    }).filter(Boolean);
+  return learnedFiles
+    .map((file) => {
+      const fullPath = join(REPO_ROOT, file);
+      if (existsSync(fullPath)) {
+        return { file, content: readFileSync(fullPath, "utf-8") };
+      }
+      return null;
+    })
+    .filter(Boolean);
 }
 
 function getProviderConfig(isFastMode) {
-    const providerConfig = {
-        timeout: 300000
-    };
+  const providerConfig = {
+    timeout: 300000,
+  };
 
-    if (isFastMode) {
-        providerConfig.model = 'gpt-4.1-nano';
-    } else {
-        providerConfig.model = 'gpt-4.1-mini';
-    }
+  if (isFastMode) {
+    providerConfig.model = "gpt-4.1-nano";
+  } else {
+    providerConfig.model = "gpt-4.1-mini";
+  }
 
-    return providerConfig;
+  return providerConfig;
 }
 
 function buildReviewResult(reviewData) {
-    let severity = 'none';
-    if (reviewData.gaming_detected) {
-        severity = 'high';
-    } else if (!reviewData.compliant) {
-        severity = 'high';
-    } else if (reviewData.entry_type_mismatch || reviewData.missing_tests_for_fix) {
-        severity = 'high';
-    } else if (reviewData.quality_score && reviewData.quality_score < 5) {
-        severity = 'medium';
+  let severity = "none";
+  if (reviewData.gaming_detected) {
+    severity = "high";
+  } else if (!reviewData.compliant) {
+    severity = "high";
+  } else if (
+    reviewData.entry_type_mismatch ||
+    reviewData.missing_tests_for_fix
+  ) {
+    severity = "high";
+  } else if (reviewData.quality_score && reviewData.quality_score < 5) {
+    severity = "medium";
+  }
+
+  const violations = Array.isArray(reviewData.violations)
+    ? reviewData.violations
+    : [];
+  const findings = violations.map((v) => {
+    if (typeof v === "string") {
+      return { file: "N/A", pattern: "violation", description: v };
     }
-
-    const violations = Array.isArray(reviewData.violations) ? reviewData.violations : [];
-    const findings = violations.map(v => {
-        if (typeof v === 'string') {
-            return { file: 'N/A', pattern: 'violation', description: v };
-        }
-        return {
-            file: 'N/A',
-            pattern: v.rule || 'violation',
-            description: v.description || JSON.stringify(v)
-        };
-    });
-
     return {
-        severity,
-        findings,
-        summary: reviewData.summary || 'Meta-review complete',
-        changeType: reviewData.change_type,
-        entryTypeMismatch: reviewData.entry_type_mismatch,
-        missingTestsForFix: reviewData.missing_tests_for_fix,
-        qualityScore: reviewData.quality_score,
-        qualityBreakdown: reviewData.quality_breakdown,
-        criticalIssues: reviewData.critical_issues,
-        gamingDetected: reviewData.gaming_detected,
-        systemicFlawDetected: reviewData.systemic_flaw_detected
+      file: "N/A",
+      pattern: v.rule || "violation",
+      description: v.description || JSON.stringify(v),
     };
+  });
+
+  return {
+    severity,
+    findings,
+    summary: reviewData.summary || "Meta-review complete",
+    changeType: reviewData.change_type,
+    entryTypeMismatch: reviewData.entry_type_mismatch,
+    missingTestsForFix: reviewData.missing_tests_for_fix,
+    qualityScore: reviewData.quality_score,
+    qualityBreakdown: reviewData.quality_breakdown,
+    criticalIssues: reviewData.critical_issues,
+    gamingDetected: reviewData.gaming_detected,
+    systemicFlawDetected: reviewData.systemic_flaw_detected,
+  };
 }
 
 // ============================================================================
@@ -312,54 +331,55 @@ function buildReviewResult(reviewData) {
 
 /** @type {ReviewerAdapter} */
 const stubAdapter = {
-    name: 'stub',
+  name: "stub",
 
-    async isConfigured() {
-        return true; // Stub is always available
-    },
+  async isConfigured() {
+    return true; // Stub is always available
+  },
 
-    async review() {
-        return {
-            severity: 'none',
-            findings: [],
-            summary: 'Stub adapter - no real review performed. Configure a real adapter for anti-gamification detection.'
-        };
-    }
+  async review() {
+    return {
+      severity: "none",
+      findings: [],
+      summary:
+        "Stub adapter - no real review performed. Configure a real adapter for anti-gamification detection.",
+    };
+  },
 };
 
 /** @type {ReviewerAdapter} */
 /** @type {ReviewerAdapter} */
 const sharedAdapter = {
-    name: 'shared',
+  name: "shared",
 
-    async isConfigured() {
-        // Always considered configured because it delegates to the provider system
-        // which has its own fallbacks
-        return true;
-    },
+  async isConfigured() {
+    // Always considered configured because it delegates to the provider system
+    // which has its own fallbacks
+    return true;
+  },
 
-    async review(context) {
-        const { getProvider } = await import('../providers/index.mjs');
-        // Use in-memory file map instead of disk sandbox
-        const providerName = process.env.HARNESS_PROVIDER;
-        const files = {};
-        try {
-            files['DIFF.txt'] = context.diff || 'No diff available';
-            files['TEST_FILES.txt'] = context.testFiles.join('\n');
+  async review(context) {
+    const { getProvider } = await import("../providers/index.mjs");
+    // Use in-memory file map instead of disk sandbox
+    const providerName = process.env.HARNESS_PROVIDER;
+    const files = {};
+    try {
+      files["DIFF.txt"] = context.diff || "No diff available";
+      files["TEST_FILES.txt"] = context.testFiles.join("\n");
 
-            const learnedContent = context.learnedEntries
-                .map(e => `### ${e.file}\n${e.content}`)
-                .join('\n\n');
-            files['LEARNED_ENTRIES.txt'] = learnedContent || 'None';
+      const learnedContent = context.learnedEntries
+        .map((e) => `### ${e.file}\n${e.content}`)
+        .join("\n\n");
+      files["LEARNED_ENTRIES.txt"] = learnedContent || "None";
 
-            // Read Harness.md for the compliance prompt
-            const harnessDocPath = join(HARNESS_ROOT, 'Harness.md');
-            const harnessMd = existsSync(harnessDocPath)
-                ? readFileSync(harnessDocPath, 'utf-8')
-                : 'Harness.md not found';
-            files['HARNESS_RULES.md'] = harnessMd;
+      // Read Harness.md for the compliance prompt
+      const harnessDocPath = join(HARNESS_ROOT, "Harness.md");
+      const harnessMd = existsSync(harnessDocPath)
+        ? readFileSync(harnessDocPath, "utf-8")
+        : "Harness.md not found";
+      files["HARNESS_RULES.md"] = harnessMd;
 
-            const prompt = `ENVIRONMENT: All content is provided in the message context.
+      const prompt = `ENVIRONMENT: All content is provided in the message context.
     
 You are a META-LEVEL reviewer enforcing the 3-STEP CHAIN:
   1. BANDAID → Immediate fix applied
@@ -436,89 +456,89 @@ Run: Output ONLY the JSON object.
 
 Then edit with your assessment. DO NOT SKIP THIS FILE.`;
 
+      // Perform fast review if requested
+      const isFastMode = process.argv.includes("--fast");
+      const providerConfig = getProviderConfig(isFastMode);
 
-
-            // Perform fast review if requested
-            const isFastMode = process.argv.includes('--fast');
-            const providerConfig = getProviderConfig(isFastMode);
-
-            // Get provider
-            // Check config.yml for default provider
-            let configProvider = 'http';
-            try {
-                const configPath = join(HARNESS_ROOT, 'config.yml');
-                if (existsSync(configPath)) {
-                    const content = readFileSync(configPath, 'utf-8');
-                    const match = content.match(/provider:\s*(\w+)/);
-                    if (match) configProvider = match[1];
-                }
-            } catch (e) { /* ignore config read errors */ }
-
-            const provider = getProvider(providerName || configProvider);
-            log(`Invoking provider: ${provider.name}`);
-
-            const startTime = Date.now();
-            const result = await provider.invoke({
-                prompt,
-                files,
-                outputFile: 'COMPLIANCE_REVIEW.json',
-                config: providerConfig
-            });
-            const duration = Date.now() - startTime;
-            logInfo(`Execution time: ${duration}ms`);
-
-            // ALL failures return high severity - no exceptions
-            if (result.rateLimited) {
-                logError('AI review unavailable (rate limit/network). Cannot proceed.');
-                return {
-                    severity: 'high',
-                    findings: [],
-                    summary: 'AI review unavailable (rate limit/network). Review failed.'
-                };
-            }
-
-            if (!result.success) {
-                logError(result.error || 'Provider failed');
-                return {
-                    severity: 'high',
-                    findings: [],
-                    summary: 'Provider did not produce COMPLIANCE_REVIEW.json - Manual Code Review REQUIRED (Agent Failed)'
-                };
-            }
-
-            // Read the result
-            // The provider.invoke() writes the result to the output file, but also returns it as result.result
-            const reviewData = result.result;
-
-            if (reviewData) {
-                return buildReviewResult(reviewData);
-            }
-
-            return {
-                severity: 'high',
-                findings: [],
-                summary: 'Provider produced empty result'
-            };
-
-        } catch (error) {
-            logError(`Review adapter error: ${error.message}`);
-            return {
-                severity: 'high',
-                findings: [],
-                summary: `Review adapter error: ${error.message}`
-            };
-            // Keep the sandbox for inspection (user requested this as default)
-            // No info log needed for in-memory
+      // Get provider
+      // Check config.yml for default provider
+      let configProvider = "http";
+      try {
+        const configPath = join(HARNESS_ROOT, "config.yml");
+        if (existsSync(configPath)) {
+          const content = readFileSync(configPath, "utf-8");
+          const match = content.match(/provider:\s*(\w+)/);
+          if (match) configProvider = match[1];
         }
+      } catch (e) {
+        /* ignore config read errors */
+      }
+
+      const provider = getProvider(providerName || configProvider);
+      log(`Invoking provider: ${provider.name}`);
+
+      const startTime = Date.now();
+      const result = await provider.invoke({
+        prompt,
+        files,
+        outputFile: "COMPLIANCE_REVIEW.json",
+        config: providerConfig,
+      });
+      const duration = Date.now() - startTime;
+      logInfo(`Execution time: ${duration}ms`);
+
+      // ALL failures return high severity - no exceptions
+      if (result.rateLimited) {
+        logError("AI review unavailable (rate limit/network). Cannot proceed.");
+        return {
+          severity: "high",
+          findings: [],
+          summary: "AI review unavailable (rate limit/network). Review failed.",
+        };
+      }
+
+      if (!result.success) {
+        logError(result.error || "Provider failed");
+        return {
+          severity: "high",
+          findings: [],
+          summary:
+            "Provider did not produce COMPLIANCE_REVIEW.json - Manual Code Review REQUIRED (Agent Failed)",
+        };
+      }
+
+      // Read the result
+      // The provider.invoke() writes the result to the output file, but also returns it as result.result
+      const reviewData = result.result;
+
+      if (reviewData) {
+        return buildReviewResult(reviewData);
+      }
+
+      return {
+        severity: "high",
+        findings: [],
+        summary: "Provider produced empty result",
+      };
+    } catch (error) {
+      logError(`Review adapter error: ${error.message}`);
+      return {
+        severity: "high",
+        findings: [],
+        summary: `Review adapter error: ${error.message}`,
+      };
+      // Keep the sandbox for inspection (user requested this as default)
+      // No info log needed for in-memory
     }
+  },
 };
 
 // Registry of available adapters
 const adapters = {
-    stub: stubAdapter,
-    shared: sharedAdapter,
-    // Legacy alias
-    codex: sharedAdapter
+  stub: stubAdapter,
+  shared: sharedAdapter,
+  // Legacy alias
+  codex: sharedAdapter,
 };
 
 // ============================================================================
@@ -526,27 +546,33 @@ const adapters = {
 // ============================================================================
 
 async function selectAdapter(configuredAdapter) {
-    // If HARNESS_PROVIDER env var is set, prefer the shared adapter
-    if (process.env.HARNESS_PROVIDER) {
-        return sharedAdapter;
-    }
+  // If HARNESS_PROVIDER env var is set, prefer the shared adapter
+  if (process.env.HARNESS_PROVIDER) {
+    return sharedAdapter;
+  }
 
-    // Explicit adapter in config
-    if (configuredAdapter && configuredAdapter !== 'auto' && adapters[configuredAdapter]) {
-        const adapter = adapters[configuredAdapter];
-        if (await adapter.isConfigured()) {
-            return adapter;
-        }
-        logWarning(`Configured adapter '${configuredAdapter}' is not available, falling back to auto-detection`);
+  // Explicit adapter in config
+  if (
+    configuredAdapter &&
+    configuredAdapter !== "auto" &&
+    adapters[configuredAdapter]
+  ) {
+    const adapter = adapters[configuredAdapter];
+    if (await adapter.isConfigured()) {
+      return adapter;
     }
+    logWarning(
+      `Configured adapter '${configuredAdapter}' is not available, falling back to auto-detection`,
+    );
+  }
 
-    // Auto-detect: prefer shared (which defaults to codex if configured)
-    if (await sharedAdapter.isConfigured()) {
-        return sharedAdapter;
-    }
+  // Auto-detect: prefer shared (which defaults to codex if configured)
+  if (await sharedAdapter.isConfigured()) {
+    return sharedAdapter;
+  }
 
-    // Fall back to stub
-    return stubAdapter;
+  // Fall back to stub
+  return stubAdapter;
 }
 
 // ============================================================================
@@ -554,124 +580,136 @@ async function selectAdapter(configuredAdapter) {
 // ============================================================================
 
 async function main() {
-    log('\n\x1b[36m=== Code Reviewer (Pluggable) ===\x1b[0m\n');
+  log("\n\x1b[36m=== Code Reviewer (Pluggable) ===\x1b[0m\n");
 
-    const config = loadConfig();
-    const reviewerConfig = config.reviewers?.code_reviewer || {};
+  const config = loadConfig();
+  const reviewerConfig = config.reviewers?.code_reviewer || {};
 
-    // Check if reviewer is enabled
-    if (reviewerConfig.enabled === false) {
-        logInfo('Code reviewer is disabled in config');
-        process.exit(0);
+  // Check if reviewer is enabled
+  if (reviewerConfig.enabled === false) {
+    logInfo("Code reviewer is disabled in config");
+    process.exit(0);
+  }
+
+  const baseRef = reviewerConfig.base_ref || "origin/main";
+  const failThreshold = reviewerConfig.fail_threshold || "high";
+  const configuredAdapter = reviewerConfig.adapter || "auto";
+
+  // Select adapter
+  const adapter = await selectAdapter(configuredAdapter);
+  log(`Using adapter: ${adapter.name} `);
+
+  if (adapter.name === "stub") {
+    logWarning(
+      "Using stub adapter - no real anti-gamification review will be performed",
+    );
+    logInfo(
+      "Configure a provider in .harness/config.yml (agents.provider) or set HARNESS_PROVIDER",
+    );
+  }
+
+  // Gather context - review ALL commits, not just those with test files
+  const diffFiles = getDiffFiles(baseRef);
+
+  if (diffFiles.length === 0) {
+    logInfo("No changed files - skipping review");
+    process.exit(0);
+  }
+
+  const testFiles = getTestFiles(diffFiles, config);
+
+  const context = {
+    diff: getDiff(baseRef),
+    testFiles,
+    learnedEntries: getLearnedContent(diffFiles, config),
+    testCommand: reviewerConfig.test_command || "npm test",
+  };
+
+  log(`Reviewing ${diffFiles.length} changed files...\n`);
+
+  // Run review
+  const result = await adapter.review(context);
+
+  // Output results - always show the agent response (bypass quiet mode)
+  console.log("--- Agent Review Results ---");
+  console.log(`Severity: ${result.severity.toUpperCase()}`);
+  console.log(`Summary: ${result.summary}`);
+
+  // Show change type if available
+  if (result.changeType) {
+    console.log(`Change Type: ${result.changeType.toUpperCase()}`);
+  }
+  if (result.entryTypeMismatch) {
+    console.log(
+      `⚠️  Entry Type Mismatch: Fix should use learned entry, not decision`,
+    );
+  }
+  if (result.missingTestsForFix) {
+    console.log(`⚠️  Missing Tests: Fixes require test coverage`);
+  }
+
+  // Show quality metrics if available
+  if (result.qualityScore !== undefined) {
+    console.log(`Quality Score: ${result.qualityScore}/10`);
+  }
+  if (result.qualityBreakdown) {
+    const breakdown = result.qualityBreakdown.replace(/^Why not 10:\s*/i, "");
+    console.log(`  Why not 10: ${breakdown}`);
+  }
+  if (result.gamingDetected !== undefined) {
+    console.log(`Gaming Detected: ${result.gamingDetected ? "YES ⚠️" : "No"}`);
+  }
+  if (result.criticalIssues) {
+    console.log(`Critical Issues: ${result.criticalIssues}`);
+  }
+
+  if (result.findings.length > 0) {
+    console.log("\nFindings:");
+    for (const finding of result.findings) {
+      console.log(
+        `  - [${finding.pattern}] ${finding.file}${finding.line ? `:${finding.line}` : ""}`,
+      );
+      console.log(`    ${finding.description}`);
+      if (finding.suggestedFix) {
+        console.log(`    Fix: ${finding.suggestedFix}`);
+      }
     }
+  }
 
-    const baseRef = reviewerConfig.base_ref || 'origin/main';
-    const failThreshold = reviewerConfig.fail_threshold || 'high';
-    const configuredAdapter = reviewerConfig.adapter || 'auto';
+  // Skip the full JSON dump - too verbose
 
-    // Select adapter
-    const adapter = await selectAdapter(configuredAdapter);
-    log(`Using adapter: ${adapter.name} `);
+  // Determine exit based on threshold
+  const severityLevels = { none: 0, low: 1, medium: 2, high: 3 };
+  const resultLevel = severityLevels[result.severity] || 0;
+  const thresholdLevel = severityLevels[failThreshold] || 3;
 
-    if (adapter.name === 'stub') {
-        logWarning('Using stub adapter - no real anti-gamification review will be performed');
-        logInfo('Configure a provider in .harness/config.yml (agents.provider) or set HARNESS_PROVIDER');
-    }
+  log("");
 
-    // Gather context - review ALL commits, not just those with test files
-    const diffFiles = getDiffFiles(baseRef);
-
-    if (diffFiles.length === 0) {
-        logInfo('No changed files - skipping review');
-        process.exit(0);
-    }
-
-    const testFiles = getTestFiles(diffFiles, config);
-
-    const context = {
-        diff: getDiff(baseRef),
-        testFiles,
-        learnedEntries: getLearnedContent(diffFiles, config),
-        testCommand: reviewerConfig.test_command || 'npm test'
-    };
-
-    log(`Reviewing ${diffFiles.length} changed files...\n`);
-
-    // Run review
-    const result = await adapter.review(context);
-
-    // Output results - always show the agent response (bypass quiet mode)
-    console.log('--- Agent Review Results ---');
-    console.log(`Severity: ${result.severity.toUpperCase()}`);
-    console.log(`Summary: ${result.summary}`);
-
-    // Show change type if available
-    if (result.changeType) {
-        console.log(`Change Type: ${result.changeType.toUpperCase()}`);
-    }
-    if (result.entryTypeMismatch) {
-        console.log(`⚠️  Entry Type Mismatch: Fix should use learned entry, not decision`);
-    }
-    if (result.missingTestsForFix) {
-        console.log(`⚠️  Missing Tests: Fixes require test coverage`);
-    }
-
-    // Show quality metrics if available
-    if (result.qualityScore !== undefined) {
-        console.log(`Quality Score: ${result.qualityScore}/10`);
-    }
-    if (result.qualityBreakdown) {
-        const breakdown = result.qualityBreakdown.replace(/^Why not 10:\s*/i, '');
-        console.log(`  Why not 10: ${breakdown}`);
-    }
-    if (result.gamingDetected !== undefined) {
-        console.log(`Gaming Detected: ${result.gamingDetected ? 'YES ⚠️' : 'No'}`);
-    }
-    if (result.criticalIssues) {
-        console.log(`Critical Issues: ${result.criticalIssues}`);
-    }
-
-    if (result.findings.length > 0) {
-        console.log('\nFindings:');
-        for (const finding of result.findings) {
-            console.log(`  - [${finding.pattern}] ${finding.file}${finding.line ? `:${finding.line}` : ''}`);
-            console.log(`    ${finding.description}`);
-            if (finding.suggestedFix) {
-                console.log(`    Fix: ${finding.suggestedFix}`);
-            }
-        }
-    }
-
-    // Skip the full JSON dump - too verbose
-
-    // Determine exit based on threshold
-    const severityLevels = { none: 0, low: 1, medium: 2, high: 3 };
-    const resultLevel = severityLevels[result.severity] || 0;
-    const thresholdLevel = severityLevels[failThreshold] || 3;
-
-    log('');
-
-    if (resultLevel >= thresholdLevel) {
-        logError(`Review failed: severity ${result.severity} >= threshold ${failThreshold}`);
-        process.exit(1);
-    } else {
-        logSuccess(`Review passed: severity ${result.severity} < threshold ${failThreshold}`);
-        process.exit(0);
-    }
+  if (resultLevel >= thresholdLevel) {
+    logError(
+      `Review failed: severity ${result.severity} >= threshold ${failThreshold}`,
+    );
+    process.exit(1);
+  } else {
+    logSuccess(
+      `Review passed: severity ${result.severity} < threshold ${failThreshold}`,
+    );
+    process.exit(0);
+  }
 }
 
 if (process.argv[1] === __filename) {
-    main().catch(error => {
-        logError(`Unexpected error: ${error.message}`);
-        process.exit(2);
-    });
+  main().catch((error) => {
+    logError(`Unexpected error: ${error.message}`);
+    process.exit(2);
+  });
 }
 
 // Export for testing
 export {
-    adapters,
-    selectAdapter,
-    stubAdapter,
-    getProviderConfig,
-    buildReviewResult
+  adapters,
+  selectAdapter,
+  stubAdapter,
+  getProviderConfig,
+  buildReviewResult,
 };

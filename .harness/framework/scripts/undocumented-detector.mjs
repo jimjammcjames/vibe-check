@@ -2,16 +2,24 @@
 
 /**
  * Undocumented Changes Detector
- * 
+ *
  * A focused agent that ONLY checks if all changes in the diff
  * are covered by corresponding learned/decision entries.
  */
 
-import { execSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { runAgent, log, logError, logSuccess, logWarning, REPO_ROOT, HARNESS_ROOT } from '../lib/agent-runner.mjs';
+import { execSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  runAgent,
+  log,
+  logError,
+  logSuccess,
+  logWarning,
+  REPO_ROOT,
+  HARNESS_ROOT,
+} from "../lib/agent-runner.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -50,98 +58,116 @@ Run: Output ONLY the JSON object.`;
 // ============================================================================
 
 async function main() {
-    log('\n\x1b[36m=== Undocumented Changes Detector ===\x1b[0m\n');
+  log("\n\x1b[36m=== Undocumented Changes Detector ===\x1b[0m\n");
 
-    // Get diff
-    let diff = '';
-    try {
-        diff = execSync('git diff origin/main', { cwd: REPO_ROOT, encoding: 'utf-8' });
-    } catch {
-        try {
-            diff = execSync('git diff --cached', { cwd: REPO_ROOT, encoding: 'utf-8' });
-        } catch {
-            log('No diff available');
-            process.exit(0);
-        }
-    }
-
-    if (!diff.trim()) {
-        logSuccess('No changes to check');
-        process.exit(0);
-    }
-
-    // Get learned entries content
-    const learnedDir = join(HARNESS_ROOT, 'context', 'learned');
-    let memoryContent = '';
-    if (existsSync(learnedDir)) {
-        const files = execSync(`find "${learnedDir}" -name "*.md" -type f`, { encoding: 'utf-8' })
-            .trim().split('\n').filter(Boolean);
-
-        for (const file of files) {
-            if (file.endsWith('TIMELINE.md')) continue;
-            try {
-                memoryContent += `\n### [LEARNED] ${file}\n${readFileSync(file, 'utf-8')}\n`;
-            } catch { }
-        }
-    }
-
-    // Get decision entries content
-    const decisionsDir = join(HARNESS_ROOT, 'context', 'decisions');
-    if (existsSync(decisionsDir)) {
-        const files = execSync(`find "${decisionsDir}" -name "*.md" -type f`, { encoding: 'utf-8' })
-            .trim().split('\n').filter(Boolean);
-
-        for (const file of files) {
-            if (file.endsWith('TIMELINE.md')) continue;
-            try {
-                memoryContent += `\n### [DECISION] ${file}\n${readFileSync(file, 'utf-8')}\n`;
-            } catch { }
-        }
-    }
-
-    log('Analyzing changes for documentation coverage...\n');
-
-    // Use the shared agent runner
-    const agentResult = await runAgent({
-        name: 'undocumented',
-        files: {
-            'DIFF.txt': diff,
-            'MEMORY_ENTRIES.txt': memoryContent || 'No memory entries found'
-        },
-        prompt: DETECTOR_PROMPT,
-        outputFile: 'RESULT.json',
-        providerConfig: { timeout: 120000 }
+  // Get diff
+  let diff = "";
+  try {
+    diff = execSync("git diff origin/main", {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
     });
-
-    // Handle result - ALL failures block, no exceptions
-    if (agentResult.rateLimited) {
-        logError('AI review unavailable (rate limit/network). Cannot proceed.');
-        process.exit(1);
+  } catch {
+    try {
+      diff = execSync("git diff --cached", {
+        cwd: REPO_ROOT,
+        encoding: "utf-8",
+      });
+    } catch {
+      log("No diff available");
+      process.exit(0);
     }
+  }
 
-    if (!agentResult.success) {
-        logError('Agent did not produce RESULT.json. Cannot verify documentation.');
-        process.exit(1);
+  if (!diff.trim()) {
+    logSuccess("No changes to check");
+    process.exit(0);
+  }
+
+  // Get learned entries content
+  const learnedDir = join(HARNESS_ROOT, "context", "learned");
+  let memoryContent = "";
+  if (existsSync(learnedDir)) {
+    const files = execSync(`find "${learnedDir}" -name "*.md" -type f`, {
+      encoding: "utf-8",
+    })
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+
+    for (const file of files) {
+      if (file.endsWith("TIMELINE.md")) continue;
+      try {
+        memoryContent += `\n### [LEARNED] ${file}\n${readFileSync(file, "utf-8")}\n`;
+      } catch {
+        // Ignore unreadable files; best-effort context is sufficient.
+      }
     }
+  }
 
-    const result = agentResult.result;
+  // Get decision entries content
+  const decisionsDir = join(HARNESS_ROOT, "context", "decisions");
+  if (existsSync(decisionsDir)) {
+    const files = execSync(`find "${decisionsDir}" -name "*.md" -type f`, {
+      encoding: "utf-8",
+    })
+      .trim()
+      .split("\n")
+      .filter(Boolean);
 
-    // Only show analysis on failure (bypass quiet mode)
-    if (result.undocumented_clusters && result.undocumented_clusters.length > 0) {
-        console.log('--- Change Coverage Analysis ---');
-        console.log(`Undocumented: ${result.undocumented_clusters.length}`);
-        console.log('\x1b[33mUndocumented changes detected:\x1b[0m');
-        result.undocumented_clusters.forEach(c => logWarning(c));
-        console.log('\nCreate learned entries for these changes:');
-        console.log('  npm run harness:new:learned -- --slug "descriptive-slug"');
-        process.exit(1);
-    } else {
-        logSuccess('All changes are documented');
-        process.exit(0);
+    for (const file of files) {
+      if (file.endsWith("TIMELINE.md")) continue;
+      try {
+        memoryContent += `\n### [DECISION] ${file}\n${readFileSync(file, "utf-8")}\n`;
+      } catch {
+        // Ignore unreadable files; best-effort context is sufficient.
+      }
     }
+  }
+
+  log("Analyzing changes for documentation coverage...\n");
+
+  // Use the shared agent runner
+  const agentResult = await runAgent({
+    name: "undocumented",
+    files: {
+      "DIFF.txt": diff,
+      "MEMORY_ENTRIES.txt": memoryContent || "No memory entries found",
+    },
+    prompt: DETECTOR_PROMPT,
+    outputFile: "RESULT.json",
+    providerConfig: { timeout: 120000 },
+  });
+
+  // Handle result - ALL failures block, no exceptions
+  if (agentResult.rateLimited) {
+    logError("AI review unavailable (rate limit/network). Cannot proceed.");
+    process.exit(1);
+  }
+
+  if (!agentResult.success) {
+    logError("Agent did not produce RESULT.json. Cannot verify documentation.");
+    process.exit(1);
+  }
+
+  const result = agentResult.result;
+
+  // Only show analysis on failure (bypass quiet mode)
+  if (result.undocumented_clusters && result.undocumented_clusters.length > 0) {
+    console.log("--- Change Coverage Analysis ---");
+    console.log(`Undocumented: ${result.undocumented_clusters.length}`);
+    console.log("\x1b[33mUndocumented changes detected:\x1b[0m");
+    result.undocumented_clusters.forEach((c) => logWarning(c));
+    console.log("\nCreate learned entries for these changes:");
+    console.log('  npm run harness:new:learned -- --slug "descriptive-slug"');
+    process.exit(1);
+  } else {
+    logSuccess("All changes are documented");
+    process.exit(0);
+  }
 }
 
-main().catch(err => {
-    logError(`Detector error: ${err.message}`);
-    process.exit(1);
+main().catch((err) => {
+  logError(`Detector error: ${err.message}`);
+  process.exit(1);
 });

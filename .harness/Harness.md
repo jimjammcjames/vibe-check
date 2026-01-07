@@ -7,9 +7,17 @@
 ```bash
 npm run harness:prep      # You're here - prints this block
 npm run harness:iterate   # Format + lint fix (changed files only)
-npm run harness:post      # Full verification before pushing
-npm run harness:ci        # CI mirror (run to test before PR)
+npm run harness:post      # Medium verification (tests + policy + docs)
+npm run harness:ci        # Full CI gate (adds tripwire + review)
 ```
+
+## Loop Tiers
+
+| Loop   | Command         | Purpose                                          |
+| ------ | --------------- | ------------------------------------------------ |
+| Inner  | harness:iterate | Format + lint fix on changed files               |
+| Medium | harness:post    | Tests + policy + doc agents (no tripwire/review) |
+| Outer  | harness:ci      | Full gate (lint + typecheck + tripwire + review) |
 
 ## Lookup Before Creating
 
@@ -43,12 +51,12 @@ npm run harness:new:decision -- --slug "descriptive-slug"
 
 ## Enforcement Rules (CI will block if violated)
 
-| Rule | Trigger | Requirement |
-|------|---------|-------------|
-| A | Real code changed | Must include learned OR decision entry |
-| B | Learned entry added | Must include test delta |
-| C | Any memory entry | Must have: Search terms, Related/NONE, Tags |
-| C+ | Learned entry | Must have **Systemic Gap** + Gap Closure file path |
+| Rule | Trigger             | Requirement                                        |
+| ---- | ------------------- | -------------------------------------------------- |
+| A    | Real code changed   | Must include learned OR decision entry             |
+| B    | Learned entry added | Must include test delta                            |
+| C    | Any memory entry    | Must have: Search terms, Related/NONE, Tags        |
+| C+   | Learned entry       | Must have **Systemic Gap** + Gap Closure file path |
 
 ## Required Fields in Memory Entries
 
@@ -66,6 +74,7 @@ Every learned/decision entry **must** include:
 ### The 3-Step Chain (Learned Entries)
 
 Every learned entry must document:
+
 1. **Bandaid** → Immediate fix applied
 2. **Meta-Analysis** → What infrastructure gap allowed this issue class?
 3. **Close Gap** → Test/validation file added to prevent recurrence
@@ -166,9 +175,20 @@ npm run harness:post
 Your memory entry is missing required fields.
 
 Edit the entry to include:
+
 - `Search terms:` keywords you used to search
 - `Related:` links to related entries, or `NONE`
 - `Tags:` relevant tags like `#auth`, `#api`, `#bug`
+
+### "CI is failing with Base Tripwire or Review Adapter"
+
+These only run in the outer loop.
+
+```bash
+npm run harness:ci
+# OR run just the heavy review gate
+npm run harness:review
+```
 
 ### "I'm lost / didn't run prep"
 

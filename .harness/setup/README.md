@@ -62,7 +62,7 @@ You should see the MUST block printed to your terminal.
 
 ## What's in this folder
 
-| File | Purpose |
-|------|---------|
-| `README.md` | This file - setup instructions |
+| File             | Purpose                          |
+| ---------------- | -------------------------------- |
+| `README.md`      | This file - setup instructions   |
 | `harness-ci.yml` | GitHub Actions workflow template |

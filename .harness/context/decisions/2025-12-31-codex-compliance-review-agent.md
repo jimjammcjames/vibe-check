@@ -9,11 +9,13 @@ The harness needed a meta-level review layer to catch gaming and assess entry qu
 ## Decision
 
 Implemented a `codexAdapter` in `review-adapter.mjs` that:
+
 1. Creates sandbox with `DIFF.txt`, `HARNESS_RULES.md`, `LEARNED_ENTRIES.txt`
 2. Invokes Codex CLI with `--sandbox workspace-write` and `--skip-git-repo-check`
 3. Returns `quality_score` (1-10), `gaming_detected`, and violations
 
 **Key Implementation Details:**
+
 - **Always runs:** Triggers on every commit with changed files (not just test files)
 - **Explicit file write:** Prompt includes echo command to ensure JSON is created
 - **Quiet mode:** CLI uses `--verbose` flag; default shows only ✓/✗ lines

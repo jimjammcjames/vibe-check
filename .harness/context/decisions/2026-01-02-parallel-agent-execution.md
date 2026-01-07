@@ -11,6 +11,7 @@ The `harness:post` verification command was failing to scale. As we added more a
 Refactored the harness CLI (`harness.mjs`) to run independent "agent" checks in parallel, while keeping foundational checks sequential.
 
 Supporting changes:
+
 - **Undocumented Detector**: Updated to handle parallelism and read from both Learned and Decision entries.
 - **Base Tripwire**: Fixed to ignore deleted/renamed files in the diff to prevent false positive regressions.
 - **CLI Tests**: Added timeouts and randomized slugs for concurrent stability.

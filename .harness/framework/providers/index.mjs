@@ -1,20 +1,20 @@
 /**
  * LLM Provider Registry
- * 
+ *
  * Central registry for swappable LLM providers.
  * Providers must implement the `invoke()` interface.
  */
 
-import { codexProvider } from './codex.mjs';
-import { stubProvider } from './stub.mjs';
-import { geminiProvider } from './gemini.mjs';
-import { httpApiProvider } from './http-api.mjs';
+import { codexProvider } from "./codex.mjs";
+import { stubProvider } from "./stub.mjs";
+import { geminiProvider } from "./gemini.mjs";
+import { httpApiProvider } from "./http-api.mjs";
 
 const providers = {
-    codex: codexProvider,
-    stub: stubProvider,
-    gemini: geminiProvider,
-    http: httpApiProvider
+  codex: codexProvider,
+  stub: stubProvider,
+  gemini: geminiProvider,
+  http: httpApiProvider,
 };
 
 /**
@@ -22,12 +22,14 @@ const providers = {
  * @param {string} name - Provider name ('codex', 'stub', etc.)
  * @returns {object} Provider instance
  */
-export function getProvider(name = 'http') {
-    const provider = providers[name];
-    if (!provider) {
-        throw new Error(`Unknown provider: ${name}. Available: ${Object.keys(providers).join(', ')}`);
-    }
-    return provider;
+export function getProvider(name = "http") {
+  const provider = providers[name];
+  if (!provider) {
+    throw new Error(
+      `Unknown provider: ${name}. Available: ${Object.keys(providers).join(", ")}`,
+    );
+  }
+  return provider;
 }
 
 /**
@@ -36,10 +38,10 @@ export function getProvider(name = 'http') {
  * @param {object} provider - Provider instance (must have invoke method)
  */
 export function registerProvider(name, provider) {
-    if (typeof provider.invoke !== 'function') {
-        throw new Error(`Provider ${name} must implement invoke() method`);
-    }
-    providers[name] = provider;
+  if (typeof provider.invoke !== "function") {
+    throw new Error(`Provider ${name} must implement invoke() method`);
+  }
+  providers[name] = provider;
 }
 
 /**
@@ -47,5 +49,5 @@ export function registerProvider(name, provider) {
  * @returns {string[]} Provider names
  */
 export function listProviders() {
-    return Object.keys(providers);
+  return Object.keys(providers);
 }

@@ -9,6 +9,7 @@ The harness framework was tightly coupled to specific CLI tools (gemini, codex) 
 ## Decision
 
 Implemented a new `http` provider in `.harness/framework/providers/http-api.mjs` that:
+
 - Makes direct HTTP requests to any OpenAI-compatible endpoint
 - Defaults to OpenAI Responses API (`/v1/responses`) with `gpt-5-mini` model
 - Supports legacy Chat Completions API format via `apiFormat: 'chat'`

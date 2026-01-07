@@ -11,6 +11,7 @@ Created a separate, focused agent (`undocumented-detector.mjs`) dedicated only t
 ## Rationale
 
 Single-purpose agents are more reliable than multi-purpose ones:
+
 - Simpler prompts with one clear goal
 - Uses low reasoning effort for speed
 - Fails explicitly if changes lack documentation
@@ -23,6 +24,7 @@ Single-purpose agents are more reliable than multi-purpose ones:
 No validation existed to ensure changes had corresponding documentation. The main review agent was overloaded with multiple responsibilities leading to unreliable coverage detection.
 
 **Gap Closure**:
+
 - Added validation: `.harness/framework/scripts/undocumented-detector.mjs`
 - Added test: `harness-tests/tests/policy-audit.test.mjs` (systemic gap tests)
 

@@ -25,6 +25,7 @@ We enhanced the Codex compliance review agent to be more philosophically robust 
 No error visibility infrastructure existed - stderr from Codex was not prominently logged, debug files were not saved to sandbox, and there was no model validation before invocation. This caused silent failures that were hard to diagnose.
 
 **Gap Closure**:
+
 - Added test: `harness-tests/tests/review-adapter-integration.test.mjs`
 - Added validation: `.harness/framework/scripts/pre-flight-check.mjs`
 

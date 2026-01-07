@@ -1,4 +1,5 @@
 # vibe-check
+
 # vibe-check
 
 vibe-check is a repo-agnostic agent harness: a portable folder + scripts that enforce compound engineering in any codebase.
@@ -16,9 +17,11 @@ This harness is built around a compounding loop that forces **reflective enginee
 1. **Look up prior context** (start with grep/search; retrieval can evolve later).
 2. **If something similar exists** → reuse the established approach.
 3. **If it’s a bug** → STOP. Don't just fix it. The harness forces you to ask:
-   > *"Why did we run into this in the first place? Why wasn't it caught sooner?"*
-   
-   You capture a **Learned Entry** that identifies the *gap in visibility*, and you provide the test that closes that gap forever.
+
+   > _"Why did we run into this in the first place? Why wasn't it caught sooner?"_
+
+   You capture a **Learned Entry** that identifies the _gap in visibility_, and you provide the test that closes that gap forever.
+
 4. **If it’s a new feature / approach** → capture a small “decision” entry explaining the rationale.
 5. **CI enforces** that the right proof exists before merge.
 
@@ -48,6 +51,7 @@ The point is: **we don’t trust the agent’s intentions; we verify the artifac
   - (optional) a tiny root **`AGENTS.md`** pointer so agents reliably find the entry point
 
 That’s it. Everything else should flow from deterministic “pointers”:
+
 - pre-commit failures
 - CI failures
 - explicit “prep” command output
@@ -57,6 +61,7 @@ That’s it. Everything else should flow from deterministic “pointers”:
 You can’t reliably wrap Cursor/Claude/Codex/etc. across stacks.
 
 So instead:
+
 - you rely on **deterministic friction points** (pre-commit + CI) to force agents to see the harness entrypoint,
 - and you keep the harness interface **terminal-first**: agents run commands, read the output, and iterate.
 
@@ -82,6 +87,7 @@ The enforcement stack is meant to live in `.harness` and be driven by config:
 - **CI**: hard gate everything, including “compound engineering” rules
 
 Examples of compounding rules you can gate:
+
 - “Meaningful code change must include either a Learned entry or a Decision entry”
 - “Learned entry implies a test delta” (Did you actually close the gap you found?)
 - “All context files must be coherent and tagged”
@@ -92,7 +98,7 @@ Examples of compounding rules you can gate:
 
 - Not a wrapper around a specific agent tool.
 - Not a replacement for code review.
-- Not trying to deterministically force agent reasoning *during* work — only to enforce the artifacts by merge time.
+- Not trying to deterministically force agent reasoning _during_ work — only to enforce the artifacts by merge time.
 
 ## Roadmap ideas
 

@@ -13,7 +13,7 @@ We optimized the `harness:post` command to make local verification significantly
 ## Solution
 
 1.  **Architecture Layering:**
-    - **Local (`post`):** Focuses on *changed* files and fast feedback. Removed `eslint .` and `tsc` (relying on `harness:iterate` for changed files).
+    - **Local (`post`):** Focuses on _changed_ files and fast feedback. Removed `eslint .` and `tsc` (relying on `harness:iterate` for changed files).
     - **CI (`ci`):** Remains the strict gatekeeper with full linting and type checking.
 
 2.  **Fast Review Mode:**
@@ -28,6 +28,7 @@ We optimized the `harness:post` command to make local verification significantly
 Model compatibility was never validated before invocation. The original `gpt-5.2-mini` model wasn't supported with ChatGPT accounts but no error surfaced clearly - stderr was not logged prominently.
 
 **Gap Closure**:
+
 - Added test: `harness-tests/tests/review-adapter.test.mjs` (error visibility tests)
 - Added validation: `.harness/framework/scripts/pre-flight-check.mjs`
 
