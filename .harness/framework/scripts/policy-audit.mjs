@@ -4,9 +4,9 @@
  * Policy Audit - Deterministic Compounding Enforcement
  *
  * Rules:
- *   A: Real code change → Must include learned OR decision entry
- *   B: Learned entry → Must include test delta
- *   C: Memory entry → Must have required fields (Search terms, Related, Tags)
+ *   A: Real code change → Must include history entry
+ *   B: Fix/incident entry → Must include test delta
+ *   C: History entry → Must have required frontmatter + sections
  */
 
 import { execSync } from "node:child_process";
@@ -14,6 +14,14 @@ import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { minimatch } from "./minimatch.mjs";
+import {
+  HISTORY_TYPES,
+  STRICT_TYPES,
+  countWords,
+  extractMarkdownSection,
+  normalizeList,
+  parseFrontmatter,
+} from "../lib/history-entry.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -49,7 +57,7 @@ function printRecoveryPointers() {
   1. Rerun the right stage:
      - \x1b[36mnpm run harness:iterate\x1b[0m (format + lint fix on changed files)
      - \x1b[36mnpm run harness:post\x1b[0m (medium verification: tests + policy)
-     - \x1b[36mnpm run harness:ci\x1b[0m (full verification: lint + typecheck + tripwire + review)
+     - \x1b[36mnpm run harness:ci\x1b[0m (full verification: lint + typecheck + tripwire + agents)
   2. If you didn't run prep (or you're stuck):
      - \x1b[36mnpm run harness:prep\x1b[0m (prints MUST summary + grep recipe)
   3. For details:
@@ -183,6 +191,80 @@ function getDiffFiles() {
   }
 }
 
+function getAddedFiles() {
+  const addedFiles = new Set();
+  try {
+    let base;
+    try {
+      base = execSync("git merge-base HEAD origin/main", {
+        cwd: REPO_ROOT,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+    } catch {
+      try {
+        base = execSync("git merge-base HEAD main", {
+          cwd: REPO_ROOT,
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+        }).trim();
+      } catch {
+        try {
+          execSync("git rev-parse HEAD~1", {
+            cwd: REPO_ROOT,
+            encoding: "utf-8",
+            stdio: ["pipe", "pipe", "pipe"],
+          });
+          base = "HEAD~1";
+        } catch {
+          base = null;
+        }
+      }
+    }
+
+    if (base) {
+      const added = execSync(`git diff --name-status --diff-filter=A ${base}`, {
+        cwd: REPO_ROOT,
+        encoding: "utf-8",
+      })
+        .trim()
+        .split("\n")
+        .filter(Boolean);
+      for (const line of added) {
+        const [, file] = line.split(/\s+/);
+        if (file) addedFiles.add(file);
+      }
+    }
+
+    const staged = execSync("git diff --cached --name-status --diff-filter=A", {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+    })
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+    for (const line of staged) {
+      const [, file] = line.split(/\s+/);
+      if (file) addedFiles.add(file);
+    }
+
+    const untracked = execSync("git ls-files --others --exclude-standard", {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+    })
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+    for (const file of untracked) {
+      addedFiles.add(file);
+    }
+  } catch {
+    return [];
+  }
+
+  return Array.from(addedFiles);
+}
+
 function matchesAnyGlob(file, patterns) {
   if (!patterns) return false;
   if (typeof patterns === "string") {
@@ -204,109 +286,204 @@ function getAddedEntryContent(file) {
   }
 }
 
-function validateEntryContent({ content, isLearnedEntry, diffFiles }) {
-  const issues = [];
-
-  // Check for Search terms
-  const searchTermsMatch = content.match(
-    /## Search terms\s*\n([\s\S]*?)(?=\n##|$)/,
+function getHistoryEntries(diffFiles, config) {
+  const historyFiles = diffFiles.filter(
+    (f) =>
+      matchesAnyGlob(f, config.globs.history) && !f.endsWith("TIMELINE.md"),
   );
-  if (!searchTermsMatch) {
+
+  return historyFiles
+    .map((file) => {
+      const fullPath = join(REPO_ROOT, file);
+      if (!existsSync(fullPath)) return null;
+      const content = readFileSync(fullPath, "utf-8");
+      const { data } = parseFrontmatter(content);
+      return { file, content, type: data?.type || null };
+    })
+    .filter(Boolean);
+}
+
+const MIN_SUMMARY_WORDS = 15;
+const MIN_CONTEXT_WORDS = 25;
+const MIN_SUMMARY_WORDS_STRICT = 20;
+const MIN_CONTEXT_WORDS_STRICT = 40;
+const ALLOWED_SCHEMAS = new Set(["v1", "v2"]);
+const ALLOWED_STATUSES = new Set(["active", "superseded", "deprecated"]);
+
+function validateEntryContent({
+  file,
+  content,
+  diffFiles,
+  isNewEntry = false,
+}) {
+  const issues = [];
+  const { data, body } = parseFrontmatter(content);
+
+  if (!data) {
     issues.push({
-      code: "SEARCH_MISSING",
-      message: 'Missing "## Search terms" section',
-      fix: "Add the section with at least one keyword to help future devs find this.",
+      code: "FRONTMATTER_MISSING",
+      message: "Missing YAML frontmatter",
+      fix: "Add YAML frontmatter with date, type, status, search_terms, related, tags.",
     });
-  } else {
-    const searchContent = searchTermsMatch[1].trim();
-    const hasContent = searchContent.split("\n").some((line) => {
-      const cleaned = line.replace(/^[-*]\s*/, "").trim();
-      return cleaned.length > 0;
+    return issues;
+  }
+
+  const schema = data.schema;
+  if (!schema) {
+    issues.push({
+      code: "SCHEMA_MISSING",
+      message: "Missing schema in frontmatter",
+      fix: "Add schema: v1 or schema: v2.",
     });
-    if (!hasContent) {
+  } else if (!ALLOWED_SCHEMAS.has(schema)) {
+    issues.push({
+      code: "SCHEMA_INVALID",
+      message: `Invalid schema: ${schema}`,
+      fix: "Use schema: v1 or schema: v2.",
+    });
+  }
+
+  const type = data.type;
+  if (!type || !HISTORY_TYPES.has(type)) {
+    issues.push({
+      code: "TYPE_INVALID",
+      message: `Invalid type: ${type || "missing"}`,
+      fix: `Use one of: ${Array.from(HISTORY_TYPES).join(", ")}`,
+    });
+  }
+
+  if (!data.date || !/^\d{4}-\d{2}-\d{2}$/.test(data.date)) {
+    issues.push({
+      code: "DATE_INVALID",
+      message: "Invalid or missing date (YYYY-MM-DD)",
+      fix: "Set date: YYYY-MM-DD in frontmatter.",
+    });
+  }
+
+  if (!data.status || !ALLOWED_STATUSES.has(data.status)) {
+    issues.push({
+      code: "STATUS_INVALID",
+      message: `Invalid status: ${data.status || "missing"}`,
+      fix: `Use status: ${Array.from(ALLOWED_STATUSES).join(", ")}`,
+    });
+  }
+
+  const searchTerms = normalizeList(data.search_terms);
+  if (searchTerms.length === 0) {
+    issues.push({
+      code: "SEARCH_EMPTY",
+      message: "search_terms must include at least one value",
+      fix: "Add at least one search term to the frontmatter.",
+    });
+  }
+
+  const related = normalizeList(data.related);
+  if (related.length === 0) {
+    issues.push({
+      code: "RELATED_EMPTY",
+      message: "related must include at least one value or NONE",
+      fix: 'Use related: ["NONE"] or link to another entry.',
+    });
+  }
+
+  const tags = normalizeList(data.tags);
+  if (tags.length === 0) {
+    issues.push({
+      code: "TAGS_EMPTY",
+      message: "tags must include at least one #tag",
+      fix: "Add tags like #bug or #harness.",
+    });
+  } else if (!tags.some((tag) => tag.includes("#"))) {
+    issues.push({
+      code: "TAGS_INVALID",
+      message: "tags must include at least one #tag",
+      fix: "Add tags like #bug or #harness.",
+    });
+  }
+
+  const isStrict = STRICT_TYPES.has(type);
+
+  if (schema === "v2") {
+    const summary = extractMarkdownSection(body, "Summary");
+    const context = extractMarkdownSection(body, "Context");
+    const minSummaryWords = isStrict
+      ? MIN_SUMMARY_WORDS_STRICT
+      : MIN_SUMMARY_WORDS;
+    const minContextWords = isStrict
+      ? MIN_CONTEXT_WORDS_STRICT
+      : MIN_CONTEXT_WORDS;
+
+    if (!summary) {
       issues.push({
-        code: "SEARCH_EMPTY",
-        message: '"Search terms" section is empty',
-        fix: "Add at least one keyword in the Search terms section.",
+        code: "SUMMARY_MISSING",
+        message: 'Missing "## Summary" section',
+        fix: `Add Summary with at least ${minSummaryWords} words.`,
       });
+    } else if (countWords(summary) < minSummaryWords) {
+      issues.push({
+        code: "SUMMARY_SHORT",
+        message: `"Summary" is too short (${countWords(summary)} words)`,
+        fix: `Expand Summary to at least ${minSummaryWords} words.`,
+      });
+    }
+
+    if (!context) {
+      issues.push({
+        code: "CONTEXT_MISSING",
+        message: 'Missing "## Context" section',
+        fix: `Add Context with at least ${minContextWords} words.`,
+      });
+    } else if (countWords(context) < minContextWords) {
+      issues.push({
+        code: "CONTEXT_SHORT",
+        message: `"Context" is too short (${countWords(context)} words)`,
+        fix: `Expand Context to at least ${minContextWords} words.`,
+      });
+    }
+
+    if (isStrict) {
+      if (!data.error_signature || !data.error_signature.trim()) {
+        issues.push({
+          code: "ERROR_SIGNATURE_MISSING",
+          message: "Missing error_signature for fix/incident entry",
+          fix: "Add the exact error text in frontmatter.",
+        });
+      }
+
+      const validation = extractMarkdownSection(body, "Validation");
+      if (!validation) {
+        issues.push({
+          code: "VALIDATION_MISSING",
+          message: 'Missing "## Validation" section for fix/incident',
+          fix: "Describe how the fix was validated (tests, steps).",
+        });
+      }
     }
   }
 
-  // Check for Related
-  const relatedMatch = content.match(/## Related\s*\n([\s\S]*?)(?=\n##|$)/);
-  if (!relatedMatch) {
-    issues.push({
-      code: "RELATED_MISSING",
-      message: 'Missing "## Related" section',
-      fix: 'Add the section with links to related entries or "NONE".',
-    });
-  } else {
-    const relatedContent = relatedMatch[1].trim();
-    if (
-      !relatedContent ||
-      relatedContent === "" ||
-      (!relatedContent.includes("NONE") &&
-        !relatedContent.includes("http") &&
-        !relatedContent.includes(".md"))
-    ) {
-      issues.push({
-        code: "RELATED_INVALID",
-        message: '"Related" must contain links OR "NONE"',
-        fix: 'Use "NONE" or provide a link to a related entry/issue.',
-      });
-    }
-  }
+  // SYSTEMIC GAP ENFORCEMENT (fix/incident entries only)
+  if (isStrict) {
+    const gapContentRaw = extractMarkdownSection(body, "Systemic Gap");
+    const gapContent = gapContentRaw.replace(/^\s*---\s*$/gm, "").trim();
 
-  // Check for Tags
-  const tagsMatch = content.match(/## Tags\s*\n([\s\S]*?)(?=\n##|$)/);
-  if (!tagsMatch) {
-    issues.push({
-      code: "TAGS_MISSING",
-      message: 'Missing "## Tags" section',
-      fix: "Add the section with at least one #tag.",
-    });
-  } else {
-    const tagsContent = tagsMatch[1].trim();
-    if (!tagsContent.includes("#")) {
-      issues.push({
-        code: "TAGS_INVALID",
-        message: '"Tags" must contain at least one #tag',
-        fix: "Add a hashtag tag like #bug or #infrastructure.",
-      });
-    }
-  }
-
-  // SYSTEMIC GAP ENFORCEMENT (learned entries only)
-  // Enforces 3-step chain: Bandaid → Meta-Analysis → Close Gap
-  if (isLearnedEntry) {
-    // FIX: Robust regex that only stops at H2 (## ) or EOF, allowing H3 (###) inside the section
-    const gapMatch = content.match(
-      /## Systemic Gap\s*\n([\s\S]*?)(?=\n---|\n## |$)/,
-    );
-
-    if (!gapMatch) {
+    if (!gapContent) {
       issues.push({
         code: "GAP_MISSING",
         message: 'Missing "## Systemic Gap" section',
-        fix: 'Add the section. It is required for all Learned entries to prevent "bandaid" fixes.',
+        fix: "Add the Systemic Gap analysis and Gap Closure evidence.",
       });
     } else {
-      const gapContent = gapMatch[1].trim();
-
-      // Must have substantive content (not just template text)
       if (
         gapContent.length < 50 ||
         gapContent.includes("[What infrastructure gap")
       ) {
         issues.push({
           code: "GAP_SHALLOW",
-          message:
-            '"Systemic Gap" section is too brief or contains template text',
-          fix: "Analyze the ROOT CAUSE only. Why did the system allow this bug? (min 50 chars)",
+          message: '"Systemic Gap" section is too brief or template text',
+          fix: "Explain the root infrastructure gap (min 50 chars).",
         });
       }
 
-      // Must contain Gap Closure evidence with file path
       if (
         !gapContent.includes("Gap Closure") &&
         !gapContent.includes("Added test") &&
@@ -316,16 +493,14 @@ function validateEntryContent({ content, isLearnedEntry, diffFiles }) {
         issues.push({
           code: "GAP_EVIDENCE_MISSING",
           message: 'Systemic Gap requires explicit "Gap Closure" evidence',
-          fix: 'Add the phrase "Gap Closure: Added validation: <filename>" or "Added test: <filename>" to the section.',
+          fix: 'Add "Gap Closure: Added test/validation: <filename>" to the section.',
         });
       } else {
-        // Extract file paths from Gap Closure section
         const filePathMatches = gapContent.match(
           /(?:Added (?:test|validation|pre-flight)[:\s]+)[`"']?([^`"'\n]+(?:\.mjs|\.ts|\.js|\.md))/gi,
         );
 
         if (filePathMatches) {
-          // Check if at least one referenced file appears in diff
           const referencedPaths = filePathMatches
             .map((m) => {
               const pathMatch = m.match(
@@ -338,7 +513,6 @@ function validateEntryContent({ content, isLearnedEntry, diffFiles }) {
             .filter(Boolean);
 
           const foundInDiff = referencedPaths.some((refPath) => {
-            // Check if this path appears in any diff file
             return diffFiles.some(
               (diffFile) =>
                 diffFile.includes(refPath) ||
@@ -346,7 +520,12 @@ function validateEntryContent({ content, isLearnedEntry, diffFiles }) {
             );
           });
 
-          if (!foundInDiff && referencedPaths.length > 0) {
+          if (
+            schema === "v2" &&
+            isNewEntry &&
+            !foundInDiff &&
+            referencedPaths.length > 0
+          ) {
             issues.push({
               code: "GAP_FILE_NOT_IN_DIFF",
               message:
@@ -368,11 +547,10 @@ function validateEntryContent({ content, isLearnedEntry, diffFiles }) {
 // ============================================================================
 
 function checkRuleA(diffFiles, config) {
-  // Real code change → learned OR decision
+  // Real code change → history entry
   const realCodeFiles = diffFiles.filter((f) =>
     matchesAnyGlob(f, config.globs.realCode),
   );
-  // Check if we have real code changes (not just exempt files)
   const nonExemptRealCode = realCodeFiles.filter(
     (f) => !matchesAnyGlob(f, config.globs.exempt),
   );
@@ -381,42 +559,36 @@ function checkRuleA(diffFiles, config) {
     return { passed: true, message: "No real code changes detected" };
   }
 
-  // Check for memory entries
-  const learnedFiles = diffFiles.filter(
+  const historyFiles = diffFiles.filter(
     (f) =>
-      matchesAnyGlob(f, config.globs.learned) && !f.endsWith("TIMELINE.md"),
-  );
-  const decisionFiles = diffFiles.filter(
-    (f) =>
-      matchesAnyGlob(f, config.globs.decisions) && !f.endsWith("TIMELINE.md"),
+      matchesAnyGlob(f, config.globs.history) && !f.endsWith("TIMELINE.md"),
   );
 
-  if (learnedFiles.length === 0 && decisionFiles.length === 0) {
+  if (historyFiles.length === 0) {
     return {
       passed: false,
-      message: `Rule A violated: Real code changed but no memory entry found.
+      message: `Rule A violated: Real code changed but no history entry found.
       
 Changed code files:
 ${nonExemptRealCode.map((f) => `  - ${f}`).join("\n")}
 
-Fix: Create a learned OR decision entry:
-  npm run harness:new:learned -- --slug "your-slug"
-  npm run harness:new:decision -- --slug "your-slug"`,
+Fix: Create a history entry:
+  npm run harness:new:entry -- --slug "your-slug" --type fix
+  # or: --type decision`,
     };
   }
 
   return {
     passed: true,
-    message: `Real code changes accompanied by memory entries`,
-    learnedFiles,
-    decisionFiles,
+    message: "Real code changes accompanied by history entries",
+    historyFiles,
   };
 }
 
-function checkRuleB(diffFiles, config, learnedFiles) {
-  // Learned entry → test delta
-  if (!learnedFiles || learnedFiles.length === 0) {
-    return { passed: true, message: "No learned entries to check" };
+function checkRuleB(diffFiles, config, strictEntries) {
+  // Fix/incident entry → test delta
+  if (!strictEntries || strictEntries.length === 0) {
+    return { passed: true, message: "No fix/incident entries to check" };
   }
 
   const testFiles = diffFiles.filter((f) =>
@@ -426,50 +598,36 @@ function checkRuleB(diffFiles, config, learnedFiles) {
   if (testFiles.length === 0) {
     return {
       passed: false,
-      message: `Rule B violated: Learned entry added but no test delta found.
+      message: `Rule B violated: Fix/incident entry added but no test delta found.
       
-Learned entries:
-${learnedFiles.map((f) => `  - ${f}`).join("\n")}
+Entries:
+${strictEntries.map((f) => `  - ${f}`).join("\n")}
 
-Fix: Add a test that covers this learning.
-If truly untestable, document why in the learned entry.`,
+Fix: Add a test that covers this fix.
+If truly untestable, document why in the entry.`,
     };
   }
 
-  return { passed: true, message: "Learned entries have accompanying tests" };
+  return { passed: true, message: "Fix/incident entries have tests" };
 }
 
-function checkRuleC(diffFiles, config) {
-  // Memory entry → required fields
-  const learnedFiles = diffFiles.filter((f) =>
-    matchesAnyGlob(f, config.globs.learned),
-  );
-  const decisionFiles = diffFiles.filter((f) =>
-    matchesAnyGlob(f, config.globs.decisions),
-  );
-  const memoryFiles = [...learnedFiles, ...decisionFiles];
-
-  if (memoryFiles.length === 0) {
-    return { passed: true, message: "No memory entries to validate" };
+function checkRuleC(historyEntries, diffFiles, addedFiles) {
+  if (!historyEntries || historyEntries.length === 0) {
+    return { passed: true, message: "No history entries to validate" };
   }
 
   const violations = [];
 
-  for (const file of memoryFiles) {
-    const content = getAddedEntryContent(file);
-    if (!content) continue;
-
-    // Skip TIMELINE.md - it is a manifest, not a memory entry
-    if (file.endsWith("TIMELINE.md")) continue;
-
+  for (const entry of historyEntries) {
     const issues = validateEntryContent({
-      content,
-      isLearnedEntry: learnedFiles.includes(file),
+      file: entry.file,
+      content: entry.content,
       diffFiles,
+      isNewEntry: addedFiles?.has(entry.file) ?? false,
     });
 
     if (issues.length > 0) {
-      violations.push({ file, issues });
+      violations.push({ file: entry.file, issues });
     }
   }
 
@@ -483,22 +641,25 @@ function checkRuleC(diffFiles, config) {
 
     return {
       passed: false,
-      message: `Rule C violated: Memory entries missing required fields.
+      message: `Rule C violated: History entries missing required fields.
 
 ${details}
 
-Required fields in every memory entry:
-  - ## Search terms (with at least one keyword)
-  - ## Related (with links OR "NONE")
-  - ## Tags (with at least one #tag)
-  
-Learned entries also require:
-  - ## Systemic Gap (with infrastructure gap analysis)
-  - Gap Closure with file path to test/validation added in this commit`,
+Required frontmatter fields:
+  - date, type, status, schema
+  - search_terms (non-empty list)
+  - related (links or NONE)
+  - tags (at least one #tag)
+
+Fix/incident entries also require:
+  - error_signature in frontmatter
+  - ## Validation section
+  - ## Systemic Gap with Gap Closure evidence
+  - tests in the diff (Rule B)`,
     };
   }
 
-  return { passed: true, message: "Memory entries have all required fields" };
+  return { passed: true, message: "History entries have required fields" };
 }
 
 // ============================================================================
@@ -521,7 +682,7 @@ function main() {
 
   let failed = false;
 
-  // Rule A: Real code → memory entry
+  // Rule A: Real code → history entry
   const ruleA = checkRuleA(diffFiles, config);
   if (ruleA.passed) {
     logSuccess(`Rule A: ${ruleA.message}`);
@@ -531,8 +692,17 @@ function main() {
     failed = true;
   }
 
-  // Rule B: Learned → test delta
-  const ruleB = checkRuleB(diffFiles, config, ruleA.learnedFiles);
+  // Rule B: Fix/incident → test delta
+  const historyEntries = getHistoryEntries(diffFiles, config);
+  const addedFiles = new Set(getAddedFiles());
+  const strictEntries = historyEntries
+    .filter((entry) => STRICT_TYPES.has(entry.type))
+    .map((entry) => entry.file);
+  const strictAddedEntries = strictEntries.filter((file) =>
+    addedFiles.has(file),
+  );
+
+  const ruleB = checkRuleB(diffFiles, config, strictAddedEntries);
   if (ruleB.passed) {
     logSuccess(`Rule B: ${ruleB.message}`);
   } else {
@@ -541,8 +711,8 @@ function main() {
     failed = true;
   }
 
-  // Rule C: Memory entry → required fields
-  const ruleC = checkRuleC(diffFiles, config);
+  // Rule C: History entry → required fields
+  const ruleC = checkRuleC(historyEntries, diffFiles, addedFiles);
   if (ruleC.passed) {
     logSuccess(`Rule C: ${ruleC.message}`);
   } else {

@@ -20,9 +20,9 @@ This harness is built around a compounding loop that forces **reflective enginee
 
    > _"Why did we run into this in the first place? Why wasn't it caught sooner?"_
 
-   You capture a **Learned Entry** that identifies the _gap in visibility_, and you provide the test that closes that gap forever.
+   You capture a **Fix Entry** that identifies the _gap in visibility_, and you provide the test that closes that gap forever.
 
-4. **If it’s a new feature / approach** → capture a small “decision” entry explaining the rationale.
+4. **If it’s a new feature / approach** → capture a small **decision entry** explaining the rationale.
 5. **CI enforces** that the right proof exists before merge.
 
 The point is: **we don’t trust the agent’s intentions; we verify the artifacts.** The memory system isn't just a history log—it is a **constantly evolving set of guardrails** that prevents regression classes, not just individual bugs.
@@ -74,8 +74,8 @@ Typical shape is:
 - `npm run harness:prep` – prints the MUST workflow block + points to deeper docs
 - `npm run harness:iterate` – “mid-iteration” gate (lint/format + fast checks)
 - `npm run harness:ci` – full CI gate (includes compounding audit)
-- `npm run harness:new:learned` – create a new learned entry (prompts for root cause + gap analysis)
-- `npm run harness:new:decision` – create a new decision entry
+- `npm run harness:new:entry` – create a new history entry (`--type fix|decision|incident|...`)
+- `npm run harness:new:meta` – create a harness meta entry (type `meta` + `#harness-meta`)
 - `npm test` (or similar) – runs `harness-tests/` to validate the harness itself [GitHub]
 
 ## What gets enforced (eventually / by design)
@@ -88,9 +88,9 @@ The enforcement stack is meant to live in `.harness` and be driven by config:
 
 Examples of compounding rules you can gate:
 
-- “Meaningful code change must include either a Learned entry or a Decision entry”
-- “Learned entry implies a test delta” (Did you actually close the gap you found?)
-- “All context files must be coherent and tagged”
+- “Meaningful code change must include a history entry”
+- “Fix/incident entry implies a test delta” (Did you actually close the gap you found?)
+- “All history entries must be coherent and tagged”
 
 (Exact policy is up to your harness config and how strict you want v1 to be.)
 

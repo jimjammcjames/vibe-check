@@ -7,14 +7,21 @@
  *   prep          - Print MUST block from Harness.md
  *   iterate       - Format + lint fix (changed files)
  *   post          - Medium verification (tests + policy)
- *   ci            - Full CI gate (lint + typecheck + tripwire + review)
- *   new:learned   - Create a learned entry from template
- *   new:decision  - Create a decision entry from template
+ *   ci            - Full CI gate (lint + typecheck + tripwire + agents)
+ *   new:entry     - Create a context history entry from template
+ *   new:meta      - Create a harness meta entry
  */
 
 import { execSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { join, dirname, isAbsolute } from "node:path";
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+} from "node:fs";
+import { join, dirname, isAbsolute, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -36,6 +43,17 @@ const VERBOSE =
 // Utilities
 // ============================================================================
 
+const HISTORY_TYPES = new Set([
+  "fix",
+  "decision",
+  "incident",
+  "refactor",
+  "investigation",
+  "meta",
+  "feature",
+  "note",
+]);
+
 function log(msg) {
   console.log(msg);
 }
@@ -50,6 +68,10 @@ function logSuccess(msg) {
 
 function logInfo(msg) {
   console.log(`\x1b[36mℹ ${msg}\x1b[0m`);
+}
+
+function logWarning(msg) {
+  console.log(`\x1b[33m⚠ ${msg}\x1b[0m`);
 }
 
 /**
@@ -84,7 +106,7 @@ function printRecoveryPointers() {
   1. Rerun the right stage:
      - \x1b[36mnpm run harness:iterate\x1b[0m (format + lint fix on changed files)
      - \x1b[36mnpm run harness:post\x1b[0m (medium verification: tests + policy)
-     - \x1b[36mnpm run harness:ci\x1b[0m (full verification: lint + typecheck + tripwire + review)
+     - \x1b[36mnpm run harness:ci\x1b[0m (full verification: lint + typecheck + tripwire + agents)
   2. If you didn't run prep (or you're stuck):
      - \x1b[36mnpm run harness:prep\x1b[0m (prints MUST summary + grep recipe)
   3. For details:
@@ -334,13 +356,6 @@ function runCommand(command, files = "all") {
  * Async version of runCommand for parallel execution.
  * Returns a Promise that resolves to { success, output, command }.
  */
-async function runCommandAsync(command, files = "all") {
-  return new Promise((resolve) => {
-    const result = runCommand(command, files);
-    resolve({ ...result, command });
-  });
-}
-
 // ============================================================================
 // Commands
 // ============================================================================
@@ -388,7 +403,7 @@ function cmdPrep() {
     log("\n\x1b[31m⚠️  Meta-Infrastructure detected:\x1b[0m");
     log("\x1b[31mYou are modifying the harness itself.\x1b[0m");
     log(
-      "\x1b[31mEnsure ARCHITECTURAL changes are documented in .harness/context/decisions/\x1b[0m",
+      "\x1b[31mEnsure ARCHITECTURAL changes are documented in .harness/context/history/\x1b[0m",
     );
   }
 
@@ -396,7 +411,7 @@ function cmdPrep() {
     "\n\x1b[36m╔══════════════════════════════════════════════════════════════════════╗\x1b[0m",
   );
   log(
-    "\x1b[36m║  Memory lives in .harness/context/ — grep before creating new code   ║\x1b[0m",
+    "\x1b[36m║  History lives in .harness/context/history — grep before new code    ║\x1b[0m",
   );
   log(
     "\x1b[36m╚══════════════════════════════════════════════════════════════════════╝\x1b[0m",
@@ -433,13 +448,7 @@ function cmdIterate() {
   }
 }
 
-/**
- * Check if a command is an agent script that can run in parallel.
- * Agent scripts must be read-only analyzers with no git state mutations.
- * Note: base-tripwire is NOT parallelizable because it creates git worktrees,
- * which conflicts with concurrent git operations (causes ".git/index" errors).
- */
-function isParallelizableAgent(command) {
+function isAgentCommand(command) {
   return (
     command.includes("undocumented-detector") ||
     command.includes("agent-memory-coherence") ||
@@ -454,76 +463,47 @@ async function cmdPost() {
   // Clean up orphaned processes from previous failed runs
   killOrphanedProcesses();
 
+  const config = loadConfig();
+  const stage = config.stages.post || [];
+
+  const agentSteps = stage.filter((step) => isAgentCommand(step.command));
+  if (agentSteps.length > 0) {
+    logError("Agent scripts are CI-only. Remove them from harness:post.");
+    for (const step of agentSteps) {
+      logError(`Post includes agent step: ${step.command}`);
+    }
+    printRecoveryPointers();
+    process.exit(1);
+  }
+
   if (VERBOSE) {
     log("Running verification (verbose)...\n");
   }
 
-  const config = loadConfig();
-  const stage = config.stages.post || [];
-
-  // Phase 1: Static Checks (Fast-Fail)
-  // - policy-audit
-  // - npm test
-  // These should run FIRST to catch obvious issues before engaging expensive agents.
-  const staticChecks = stage.filter(
-    (step) => !isParallelizableAgent(step.command),
-  );
-  const agentChecks = stage.filter((step) =>
-    isParallelizableAgent(step.command),
-  );
-
-  log(`\n\x1b[36m▶ Phase 1: Static Checks (${staticChecks.length})\x1b[0m`);
-  // Run static checks SERIALLY to ensure deterministic output and immediate failure
-  for (const step of staticChecks) {
-    // Use runCommand (sync) for static checks to bail out immediately
+  const results = [];
+  log(`\n\x1b[36m▶ Post Checks (${stage.length})\x1b[0m`);
+  for (const step of stage) {
     const result = runCommand(step.command, step.files);
+    results.push({ command: step.command, duration: result.duration });
     if (!result.success) {
-      logError(`Phase 1 Failed: ${step.command}`);
-      // Error output is already handled by runCommand
+      logError(`Post check failed: ${step.command}`);
       printRecoveryPointers();
       process.exit(1);
     }
   }
-  logSuccess("Phase 1 (Static) passed");
 
-  console.log("[HARNESS_PHASE:STATIC_PASS]");
-
-  if (agentChecks.length > 0) {
-    // Phase 2: Dynamic Checks (Agents)
-    log(`\n\x1b[36m▶ Phase 2: Agents (${agentChecks.length})\x1b[0m`);
-
-    const results = await Promise.all(
-      agentChecks.map((step) => runCommandAsync(step.command, step.files)),
-    );
-
-    // Check for failures
-    const failures = results.filter((r) => !r.success);
-
-    if (SHOW_TIMING) {
-      log("\n\x1b[36m=== Execution Timing ===\x1b[0m");
-      // Sort by duration descending
-      const allResults = [...results]; // Only agents here
-      const sortedResults = allResults.sort((a, b) => b.duration - a.duration);
-
-      for (const r of sortedResults) {
-        let name = r.command
-          .replace("node .harness/framework/scripts/", "")
-          .replace(".mjs", "");
-        if (name.length > 50) name = name.substring(0, 47) + "...";
-        const seconds = (r.duration / 1000).toFixed(2);
-        log(`${name.padEnd(30)} : ${seconds}s`);
-      }
-      log("");
+  if (SHOW_TIMING && results.length > 0) {
+    log("\n\x1b[36m=== Execution Timing ===\x1b[0m");
+    const sortedResults = [...results].sort((a, b) => b.duration - a.duration);
+    for (const r of sortedResults) {
+      let name = r.command
+        .replace("node .harness/framework/scripts/", "")
+        .replace(".mjs", "");
+      if (name.length > 50) name = name.substring(0, 47) + "...";
+      const seconds = (r.duration / 1000).toFixed(2);
+      log(`${name.padEnd(30)} : ${seconds}s`);
     }
-
-    if (failures.length > 0) {
-      log("\n\x1b[31mPost verification failed!\x1b[0m");
-      for (const failure of failures) {
-        logError(`Failed: ${failure.command}`);
-      }
-      printRecoveryPointers();
-      process.exit(1);
-    }
+    log("");
   }
 
   logSuccess("Post verification complete");
@@ -564,148 +544,33 @@ function getContextRoot() {
   return isAbsolute(override) ? override : join(REPO_ROOT, override);
 }
 
-function cmdNewLearned(slug) {
-  const date = getCurrentDate();
-  const filename = `${date}-${slug}.md`;
-  const targetDir = join(getContextRoot(), "learned");
-  const targetPath = join(targetDir, filename);
-  const templatePath = join(
-    HARNESS_ROOT,
-    "framework",
-    "templates",
-    "learned.md",
-  );
+function getHistoryDir() {
+  return join(getContextRoot(), "history");
+}
 
-  if (!existsSync(targetDir)) {
-    mkdirSync(targetDir, { recursive: true });
+function getTemplatePathForType(type) {
+  if (type === "meta") {
+    return join(HARNESS_ROOT, "framework", "templates", "history-meta.md");
   }
+  if (type === "fix" || type === "incident") {
+    return join(HARNESS_ROOT, "framework", "templates", "history-fix.md");
+  }
+  return join(HARNESS_ROOT, "framework", "templates", "history-decision.md");
+}
 
-  if (existsSync(targetPath)) {
-    logError(`File already exists: ${targetPath}`);
+function cmdNewEntry(slug, type) {
+  if (!type || !HISTORY_TYPES.has(type)) {
+    logError(
+      `Invalid or missing type. Allowed: ${Array.from(HISTORY_TYPES).join(", ")}`,
+    );
     process.exit(1);
   }
 
-  let template = "";
-  if (existsSync(templatePath)) {
-    template = readFileSync(templatePath, "utf-8");
-    template = template.replace(/{{date}}/g, date);
-    template = template.replace(/{{slug}}/g, slug);
-  } else {
-    template = `# ${slug}
-
-**Date:** ${date}
-
-## What Happened
-
-(describe the bug or issue)
-
-## Root Cause
-
-(what was the underlying problem)
-
-## Solution
-
-(how you fixed it)
-
-## Search terms
-
-- 
-
-## Related
-
-NONE
-
-## Tags
-
-#
-`;
-  }
-
-  writeFileSync(targetPath, template);
-  logSuccess(`Created: ${targetPath}`);
-
-  log("\nDon't forget to:");
-  log("  1. Fill in the Search terms, Related, and Tags fields");
-  log("  2. Add or update a test that proves the learning");
-}
-
-function cmdNewDecision(slug) {
   const date = getCurrentDate();
   const filename = `${date}-${slug}.md`;
-  const targetDir = join(getContextRoot(), "decisions");
+  const targetDir = getHistoryDir();
   const targetPath = join(targetDir, filename);
-  const templatePath = join(
-    HARNESS_ROOT,
-    "framework",
-    "templates",
-    "decision.md",
-  );
-
-  if (!existsSync(targetDir)) {
-    mkdirSync(targetDir, { recursive: true });
-  }
-
-  if (existsSync(targetPath)) {
-    logError(`File already exists: ${targetPath}`);
-    process.exit(1);
-  }
-
-  let template = "";
-  if (existsSync(templatePath)) {
-    template = readFileSync(templatePath, "utf-8");
-    template = template.replace(/{{date}}/g, date);
-    template = template.replace(/{{slug}}/g, slug);
-  } else {
-    template = `# ${slug}
-
-**Date:** ${date}
-
-## Context
-
-(what situation led to this decision)
-
-## Decision
-
-(what you decided to do)
-
-## Rationale
-
-(why this approach over alternatives)
-
-## Consequences
-
-(what trade-offs or implications this has)
-
-## Search terms
-
-- 
-
-## Related
-
-NONE
-
-## Tags
-
-#
-`;
-  }
-
-  writeFileSync(targetPath, template);
-  logSuccess(`Created: ${targetPath}`);
-  log("\nDon't forget to fill in the Search terms, Related, and Tags fields");
-}
-
-function cmdNewMeta(slug) {
-  const date = getCurrentDate();
-  const filename = `${date}-${slug}.md`;
-  const targetDir = join(getContextRoot(), "decisions", "harness");
-  const targetPath = join(targetDir, filename);
-  const templatePath = join(
-    HARNESS_ROOT,
-    "framework",
-    "templates",
-    "harness-decision.md",
-  );
+  const templatePath = getTemplatePathForType(type);
 
   if (!existsSync(targetDir)) {
     mkdirSync(targetDir, { recursive: true });
@@ -724,10 +589,181 @@ function cmdNewMeta(slug) {
   let template = readFileSync(templatePath, "utf-8");
   template = template.replace(/{{date}}/g, date);
   template = template.replace(/{{slug}}/g, slug);
+  template = template.replace(/{{type}}/g, type);
 
   writeFileSync(targetPath, template);
   logSuccess(`Created: ${targetPath}`);
-  log("\nDon't forget to complete the Security & Integrity Impact section");
+  log("\nDon't forget to fill in Summary and Context sections");
+}
+
+function cmdNewMeta(slug) {
+  cmdNewEntry(slug, "meta");
+}
+
+function listMarkdownFiles(dir, files = []) {
+  if (!existsSync(dir)) return files;
+  const entries = readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      listMarkdownFiles(fullPath, files);
+    } else if (entry.isFile() && entry.name.endsWith(".md")) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+function extractLegacySection(content, heading) {
+  const match = content.match(
+    new RegExp(`## ${heading}\\s*\\n([\\s\\S]*?)(?=\\n## |$)`),
+  );
+  return match ? match[1].trim() : "";
+}
+
+function parseLegacyList(sectionText) {
+  if (!sectionText) return [];
+  const items = [];
+  for (const line of sectionText.split("\n")) {
+    const cleaned = line.replace(/^[-*]\s*/, "").trim();
+    if (!cleaned) continue;
+    cleaned.split(",").forEach((token) => {
+      const value = token.trim();
+      if (value) items.push(value);
+    });
+  }
+  return items;
+}
+
+function parseLegacyTags(sectionText) {
+  if (!sectionText) return [];
+  const matches = sectionText.match(/#[\w-]+/g) || [];
+  return Array.from(new Set(matches));
+}
+
+function buildFrontmatter({ date, type, schema, searchTerms, related, tags }) {
+  const formatYamlValue = (value) =>
+    `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  const lines = [
+    "---",
+    `date: ${date}`,
+    `type: ${type}`,
+    "status: active",
+    `schema: ${schema}`,
+    "search_terms:",
+  ];
+  for (const term of searchTerms) {
+    lines.push(`  - ${formatYamlValue(term)}`);
+  }
+  lines.push("related:");
+  for (const rel of related) {
+    lines.push(`  - ${formatYamlValue(rel)}`);
+  }
+  lines.push("tags:");
+  for (const tag of tags) {
+    lines.push(`  - ${formatYamlValue(tag)}`);
+  }
+  lines.push("---");
+  return lines.join("\n");
+}
+
+function updateLegacyLinks(content) {
+  const replacements = [
+    ["file://.harness/context/decisions/harness/", ".harness/context/history/"],
+    ["file://.harness/context/decisions/", ".harness/context/history/"],
+    ["file://.harness/context/learned/", ".harness/context/history/"],
+    ["../decisions/harness/", ".harness/context/history/"],
+    ["../decisions/", ".harness/context/history/"],
+    ["../learned/", ".harness/context/history/"],
+    [".harness/context/decisions/harness/", ".harness/context/history/"],
+    [".harness/context/decisions/", ".harness/context/history/"],
+    [".harness/context/learned/", ".harness/context/history/"],
+  ];
+
+  let updated = content;
+  for (const [from, to] of replacements) {
+    updated = updated.split(from).join(to);
+  }
+  return updated;
+}
+
+function cmdMigrateHistory() {
+  const contextRoot = getContextRoot();
+  const historyDir = getHistoryDir();
+  if (!existsSync(historyDir)) {
+    mkdirSync(historyDir, { recursive: true });
+  }
+
+  const legacyRoots = [
+    join(contextRoot, "learned"),
+    join(contextRoot, "decisions"),
+  ];
+
+  const legacyFiles = legacyRoots.flatMap((dir) => listMarkdownFiles(dir));
+  const filesToMigrate = legacyFiles.filter(
+    (file) => !file.endsWith("TIMELINE.md"),
+  );
+
+  if (filesToMigrate.length === 0) {
+    logSuccess("No legacy entries found to migrate");
+    return;
+  }
+
+  const targets = new Map();
+  for (const file of filesToMigrate) {
+    const baseName = basename(file);
+    if (targets.has(baseName)) {
+      logError(`Filename collision: ${baseName}`);
+      process.exit(1);
+    }
+    targets.set(baseName, file);
+  }
+
+  for (const [baseName, file] of targets.entries()) {
+    const relative = file.replace(contextRoot + "/", "");
+    let type = null;
+    if (relative.startsWith("learned/")) {
+      type = "fix";
+    } else if (relative.startsWith("decisions/harness/")) {
+      type = "meta";
+    } else if (relative.startsWith("decisions/")) {
+      type = "decision";
+    }
+
+    if (!type) {
+      logWarning(`Skipping unknown entry type: ${relative}`);
+      continue;
+    }
+
+    const content = readFileSync(file, "utf-8");
+    const searchTerms = parseLegacyList(
+      extractLegacySection(content, "Search terms"),
+    );
+    const relatedRaw = parseLegacyList(
+      extractLegacySection(content, "Related"),
+    );
+    const tags = parseLegacyTags(extractLegacySection(content, "Tags"));
+    const date = baseName.slice(0, 10);
+    const related = relatedRaw.map((value) => updateLegacyLinks(value));
+
+    const frontmatter = buildFrontmatter({
+      date,
+      type,
+      schema: "v1",
+      searchTerms: searchTerms.length > 0 ? searchTerms : ["legacy"],
+      related: related.length > 0 ? related : ["NONE"],
+      tags: tags.length > 0 ? tags : ["#history"],
+    });
+
+    const updatedContent = updateLegacyLinks(content);
+    const migratedContent = `${frontmatter}\n\n${updatedContent}`;
+    const targetPath = join(historyDir, baseName);
+    writeFileSync(targetPath, migratedContent);
+    rmSync(file);
+    logSuccess(`Migrated: ${relative} -> history/${baseName}`);
+  }
+
+  logSuccess("History migration complete");
 }
 
 // ============================================================================
@@ -739,10 +775,15 @@ const command = args[0];
 
 // Parse additional flags
 let slug = null;
+let type = null;
 let SHOW_TIMING = false;
 for (let i = 1; i < args.length; i++) {
   if (args[i] === "--slug" && args[i + 1]) {
     slug = args[i + 1];
+    i++;
+  }
+  if (args[i] === "--type" && args[i + 1]) {
+    type = args[i + 1];
     i++;
   }
   if (args[i] === "--timing") {
@@ -770,20 +811,12 @@ switch (command) {
     cmdCi();
     break;
 
-  case "new:learned":
-    if (!slug) {
-      logError("Usage: harness new:learned --slug <slug>");
+  case "new:entry":
+    if (!slug || !type) {
+      logError("Usage: harness new:entry --slug <slug> --type <type>");
       process.exit(1);
     }
-    cmdNewLearned(slug);
-    break;
-
-  case "new:decision":
-    if (!slug) {
-      logError("Usage: harness new:decision --slug <slug>");
-      process.exit(1);
-    }
-    cmdNewDecision(slug);
+    cmdNewEntry(slug, type);
     break;
 
   case "new:meta":
@@ -792,6 +825,10 @@ switch (command) {
       process.exit(1);
     }
     cmdNewMeta(slug);
+    break;
+
+  case "migrate:history":
+    cmdMigrateHistory();
     break;
 
   default:
@@ -804,16 +841,17 @@ switch (command) {
     log("  iterate           Format + lint fix (changed files)");
     log("  post              Medium verification (tests + policy)");
     log(
-      "  ci                Full CI gate (lint + typecheck + tripwire + review)",
+      "  ci                Full CI gate (lint + typecheck + tripwire + agents)",
     );
-    log("  new:learned       Create a learned entry");
-    log("  new:decision      Create a decision entry");
-    log("  new:meta          Create a harness meta-decision entry");
+    log("  new:entry         Create a history entry (requires --type)");
+    log("  new:meta          Create a harness meta entry");
+    log("  migrate:history   Move legacy entries into history");
     log("");
     log("Options:");
     log(
       "  --verbose, -v     Print full output (default: quiet, prints only on failure)",
     );
     log("  --slug <slug>     Slug for new entries (required for new:*)");
+    log("  --type <type>     Entry type (required for new:entry)");
     process.exit(1);
 }

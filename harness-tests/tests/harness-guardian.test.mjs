@@ -73,16 +73,10 @@ test("Harness Guardian: Enforcement Protocol", async (t) => {
   });
 
   await t.test("meta-entry folder structure", () => {
-    const metaDir = join(
-      REPO_ROOT,
-      ".harness",
-      "context",
-      "decisions",
-      "harness",
-    );
+    const metaDir = join(REPO_ROOT, ".harness", "context", "history");
     assert.ok(
       existsSync(metaDir),
-      "Meta-decisions should have their own subdirectory",
+      "History directory should exist for meta entries",
     );
   });
 });

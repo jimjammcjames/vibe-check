@@ -44,22 +44,22 @@ describe("minimatch", () => {
     it("matches .harness/** pattern", () => {
       assert.strictEqual(minimatch(".harness/Harness.md", ".harness/**"), true);
       assert.strictEqual(
-        minimatch(".harness/context/learned/foo.md", ".harness/**"),
+        minimatch(".harness/context/history/foo.md", ".harness/**"),
         true,
       );
       assert.strictEqual(minimatch("src/harness.ts", ".harness/**"), false);
     });
 
     it("matches context paths", () => {
-      const learnedPattern = ".harness/context/learned/**/*.md";
+      const historyPattern = ".harness/context/history/**/*.md";
       assert.strictEqual(
-        minimatch(".harness/context/learned/2025-01-01-bug.md", learnedPattern),
+        minimatch(".harness/context/history/2025-01-01-bug.md", historyPattern),
         true,
       );
       assert.strictEqual(
         minimatch(
           ".harness/context/decisions/2025-01-01-arch.md",
-          learnedPattern,
+          historyPattern,
         ),
         false,
       );

@@ -35,8 +35,7 @@ EOF
     
     # Sanitize context (remove dev history, keep templates)
     # We want the sandbox to start fresh, not with the harness's own memories
-    find .harness/context/learned -name "*.md" -not -name "TIMELINE.md" -delete
-    find .harness/context/decisions -name "*.md" -not -name "TIMELINE.md" -delete
+    find .harness/context/history -name "*.md" -not -name "TIMELINE.md" -delete
     
     # Copy package.json (realistic name)
     cat > package.json << 'EOF'
@@ -128,8 +127,7 @@ globs:
     - "**/*.spec.ts"
     - "**/__tests__/**"
 
-  learned: ".harness/context/learned/**/*.md"
-  decisions: ".harness/context/decisions/**/*.md"
+  history: ".harness/context/history/**/*.md"
 
   testSide:
     - "**/*.test.ts"

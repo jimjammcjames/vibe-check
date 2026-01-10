@@ -4,7 +4,7 @@
  * Memory Coherence Checker
  *
  * A dedicated agent that validates memory entry hygiene:
- * 1. Entry type correctness (fix → learned, feature → decision)
+ * 1. Entry type correctness (fix/incident → fix/incident entries, feature → decision/feature)
  * 2. Topic coherence (one logical change per entry, or properly linked)
  */
 
@@ -21,6 +21,7 @@ import {
   REPO_ROOT,
   HARNESS_ROOT,
 } from "../lib/agent-runner.mjs";
+import { parseFrontmatter } from "../lib/history-entry.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -31,18 +32,18 @@ const __dirname = dirname(__filename);
 
 const COHERENCE_PROMPT = `ENVIRONMENT: Use only cat/grep/echo. DO NOT run npm/node commands.
 
-TASK: Check memory entry coherence.
+TASK: Check history entry coherence.
 
 FILES:
 - DIFF.txt: Code changes being committed
-- ENTRIES.txt: Memory entries (marked as [LEARNED] or [DECISION])
+- ENTRIES.txt: History entries (marked as [TYPE])
 
 RULES:
 1. ENTRY TYPE CORRECTNESS:
-   - "learned" entries are for BUGS/FIXES (something broke, we fixed it)
-   - "decision" entries are for FEATURES/CHANGES (new capability, architectural choice)
-   - If a learned entry describes a NEW FEATURE → flag as "wrong_entry_type"
-   - If a decision entry describes a BUG FIX → flag as "wrong_entry_type"
+   - "fix"/"incident" entries are for BUGS/FIXES (something broke, we fixed it)
+   - "decision"/"feature"/"refactor"/"investigation"/"note"/"meta" are for FEATURES/CHANGES
+   - If a fix/incident entry describes a NEW FEATURE → flag as "wrong_entry_type"
+   - If a non-fix entry describes a BUG FIX → flag as "wrong_entry_type"
 
 2. TOPIC COHERENCE:
    - Each entry should cover ONE logical change
@@ -76,7 +77,7 @@ MANDATORY: Produce COHERENCE.json as a JSON object (no extra text):
 // Helpers
 // ============================================================================
 
-function getChangedLearnedEntries() {
+function getChangedHistoryEntries() {
   try {
     const diff = execSync("git diff origin/main --name-only", {
       cwd: REPO_ROOT,
@@ -87,25 +88,10 @@ function getChangedLearnedEntries() {
       .filter(Boolean);
 
     return diff.filter(
-      (f) => f.includes(".harness/context/learned/") && f.endsWith(".md"),
-    );
-  } catch {
-    return [];
-  }
-}
-
-function getChangedDecisionEntries() {
-  try {
-    const diff = execSync("git diff origin/main --name-only", {
-      cwd: REPO_ROOT,
-      encoding: "utf-8",
-    })
-      .trim()
-      .split("\n")
-      .filter(Boolean);
-
-    return diff.filter(
-      (f) => f.includes(".harness/context/decisions/") && f.endsWith(".md"),
+      (f) =>
+        f.includes(".harness/context/history/") &&
+        f.endsWith(".md") &&
+        !f.endsWith("TIMELINE.md"),
     );
   } catch {
     return [];
@@ -119,16 +105,14 @@ function getChangedDecisionEntries() {
 async function main() {
   log("\n\x1b[36m=== Memory Coherence Checker ===\x1b[0m\n");
 
-  const learnedEntries = getChangedLearnedEntries();
-  const decisionEntries = getChangedDecisionEntries();
-  const allEntries = [...learnedEntries, ...decisionEntries];
+  const allEntries = getChangedHistoryEntries();
 
   if (allEntries.length === 0) {
-    logSuccess("No memory entries to check");
+    logSuccess("No history entries to check");
     process.exit(0);
   }
 
-  log(`Checking ${allEntries.length} memory entries...\n`);
+  log(`Checking ${allEntries.length} history entries...\n`);
 
   // Get diff for context
   let diff = "";
@@ -147,7 +131,8 @@ async function main() {
     const fullPath = join(REPO_ROOT, entry);
     if (existsSync(fullPath)) {
       const content = readFileSync(fullPath, "utf-8");
-      const entryType = entry.includes("/learned/") ? "LEARNED" : "DECISION";
+      const { data } = parseFrontmatter(content);
+      const entryType = data?.type ? data.type.toUpperCase() : "UNKNOWN";
       entryContents += `\n### [${entryType}] ${entry}\n${content}\n`;
     }
   }

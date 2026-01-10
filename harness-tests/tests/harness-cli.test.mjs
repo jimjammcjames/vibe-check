@@ -88,25 +88,27 @@ describe("harness CLI", { concurrency: 1 }, () => {
     });
   });
 
-  describe("new:learned command", () => {
-    it("requires --slug argument", () => {
-      const result = runHarness("new:learned");
+  describe("new:entry command", () => {
+    it("requires --slug and --type arguments", () => {
+      const result = runHarness("new:entry");
 
-      assert.strictEqual(result.exitCode, 1, "should fail without --slug");
-      assert.ok(result.output.includes("slug"), "should mention slug in error");
+      assert.strictEqual(result.exitCode, 1, "should fail without args");
+      assert.ok(result.output.includes("new:entry"), "should show usage");
+      assert.ok(result.output.includes("slug"), "should mention slug");
+      assert.ok(result.output.includes("type"), "should mention type");
     });
 
-    it("creates a learned entry with date prefix", (t) => {
-      const slug = "test-fixture-learned-basic";
+    it("creates a fix entry with date prefix", (t) => {
+      const slug = "test-fixture-entry-basic";
       const contextRoot = createContextRoot(t);
       const targetFile = join(
         contextRoot,
-        "learned",
+        "history",
         `${TEST_DATE}-${slug}.md`,
       );
       if (existsSync(targetFile)) rmSync(targetFile);
 
-      const result = runHarness(`new:learned --slug ${slug}`, {
+      const result = runHarness(`new:entry --slug ${slug} --type fix`, {
         HARNESS_DATE: TEST_DATE,
         HARNESS_CONTEXT_ROOT: contextRoot,
       });
@@ -114,14 +116,13 @@ describe("harness CLI", { concurrency: 1 }, () => {
       assert.strictEqual(
         result.exitCode,
         0,
-        `should succeed with --slug, got: ${result.output}`,
+        `should succeed with --slug and --type, got: ${result.output}`,
       );
       assert.ok(result.output.includes("Created"), "should confirm creation");
 
-      // Find the created file
       const createdFile = join(
         contextRoot,
-        "learned",
+        "history",
         `${TEST_DATE}-${slug}.md`,
       );
 
@@ -132,10 +133,10 @@ describe("harness CLI", { concurrency: 1 }, () => {
       assert.ok(existsSync(createdFile), `file should exist at ${createdFile}`);
     });
 
-    it("creates entry with required field sections", (t) => {
-      const slug = "test-fixture-learned-fields";
+    it("creates entry with required frontmatter and sections", (t) => {
+      const slug = "test-fixture-entry-fields";
       const contextRoot = createContextRoot(t);
-      const result = runHarness(`new:learned --slug ${slug}`, {
+      const result = runHarness(`new:entry --slug ${slug} --type fix`, {
         HARNESS_DATE: TEST_DATE,
         HARNESS_CONTEXT_ROOT: contextRoot,
       });
@@ -143,7 +144,7 @@ describe("harness CLI", { concurrency: 1 }, () => {
 
       const createdFile = join(
         contextRoot,
-        "learned",
+        "history",
         `${TEST_DATE}-${slug}.md`,
       );
       t.after(() => {
@@ -152,28 +153,37 @@ describe("harness CLI", { concurrency: 1 }, () => {
 
       const content = readFileSync(createdFile, "utf-8");
 
+      assert.ok(content.startsWith("---"), "should include frontmatter");
+      assert.ok(content.includes('type: "fix"'), "should include type");
+      assert.ok(content.includes('schema: "v2"'), "should include schema");
       assert.ok(
-        content.includes("## Search terms"),
-        "should have Search terms section",
+        content.includes("error_signature:"),
+        "should include error_signature",
       );
-      assert.ok(content.includes("## Related"), "should have Related section");
-      assert.ok(content.includes("## Tags"), "should have Tags section");
+      assert.ok(content.includes("## Summary"), "should have Summary section");
+      assert.ok(content.includes("## Context"), "should have Context section");
+      assert.ok(
+        content.includes("## Validation"),
+        "should have Validation section",
+      );
+      assert.ok(
+        content.includes("## Systemic Gap"),
+        "should have Systemic Gap section",
+      );
     });
 
     it("fails if file already exists", (t) => {
-      const slug = "test-fixture-learned-collision";
+      const slug = "test-fixture-entry-collision";
       const contextRoot = createContextRoot(t);
 
-      // Clean up start state just in case
       const collisionFile = join(
         contextRoot,
-        "learned",
+        "history",
         `${TEST_DATE}-${slug}.md`,
       );
 
       if (existsSync(collisionFile)) rmSync(collisionFile);
-      // Create first (should succeed)
-      const result1 = runHarness(`new:learned --slug ${slug}`, {
+      const result1 = runHarness(`new:entry --slug ${slug} --type fix`, {
         HARNESS_DATE: TEST_DATE,
         HARNESS_CONTEXT_ROOT: contextRoot,
       });
@@ -187,8 +197,7 @@ describe("harness CLI", { concurrency: 1 }, () => {
         if (existsSync(collisionFile)) rmSync(collisionFile);
       });
 
-      // Try to create again (should fail)
-      const result2 = runHarness(`new:learned --slug ${slug}`, {
+      const result2 = runHarness(`new:entry --slug ${slug} --type fix`, {
         HARNESS_DATE: TEST_DATE,
         HARNESS_CONTEXT_ROOT: contextRoot,
       });
@@ -205,23 +214,18 @@ describe("harness CLI", { concurrency: 1 }, () => {
     });
   });
 
-  describe("new:decision command", () => {
-    it("requires --slug argument", () => {
-      const result = runHarness("new:decision");
-      assert.strictEqual(result.exitCode, 1, "should fail without --slug");
-    });
-
+  describe("new:entry (decision type)", () => {
     it("creates a decision entry with date prefix", (t) => {
       const slug = "test-fixture-decision-basic";
       const contextRoot = createContextRoot(t);
       const targetFile = join(
         contextRoot,
-        "decisions",
+        "history",
         `${TEST_DATE}-${slug}.md`,
       );
       if (existsSync(targetFile)) rmSync(targetFile);
 
-      const result = runHarness(`new:decision --slug ${slug}`, {
+      const result = runHarness(`new:entry --slug ${slug} --type decision`, {
         HARNESS_DATE: TEST_DATE,
         HARNESS_CONTEXT_ROOT: contextRoot,
       });
@@ -234,7 +238,7 @@ describe("harness CLI", { concurrency: 1 }, () => {
 
       const createdFile = join(
         contextRoot,
-        "decisions",
+        "history",
         `${TEST_DATE}-${slug}.md`,
       );
       t.after(() => {
@@ -249,12 +253,12 @@ describe("harness CLI", { concurrency: 1 }, () => {
       const contextRoot = createContextRoot(t);
       const targetFile = join(
         contextRoot,
-        "decisions",
+        "history",
         `${TEST_DATE}-${slug}.md`,
       );
       if (existsSync(targetFile)) rmSync(targetFile);
 
-      const result = runHarness(`new:decision --slug ${slug}`, {
+      const result = runHarness(`new:entry --slug ${slug} --type decision`, {
         HARNESS_DATE: TEST_DATE,
         HARNESS_CONTEXT_ROOT: contextRoot,
       });
@@ -262,7 +266,7 @@ describe("harness CLI", { concurrency: 1 }, () => {
 
       const createdFile = join(
         contextRoot,
-        "decisions",
+        "history",
         `${TEST_DATE}-${slug}.md`,
       );
       t.after(() => {
@@ -271,6 +275,10 @@ describe("harness CLI", { concurrency: 1 }, () => {
 
       const content = readFileSync(createdFile, "utf-8");
 
+      assert.ok(content.startsWith("---"), "should include frontmatter");
+      assert.ok(content.includes('type: "decision"'), "should include type");
+      assert.ok(content.includes('schema: "v2"'), "should include schema");
+      assert.ok(content.includes("## Summary"), "should have Summary section");
       assert.ok(content.includes("## Context"), "should have Context section");
       assert.ok(
         content.includes("## Decision"),
@@ -279,10 +287,6 @@ describe("harness CLI", { concurrency: 1 }, () => {
       assert.ok(
         content.includes("## Rationale"),
         "should have Rationale section",
-      );
-      assert.ok(
-        content.includes("## Search terms"),
-        "should have Search terms section",
       );
     });
   });
@@ -293,13 +297,12 @@ describe("harness CLI", { concurrency: 1 }, () => {
       assert.strictEqual(result.exitCode, 1, "should fail without --slug");
     });
 
-    it("creates a meta decision entry with date prefix", (t) => {
+    it("creates a meta entry with date prefix", (t) => {
       const slug = "test-fixture-meta-basic";
       const contextRoot = createContextRoot(t);
       const targetFile = join(
         contextRoot,
-        "decisions",
-        "harness",
+        "history",
         `${TEST_DATE}-${slug}.md`,
       );
       if (existsSync(targetFile)) rmSync(targetFile);
@@ -317,8 +320,7 @@ describe("harness CLI", { concurrency: 1 }, () => {
 
       const createdFile = join(
         contextRoot,
-        "decisions",
-        "harness",
+        "history",
         `${TEST_DATE}-${slug}.md`,
       );
       t.after(() => {
@@ -333,8 +335,7 @@ describe("harness CLI", { concurrency: 1 }, () => {
       const contextRoot = createContextRoot(t);
       const targetFile = join(
         contextRoot,
-        "decisions",
-        "harness",
+        "history",
         `${TEST_DATE}-${slug}.md`,
       );
       if (existsSync(targetFile)) rmSync(targetFile);
@@ -347,8 +348,7 @@ describe("harness CLI", { concurrency: 1 }, () => {
 
       const createdFile = join(
         contextRoot,
-        "decisions",
-        "harness",
+        "history",
         `${TEST_DATE}-${slug}.md`,
       );
       t.after(() => {
@@ -357,15 +357,15 @@ describe("harness CLI", { concurrency: 1 }, () => {
 
       const content = readFileSync(createdFile, "utf-8");
 
+      assert.ok(content.includes('type: "meta"'), "should include meta type");
       assert.ok(
         content.includes("## Security & Integrity Impact"),
         "should have Security & Integrity Impact section",
       );
       assert.ok(
-        content.includes("## Search terms"),
-        "should have Search terms section",
+        content.includes("#harness-meta"),
+        "should include harness meta tag",
       );
-      assert.ok(content.includes("## Tags"), "should have Tags section");
     });
   });
 

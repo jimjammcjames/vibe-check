@@ -4,7 +4,7 @@
  * Undocumented Changes Detector
  *
  * A focused agent that ONLY checks if all changes in the diff
- * are covered by corresponding learned/decision entries.
+ * are covered by corresponding history entries.
  */
 
 import { execSync } from "node:child_process";
@@ -32,9 +32,9 @@ const DETECTOR_PROMPT = `TASK: Verify that code changes are documented.
 
 FILES:
 - DIFF.txt: All changes (code and documentation)
-- MEMORY_ENTRIES.txt: Existing documentation (both [LEARNED] and [DECISION] entries)
+- HISTORY_ENTRIES.txt: Existing documentation (history entries)
 
-RULE: Every code change should be covered by at least one LEARNED or DECISION entry in MEMORY_ENTRIES.txt.
+RULE: Every code change should be covered by at least one history entry in HISTORY_ENTRIES.txt.
 
 MATCHING:
 - An "umbrella" entry (e.g., "Harness Latency Optimization") covers ALL related sub-changes (e.g., "parallel execution", "nano model", "caching").
@@ -49,7 +49,7 @@ MANDATORY: Create RESULT.json:
   "all_documented": true
 }
 
-If MEMORY_ENTRIES.txt contains entries that reasonably cover the changes, set all_documented to true and undocumented_clusters to [].
+If HISTORY_ENTRIES.txt contains entries that reasonably cover the changes, set all_documented to true and undocumented_clusters to [].
 
 Run: Output ONLY the JSON object.`;
 
@@ -84,11 +84,11 @@ async function main() {
     process.exit(0);
   }
 
-  // Get learned entries content
-  const learnedDir = join(HARNESS_ROOT, "context", "learned");
-  let memoryContent = "";
-  if (existsSync(learnedDir)) {
-    const files = execSync(`find "${learnedDir}" -name "*.md" -type f`, {
+  // Get history entries content
+  const historyDir = join(HARNESS_ROOT, "context", "history");
+  let historyContent = "";
+  if (existsSync(historyDir)) {
+    const files = execSync(`find "${historyDir}" -name "*.md" -type f`, {
       encoding: "utf-8",
     })
       .trim()
@@ -98,27 +98,7 @@ async function main() {
     for (const file of files) {
       if (file.endsWith("TIMELINE.md")) continue;
       try {
-        memoryContent += `\n### [LEARNED] ${file}\n${readFileSync(file, "utf-8")}\n`;
-      } catch {
-        // Ignore unreadable files; best-effort context is sufficient.
-      }
-    }
-  }
-
-  // Get decision entries content
-  const decisionsDir = join(HARNESS_ROOT, "context", "decisions");
-  if (existsSync(decisionsDir)) {
-    const files = execSync(`find "${decisionsDir}" -name "*.md" -type f`, {
-      encoding: "utf-8",
-    })
-      .trim()
-      .split("\n")
-      .filter(Boolean);
-
-    for (const file of files) {
-      if (file.endsWith("TIMELINE.md")) continue;
-      try {
-        memoryContent += `\n### [DECISION] ${file}\n${readFileSync(file, "utf-8")}\n`;
+        historyContent += `\n### ${file}\n${readFileSync(file, "utf-8")}\n`;
       } catch {
         // Ignore unreadable files; best-effort context is sufficient.
       }
@@ -132,7 +112,7 @@ async function main() {
     name: "undocumented",
     files: {
       "DIFF.txt": diff,
-      "MEMORY_ENTRIES.txt": memoryContent || "No memory entries found",
+      "HISTORY_ENTRIES.txt": historyContent || "No history entries found",
     },
     prompt: DETECTOR_PROMPT,
     outputFile: "RESULT.json",
@@ -158,8 +138,10 @@ async function main() {
     console.log(`Undocumented: ${result.undocumented_clusters.length}`);
     console.log("\x1b[33mUndocumented changes detected:\x1b[0m");
     result.undocumented_clusters.forEach((c) => logWarning(c));
-    console.log("\nCreate learned entries for these changes:");
-    console.log('  npm run harness:new:learned -- --slug "descriptive-slug"');
+    console.log("\nCreate history entries for these changes:");
+    console.log(
+      '  npm run harness:new:entry -- --slug "descriptive-slug" --type fix',
+    );
     process.exit(1);
   } else {
     logSuccess("All changes are documented");

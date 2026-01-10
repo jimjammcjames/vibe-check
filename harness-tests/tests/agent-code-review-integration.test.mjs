@@ -36,7 +36,7 @@ describe("agent-code-review integration", () => {
     const context = {
       diff: "diff --git a/file b/file",
       testFiles: ["harness-tests/tests/example.test.mjs"],
-      learnedEntries: [],
+      historyEntries: [],
       testCommand: "npm test",
     };
 

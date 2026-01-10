@@ -84,8 +84,7 @@ globs:
     - "**/tests/**"
 
   # Memory entry locations
-  learned: ".harness/context/learned/**/*.md"
-  decisions: ".harness/context/decisions/**/*.md"
+  history: ".harness/context/history/**/*.md"
 
   # Test-side files (applied to base commit in tripwire)
   testSide:

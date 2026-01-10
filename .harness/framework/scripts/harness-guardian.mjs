@@ -21,6 +21,7 @@ import {
   REPO_ROOT,
   HARNESS_ROOT,
 } from "../lib/agent-runner.mjs";
+import { normalizeList, parseFrontmatter } from "../lib/history-entry.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -127,42 +128,38 @@ async function main() {
     `Modifications to harness core detected (${harnessWork.length} files)...`,
   );
 
-  // Verify Meta-Entry exists in the correct folder with the correct tag
-  const metaDir = join(HARNESS_ROOT, "context", "decisions", "harness");
+  // Verify meta entry exists in history with the correct tag
   let hasMetaEntry = false;
   let metaContent = "";
+  const metaCandidates = changedFiles.filter(
+    (f) =>
+      f.startsWith(".harness/context/history/") &&
+      f.endsWith(".md") &&
+      !f.endsWith("TIMELINE.md"),
+  );
 
-  if (existsSync(metaDir)) {
-    const metaFiles = execSync(`find "${metaDir}" -name "*.md" -type f`, {
-      encoding: "utf-8",
-    })
-      .trim()
-      .split("\n")
-      .filter(Boolean);
+  for (const relativePath of metaCandidates) {
+    const fullPath = join(REPO_ROOT, relativePath);
+    if (!existsSync(fullPath)) continue;
+    const content = readFileSync(fullPath, "utf-8");
+    const { data } = parseFrontmatter(content);
+    const tags = normalizeList(data?.tags);
+    const hasMetaTag = tags.some((tag) => tag.includes("#harness-meta"));
 
-    const newMetaFiles = metaFiles.filter((f) => {
-      const relativePath = f.replace(REPO_ROOT + "/", "");
-      return changedFiles.includes(relativePath);
-    });
-
-    if (newMetaFiles.length > 0) {
-      for (const file of newMetaFiles) {
-        const content = readFileSync(file, "utf-8");
-        if (content.includes("#harness-meta")) {
-          hasMetaEntry = true;
-          metaContent += `\n### [META-ENTRY] ${file}\n${content}\n`;
-        }
-      }
+    if (data?.type === "meta" && hasMetaTag) {
+      hasMetaEntry = true;
+      metaContent += `\n### [META-ENTRY] ${relativePath}\n${content}\n`;
     }
   }
 
   if (!hasMetaEntry) {
     logError("Harness meta-security violation!");
-    log("Changes to .harness/ framework require a specialized decision entry.");
+    log("Changes to .harness/ framework require a meta history entry.");
     log(
       'Command: npm run harness:new:meta -- --slug "your-change-description"',
     );
-    log("Location: .harness/context/decisions/harness/");
+    log("Location: .harness/context/history/");
+    log("Type: meta (frontmatter)");
     log("Tag: #harness-meta");
     process.exit(1);
   }

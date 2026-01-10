@@ -27,7 +27,7 @@ import {
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { minimatch } from "./minimatch.mjs";
-import { getProvider } from "../providers/index.mjs";
+import { parseFrontmatter } from "../lib/history-entry.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -217,15 +217,19 @@ function getTestFiles(diffFiles, config) {
   return diffFiles.filter((f) => matchesAnyGlob(f, testGlobs));
 }
 
-function getLearnedContent(diffFiles, config) {
-  const learnedGlob = config.globs.learned;
-  const learnedFiles = diffFiles.filter((f) => matchesAnyGlob(f, learnedGlob));
+function getHistoryContent(diffFiles, config) {
+  const historyGlob = config.globs.history;
+  const historyFiles = diffFiles.filter(
+    (f) => matchesAnyGlob(f, historyGlob) && !f.endsWith("TIMELINE.md"),
+  );
 
-  return learnedFiles
+  return historyFiles
     .map((file) => {
       const fullPath = join(REPO_ROOT, file);
       if (existsSync(fullPath)) {
-        return { file, content: readFileSync(fullPath, "utf-8") };
+        const content = readFileSync(fullPath, "utf-8");
+        const { data } = parseFrontmatter(content);
+        return { file, content, type: data?.type || "unknown" };
       }
       return null;
     })
@@ -298,7 +302,7 @@ function buildReviewResult(reviewData) {
  * @typedef {Object} ReviewContext
  * @property {string} diff - Git diff of the PR
  * @property {string[]} testFiles - Changed test files
- * @property {Array<{file: string, content: string}>} learnedEntries - Learned entry contents
+ * @property {Array<{file: string, content: string, type?: string}>} historyEntries - History entry contents
  * @property {string} testCommand - Command used to run tests
  */
 
@@ -367,10 +371,15 @@ const sharedAdapter = {
       files["DIFF.txt"] = context.diff || "No diff available";
       files["TEST_FILES.txt"] = context.testFiles.join("\n");
 
-      const learnedContent = context.learnedEntries
-        .map((e) => `### ${e.file}\n${e.content}`)
+      const historyEntries =
+        context.historyEntries || context.learnedEntries || [];
+      const historyContent = historyEntries
+        .map(
+          (e) =>
+            `### [${(e.type || "unknown").toUpperCase()}] ${e.file}\n${e.content}`,
+        )
         .join("\n\n");
-      files["LEARNED_ENTRIES.txt"] = learnedContent || "None";
+      files["HISTORY_ENTRIES.txt"] = historyContent || "None";
 
       // Read Harness.md for the compliance prompt
       const harnessDocPath = join(HARNESS_ROOT, "Harness.md");
@@ -388,24 +397,24 @@ You are a META-LEVEL reviewer enforcing the 3-STEP CHAIN:
 
 FILES PROVIDED:
 - DIFF.txt: The code changes
-- LEARNED_ENTRIES.txt: Memory entries created  
+- HISTORY_ENTRIES.txt: History entries created  
 - HARNESS_RULES.md: The rules
 
 ANALYSIS:
 1. CHANGE TYPE: Is this a FIX (bug/error/correction) or FEATURE (new/add/implement)?
-   - Fixes MUST use "learned" entries and MUST have tests
-   - Features MAY use "decision" entries and MAY skip tests
-   - Meta-changes (tagged #harness-meta) MUST use "decision" entries (even if fixing harness bugs)
+   - Fixes MUST use "fix" or "incident" history entries and MUST have tests
+   - Features MAY use "decision" history entries and MAY skip tests
+   - Meta-changes MUST use "meta" history entries and include #harness-meta
    
-2. SYSTEMIC GAP ANALYSIS (CRITICAL for learned entries):
-   - Does the learned entry have a "## Systemic Gap" section?
+2. SYSTEMIC GAP ANALYSIS (CRITICAL for fix/incident entries):
+   - Does the fix/incident entry have a "## Systemic Gap" section?
    - Is the gap analysis substantive (not just "fixed the bug")?
    - Is there Gap Closure evidence with a REAL file path?
    - Does that file appear in the DIFF.txt?
    
    Good example: "No pre-flight check for model compatibility → Added pre-flight-check.mjs"
    Bad example: "Fixed the issue" (no systemic analysis)
-   Bad example: "None" (unacceptable for learned entries)
+   Bad example: "None" (unacceptable for fix/incident entries)
 
 3. GAMING: Are entries hollow/generic? Do they match the actual code change?
    - Flag no-op assertions (e.g., assert.ok(true), expect(true).toBe(true))
@@ -621,7 +630,7 @@ async function main() {
   const context = {
     diff: getDiff(baseRef),
     testFiles,
-    learnedEntries: getLearnedContent(diffFiles, config),
+    historyEntries: getHistoryContent(diffFiles, config),
     testCommand: reviewerConfig.test_command || "npm test",
   };
 
@@ -641,7 +650,7 @@ async function main() {
   }
   if (result.entryTypeMismatch) {
     console.log(
-      `⚠️  Entry Type Mismatch: Fix should use learned entry, not decision`,
+      `⚠️  Entry Type Mismatch: Fix should use fix/incident entry, not decision`,
     );
   }
   if (result.missingTestsForFix) {

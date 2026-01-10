@@ -7,7 +7,7 @@
  * ensuring they FAIL on the base commit (origin/main).
  *
  * Algorithm:
- * 1. Check if learned entry present AND test files changed
+ * 1. Check if fix/incident entry present AND test files changed
  * 2. If not → exit with "not applicable" status
  * 3. Create a temp worktree at base commit
  * 4. Generate test-only patch from PR changes
@@ -19,7 +19,7 @@
  *   0 - Pass (tests fail on base as expected)
  *   1 - Fail (tests pass on base = potential gaming)
  *   2 - Error (git/setup issues)
- *   3 - Not applicable (no learned entry or no test changes)
+ *   3 - Not applicable (no fix/incident entry or no test changes)
  */
 
 import { execSync, spawnSync } from "node:child_process";
@@ -28,6 +28,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { minimatch } from "./minimatch.mjs";
+import { parseFrontmatter, STRICT_TYPES } from "../lib/history-entry.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -184,10 +185,18 @@ function matchesAnyGlob(file, patterns) {
   return patterns.some((pattern) => minimatch(file, pattern));
 }
 
-function getLearnedEntries(diffFiles, config) {
+function getStrictEntries(diffFiles, config) {
   return diffFiles
-    .filter((f) => matchesAnyGlob(f, config.globs.learned))
-    .filter((f) => existsSync(join(REPO_ROOT, f)));
+    .filter(
+      (f) =>
+        matchesAnyGlob(f, config.globs.history) && !f.endsWith("TIMELINE.md"),
+    )
+    .filter((f) => existsSync(join(REPO_ROOT, f)))
+    .filter((f) => {
+      const content = readFileSync(join(REPO_ROOT, f), "utf-8");
+      const { data } = parseFrontmatter(content);
+      return STRICT_TYPES.has(data?.type);
+    });
 }
 
 function getTestFiles(diffFiles, config) {
@@ -195,8 +204,8 @@ function getTestFiles(diffFiles, config) {
   return diffFiles.filter((f) => matchesAnyGlob(f, testGlobs));
 }
 
-function checkExemption(learnedFiles, exemptTag) {
-  for (const file of learnedFiles) {
+function checkExemption(strictFiles, exemptTag) {
+  for (const file of strictFiles) {
     const fullPath = join(REPO_ROOT, file);
     if (existsSync(fullPath)) {
       const content = readFileSync(fullPath, "utf-8");
@@ -455,10 +464,10 @@ async function main() {
     process.exit(0);
   }
 
-  // Check for learned entries
-  const learnedFiles = getLearnedEntries(diffFiles, config);
-  if (learnedFiles.length === 0) {
-    logInfo("No learned entries - tripwire not applicable");
+  // Check for fix/incident entries
+  const strictEntries = getStrictEntries(diffFiles, config);
+  if (strictEntries.length === 0) {
+    logInfo("No fix/incident entries - tripwire not applicable");
     process.exit(0);
   }
 
@@ -470,11 +479,11 @@ async function main() {
   }
 
   log(
-    `Found ${learnedFiles.length} learned entries and ${testFiles.length} test files\n`,
+    `Found ${strictEntries.length} fix/incident entries and ${testFiles.length} test files\n`,
   );
 
   // Check for exemption
-  const exemption = checkExemption(learnedFiles, exemptTag);
+  const exemption = checkExemption(strictEntries, exemptTag);
   if (exemption.exempt) {
     logWarning(`Tripwire exempted via ${exemptTag} in ${exemption.file}`);
     if (exemption.reason) {
@@ -552,7 +561,9 @@ async function main() {
       log("\nThis suggests the tests may not actually verify the bug/feature.");
       log("Either:");
       log("  1. Rewrite tests to actually fail on the base commit");
-      log(`  2. Add ${exemptTag} to your learned entry with justification`);
+      log(
+        `  2. Add ${exemptTag} to your fix/incident entry with justification`,
+      );
       process.exit(1);
     }
   } finally {

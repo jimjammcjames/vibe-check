@@ -7,77 +7,81 @@
 ```bash
 npm run harness:prep      # You're here - prints this block
 npm run harness:iterate   # Format + lint fix (changed files only)
-npm run harness:post      # Medium verification (tests + policy)
-npm run harness:ci        # Full CI gate (adds tripwire + review)
+npm run harness:post      # Medium verification (tests + policy, no agents)
+npm run harness:ci        # Full CI gate (lint + typecheck + tripwire + agents)
 ```
 
 ## Loop Tiers
 
-| Loop   | Command         | Purpose                                          |
-| ------ | --------------- | ------------------------------------------------ |
-| Inner  | harness:iterate | Format + lint fix on changed files               |
-| Medium | harness:post    | Tests + policy (no agents)                       |
-| Outer  | harness:ci      | Full gate (lint + typecheck + tripwire + review) |
+| Loop   | Command         | Purpose                                                |
+| ------ | --------------- | ------------------------------------------------------ |
+| Inner  | harness:iterate | Format + lint fix on changed files                     |
+| Medium | harness:post    | Tests + policy (no agents)                             |
+| Outer  | harness:ci      | Full gate (lint + typecheck + tripwire + agent review) |
 
 ## Lookup Before Creating
 
-Before creating new code or fixing bugs, search existing memory:
+Before creating new code or fixing bugs, search existing history:
 
 ```bash
 # Search by keyword
-rg -n "keywords|error-message" .harness/context
+rg -n "keywords|error-message" .harness/context/history
 
 # Search by tag
-rg -n "#tag" .harness/context
+rg -n "#tag" .harness/context/history
 ```
 
 ## Context Safety (CRITICAL)
 
-- **NEVER** manually create, move, or delete files in `.harness/context`.
-- **ALWAYS** use the CLI commands: `npm run harness:new:...`.
+- **NEVER** manually create, move, or delete files in `.harness/context/history`.
+- **ALWAYS** use the CLI commands: `npm run harness:new:entry` (or wrappers).
 - **Reason:** Manual edits break the audit trail and can cause data loss.
 
-## Memory Creation
+## History Creation
 
 When you make changes:
 
-- **Bug fix or learning** → create a learned entry
-- **Architecture/design decision** → create a decision entry
+- **Bug fix / incident** → create a `fix` (or `incident`) entry
+- **Architecture/design decision** → create a `decision` entry
+- **Harness meta-change** → create a `meta` entry (must include `#harness-meta`)
 
 ```bash
-npm run harness:new:learned -- --slug "descriptive-slug"
-npm run harness:new:decision -- --slug "descriptive-slug"
+npm run harness:new:entry -- --slug "descriptive-slug" --type fix
+npm run harness:new:entry -- --slug "descriptive-slug" --type decision
+npm run harness:new:meta -- --slug "descriptive-slug"
 ```
 
 ## Enforcement Rules (CI will block if violated)
 
-| Rule | Trigger             | Requirement                                        |
-| ---- | ------------------- | -------------------------------------------------- |
-| A    | Real code changed   | Must include learned OR decision entry             |
-| B    | Learned entry added | Must include test delta                            |
-| C    | Any memory entry    | Must have: Search terms, Related/NONE, Tags        |
-| C+   | Learned entry       | Must have **Systemic Gap** + Gap Closure file path |
+| Rule | Trigger            | Requirement                                                      |
+| ---- | ------------------ | ---------------------------------------------------------------- |
+| A    | Real code changed  | Must include history entry                                       |
+| B    | Fix/incident entry | Must include test delta                                          |
+| C    | Any history entry  | Must have required frontmatter + sections                        |
+| C+   | Fix/incident entry | Must include error_signature, Validation, Systemic Gap + Closure |
 
-## Required Fields in Memory Entries
+## Required Frontmatter Fields
 
-Every learned/decision entry **must** include:
+Every history entry must include:
 
-- `Search terms:` at least one non-empty keyword
-- `Related:` at least one link OR `NONE`
-- `Tags:` at least one `#tag`
+- `date` (YYYY-MM-DD)
+- `type` (fix, decision, incident, refactor, investigation, meta, feature, note)
+- `status` (active, superseded, deprecated)
+- `schema` (v1 or v2)
+- `search_terms` (non-empty list)
+- `related` (links or `NONE`)
+- `tags` (at least one `#tag`)
 
-**Learned entries also require (C+ rule):**
+**Schema v2 required sections:**
 
-- `Systemic Gap:` infrastructure gap analysis
-- `Gap Closure:` file path to test/validation added in this commit
+- `## Summary` (min 15 words; 20 for fix/incident)
+- `## Context` (min 25 words; 40 for fix/incident)
 
-### The 3-Step Chain (Learned Entries)
+**Fix/incident entries also require:**
 
-Every learned entry must document:
-
-1. **Bandaid** → Immediate fix applied
-2. **Meta-Analysis** → What infrastructure gap allowed this issue class?
-3. **Close Gap** → Test/validation file added to prevent recurrence
+- `error_signature` in frontmatter (exact error text)
+- `## Validation` (how the fix was verified)
+- `## Systemic Gap` with explicit `Gap Closure: Added test/validation: <path>`
 
 ---
 
@@ -91,11 +95,12 @@ Every learned entry must document:
 
 2. **NEVER weaken enforcement to make tests pass**. If the harness is failing, the fix is to add proper documentation, not to change the harness to be less strict.
 
-3. **Documentation ≠ Code**. README updates don't need learned entries. Harness script changes ARE code and DO need entries.
+3. **Documentation ≠ Code**. README updates don't need history entries. Harness script changes ARE code and DO need entries.
 
 4. **Harness Meta-Changes require specific documentation**.
-   - **Location**: `.harness/context/decisions/harness/`
+   - **Location**: `.harness/context/history/`
    - **Command**: `npm run harness:new:meta -- --slug "descriptive-slug"`
+   - **Type**: `meta` (frontmatter)
    - **Tag**: Must include `#harness-meta`
 
 5. **When in doubt, document more, not less**. It's better to over-document than to game the system.
@@ -112,7 +117,7 @@ Every learned entry must document:
 
 2. **No wrapper required** - The harness works without wrapping agent tools. Agents discover requirements when they hit enforcement barriers.
 
-3. **Atomic memory entries** - Each learned/decision is a separate file to avoid context overload and enable targeted retrieval.
+3. **Atomic history entries** - Each history entry is a separate file to avoid context overload and enable targeted retrieval.
 
 4. **Recovery by design** - Every failure includes pointers to recovery (prep/iterate/post commands).
 
@@ -121,7 +126,7 @@ Every learned entry must document:
 ```
 .harness/
   Harness.md              ← you are here (canonical doc)
-  harness.yml             ← stage definitions + globs
+  config.yml              ← stage definitions + globs
 
   setup/                  ← installation instructions (for new repos)
     README.md             ← step-by-step setup guide
@@ -131,13 +136,12 @@ Every learned entry must document:
     cli/harness.mjs       ← CLI orchestrator
     scripts/policy-audit.mjs
     templates/
-      learned.md
-      decision.md
+      history-fix.md
+      history-decision.md
+      history-meta.md
 
   context/
-    learned/              ← bug learnings
-      TIMELINE.md         ← optional chronology
-    decisions/            ← design decisions
+    history/              ← context trail (fixes, decisions, incidents, meta)
       TIMELINE.md         ← optional chronology
 ```
 
@@ -147,14 +151,14 @@ Every learned entry must document:
 
 ### "CI is failing with Rule A"
 
-You changed real code but didn't add a memory entry.
+You changed real code but didn't add a history entry.
 
 ```bash
-# Create a learned entry (for bug fixes)
-npm run harness:new:learned -- --slug "what-i-fixed"
+# Create a fix entry (for bug fixes)
+npm run harness:new:entry -- --slug "what-i-fixed" --type fix
 
 # OR create a decision entry (for design choices)
-npm run harness:new:decision -- --slug "why-i-chose-this"
+npm run harness:new:entry -- --slug "why-i-chose-this" --type decision
 
 # Fill in required fields, then re-run
 npm run harness:post
@@ -162,7 +166,7 @@ npm run harness:post
 
 ### "CI is failing with Rule B"
 
-You added a learned entry but no test.
+You added a fix/incident entry but no test.
 
 ```bash
 # Add a test that covers the bug/learning
@@ -172,13 +176,13 @@ npm run harness:post
 
 ### "CI is failing with Rule C"
 
-Your memory entry is missing required fields.
+Your history entry is missing required fields.
 
 Edit the entry to include:
 
-- `Search terms:` keywords you used to search
-- `Related:` links to related entries, or `NONE`
-- `Tags:` relevant tags like `#auth`, `#api`, `#bug`
+- frontmatter: `date`, `type`, `status`, `schema`
+- frontmatter lists: `search_terms`, `related`, `tags`
+- for fix/incident: `error_signature`, `## Validation`, `## Systemic Gap` + Gap Closure
 
 ### "CI is failing with Base Tripwire or Agent Code Review"
 
@@ -201,9 +205,9 @@ npm run harness:prep
 
 2. **Empty search terms** - You must document what you searched for, even if you found nothing.
 
-3. **Skipping tests for learnings** - Every learned entry needs a test delta. If it's genuinely untestable, document why in the entry.
+3. **Skipping tests for fixes** - Every fix/incident entry needs a test delta. If it's genuinely untestable, document why in the entry.
 
-## Best Learned/Decision Entries
+## Best History Entries
 
 _This section will be populated as the repository accumulates valuable entries._
 

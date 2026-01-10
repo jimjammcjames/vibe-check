@@ -10,9 +10,9 @@
     "harness:post": "node .harness/framework/cli/harness.mjs post",
     "harness:ci": "node .harness/framework/cli/harness.mjs ci",
     "harness:simulate": "bash harness-tests/simulation/run.sh",
-    "harness:new:learned": "node .harness/framework/cli/harness.mjs new:learned",
-    "harness:new:decision": "node .harness/framework/cli/harness.mjs new:decision",
-    "harness:new:meta": "node .harness/framework/cli/harness.mjs new:meta"
+    "harness:new:entry": "node .harness/framework/cli/harness.mjs new:entry",
+    "harness:new:meta": "node .harness/framework/cli/harness.mjs new:meta",
+    "harness:migrate:history": "node .harness/framework/cli/harness.mjs migrate:history"
   },
   "keywords": [
     "agent",

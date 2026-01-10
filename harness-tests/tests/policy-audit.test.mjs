@@ -51,23 +51,23 @@ describe("policy-audit logic", () => {
     });
   });
 
-  describe("Rule A: real code → memory entry", () => {
+  describe("Rule A: real code → history entry", () => {
     it("passes when only exempt files changed", () => {
       const files = ["package.json", "README.md"];
       const result = checkRuleA(files, config);
       assert.strictEqual(result.passed, true);
     });
 
-    it("fails when real code changed without memory entry", () => {
+    it("fails when real code changed without history entry", () => {
       const files = ["src/index.ts", "src/utils.ts"];
       const result = checkRuleA(files, config);
       assert.strictEqual(result.passed, false);
     });
 
-    it("passes when real code changed with learned entry", () => {
+    it("passes when real code changed with history entry", () => {
       const files = [
         "src/index.ts",
-        ".harness/context/learned/2025-01-01-fix.md",
+        ".harness/context/history/2025-01-01-fix.md",
       ];
       const result = checkRuleA(files, config);
       assert.strictEqual(result.passed, true);
@@ -76,199 +76,256 @@ describe("policy-audit logic", () => {
     it("passes when real code changed with decision entry", () => {
       const files = [
         "src/index.ts",
-        ".harness/context/decisions/2025-01-01-arch.md",
+        ".harness/context/history/2025-01-01-arch.md",
       ];
       const result = checkRuleA(files, config);
       assert.strictEqual(result.passed, true);
     });
   });
 
-  describe("Rule B: learned → test delta", () => {
-    it("passes when no learned entry present", () => {
-      const files = ["src/index.ts", ".harness/context/decisions/arch.md"];
+  describe("Rule B: fix/incident → test delta", () => {
+    it("passes when no fix/incident entry present", () => {
+      const files = ["src/index.ts", ".harness/context/history/arch.md"];
       const result = checkRuleB(files, config, []);
       assert.strictEqual(result.passed, true);
     });
 
-    it("fails when learned entry without test", () => {
-      const files = ["src/index.ts", ".harness/context/learned/fix.md"];
+    it("fails when fix entry without test", () => {
+      const files = ["src/index.ts", ".harness/context/history/fix.md"];
       const result = checkRuleB(files, config, [
-        ".harness/context/learned/fix.md",
+        ".harness/context/history/fix.md",
       ]);
       assert.strictEqual(result.passed, false);
     });
 
-    it("passes when learned entry with test file", () => {
-      const files = [".harness/context/learned/fix.md", "src/index.test.ts"];
+    it("passes when fix entry with test file", () => {
+      const files = [".harness/context/history/fix.md", "src/index.test.ts"];
       const result = checkRuleB(files, config, [
-        ".harness/context/learned/fix.md",
+        ".harness/context/history/fix.md",
       ]);
       assert.strictEqual(result.passed, true);
     });
   });
 
-  describe("Rule C: memory entry → required fields", () => {
-    it("validates complete entry with all fields", () => {
-      const content = `# Test Entry
+  describe("Rule C: history entry → required fields", () => {
+    it("validates complete decision entry with required fields", () => {
+      const content = `---
+date: 2026-01-02
+type: decision
+status: active
+schema: v2
+search_terms:
+  - "auth"
+related:
+  - "NONE"
+tags:
+  - "#auth"
+---
 
-## What Happened
+# Test Entry
 
-Fixed a bug
+## Summary
 
-## Search terms
+This summary explains the decision clearly and includes enough words to pass the minimum threshold.
 
-- authentication
-- login error
+## Context
 
-## Related
+This context provides enough background on why the decision was made, including constraints and alternatives. It also notes the system goals, the previous failures, and the metrics we care about.
 
-NONE
+## Decision
 
-## Tags
+Use token-based auth.
 
-#auth #bug
+## Rationale
+
+Clear rationale here.
+
+## Consequences
+
+Some follow-up work is required.
+
+## Validation
+
+Reviewed in tests.
 `;
       const issues = validateEntryContent({
+        file: "history-entry.md",
         content,
-        isLearnedEntry: false,
         diffFiles: [],
+        isNewEntry: true,
       });
       assert.strictEqual(issues.length, 0);
     });
 
-    it("fails when Search terms section is missing", () => {
+    it("fails when frontmatter is missing", () => {
       const content = `# Test Entry
 
-## Related
+## Summary
 
-NONE
-
-## Tags
-
-#bug
-`;
+Missing frontmatter should fail.`;
       const issues = validateEntryContent({
+        file: "history-entry.md",
         content,
-        isLearnedEntry: false,
         diffFiles: [],
       });
-      assert.ok(issues.some((i) => i.code === "SEARCH_MISSING"));
+      assert.ok(issues.some((i) => i.code === "FRONTMATTER_MISSING"));
     });
 
-    it("fails when Tags section is missing", () => {
-      const content = `# Test Entry
+    it("fails when tags are missing", () => {
+      const content = `---
+date: 2026-01-02
+type: decision
+status: active
+schema: v2
+search_terms:
+  - "auth"
+related:
+  - "NONE"
+tags:
+  - ""
+---
 
-## Search terms
+# Test Entry
 
-- auth
+## Summary
 
-## Related
-
-NONE
-`;
-      const issues = validateEntryContent({
-        content,
-        isLearnedEntry: false,
-        diffFiles: [],
-      });
-      assert.ok(issues.some((i) => i.code === "TAGS_MISSING"));
-    });
-  });
-
-  describe("Rule C: Systemic Gap enforcement (learned entries)", () => {
-    it("fails when Systemic Gap section is missing", () => {
-      const content = `# Test Entry
+This summary explains the decision clearly and includes enough words to pass the minimum threshold.
 
 ## Context
 
-Fixed a bug
-
-## Search terms
-
-- bug
-
-## Related
-
-NONE
-
-## Tags
-
-#bug
+This context provides enough background on why the decision was made, including constraints and alternatives. It also notes the system goals, the previous failures, and the metrics we care about.
 `;
       const issues = validateEntryContent({
+        file: "history-entry.md",
         content,
-        isLearnedEntry: true,
+        diffFiles: [],
+      });
+      assert.ok(issues.some((i) => i.code === "TAGS_EMPTY"));
+    });
+  });
+
+  describe("Rule C: Systemic Gap enforcement (fix/incident entries)", () => {
+    it("fails when Systemic Gap section is missing", () => {
+      const content = `---
+date: 2026-01-02
+type: fix
+status: active
+schema: v2
+error_signature: "ExampleError: boom"
+search_terms:
+  - "logout bug"
+related:
+  - "NONE"
+tags:
+  - "#bug"
+---
+
+# Test Entry
+
+## Summary
+
+Fixed the token refresh bug that caused expired sessions to persist after logout by correcting cache invalidation and retry handling.
+
+## Context
+
+Users reported that sessions stayed active after logout because the refresh cache survived in-memory. The issue only appeared after rapid logins, and the logs were noisy. We traced it to the cache key not being cleared during sign-out and verified the flow with a local repro.
+
+## Validation
+
+Ran the new test and reproduced the fix locally.
+`;
+      const issues = validateEntryContent({
+        file: "history-entry.md",
+        content,
         diffFiles: [],
       });
       assert.ok(issues.some((i) => i.code === "GAP_MISSING"));
     });
 
     it("passes when Systemic Gap has substantive content and gap closure", () => {
-      const content = `# Test Entry
+      const content = `---
+date: 2026-01-02
+type: fix
+status: active
+schema: v2
+error_signature: "ExampleError: boom"
+search_terms:
+  - "logout bug"
+related:
+  - "NONE"
+tags:
+  - "#bug"
+---
+
+# Test Entry
+
+## Summary
+
+Fixed the token refresh bug that caused expired sessions to persist after logout by correcting cache invalidation and retry handling.
 
 ## Context
 
-Fixed a bug
+Users reported that sessions stayed active after logout because the refresh cache survived in-memory. The issue only appeared after rapid logins, and the logs were noisy. We traced it to the cache key not being cleared during sign-out and verified the flow with a local repro.
+
+## Validation
+
+Ran the new test and reproduced the fix locally.
 
 ## Systemic Gap
 
-**What infrastructure gap allowed this issue class?**
+The logout flow lacked a guard for stale refresh cache entries, so the issue escaped review.
 
-No pre-flight check existed to validate model compatibility before invoking Codex.
-This caused silent failures that were hard to debug.
-
-**Gap Closure**:
-- Added test: \`harness-tests/tests/model-validation.test.mjs\`
-- Added validation: \`.harness/framework/scripts/pre-flight-check.mjs\`
-
-## Search terms
-
-- model, validation
-
-## Related
-
-NONE
-
-## Tags
-
-#infrastructure
+Gap Closure: Added test: \`harness-tests/tests/session-refresh.test.mjs\`
 `;
       const issues = validateEntryContent({
+        file: "history-entry.md",
         content,
-        isLearnedEntry: true,
-        diffFiles: ["harness-tests/tests/model-validation.test.mjs"],
+        diffFiles: ["harness-tests/tests/session-refresh.test.mjs"],
+        isNewEntry: true,
       });
       assert.strictEqual(issues.length, 0);
     });
 
     it("fails when Gap Closure file not in diff", () => {
-      const content = `# Test Entry
+      const content = `---
+date: 2026-01-02
+type: fix
+status: active
+schema: v2
+error_signature: "ExampleError: boom"
+search_terms:
+  - "logout bug"
+related:
+  - "NONE"
+tags:
+  - "#bug"
+---
+
+# Test Entry
+
+## Summary
+
+Fixed the token refresh bug that caused expired sessions to persist after logout by correcting cache invalidation and retry handling.
+
+## Context
+
+Users reported that sessions stayed active after logout because the refresh cache survived in-memory. The issue only appeared after rapid logins, and the logs were noisy. We traced it to the cache key not being cleared during sign-out and verified the flow with a local repro.
+
+## Validation
+
+Ran the new test and reproduced the fix locally.
 
 ## Systemic Gap
 
-**What infrastructure gap allowed this issue class?**
+This gap explains why the issue escaped review and highlights the missing coverage.
 
-No validation existed. This is substantive content that explains the gap.
-
-**Gap Closure**:
-- Added test: \`harness-tests/tests/nonexistent.test.mjs\`
-
-## Search terms
-
-- bug
-
-## Related
-
-NONE
-
-## Tags
-
-#bug
+Gap Closure: Added test: \`harness-tests/tests/nonexistent.test.mjs\`
 `;
       const issues = validateEntryContent({
+        file: "history-entry.md",
         content,
-        isLearnedEntry: true,
         diffFiles: ["src/index.ts"],
+        isNewEntry: true,
       });
       assert.ok(issues.some((i) => i.code === "GAP_FILE_NOT_IN_DIFF"));
     });
