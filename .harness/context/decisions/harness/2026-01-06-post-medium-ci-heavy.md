@@ -13,7 +13,7 @@ The post stage was effectively a full gate (tests + tripwire + review), which ma
 
 ## Security & Integrity Impact
 
-Local enforcement is lighter because tripwire and review move to CI, but no checks are removed from the merge gate. Rule B still enforces test deltas in post, and CI remains the blocking authority. Developers can still run `harness:ci` or `harness:review` locally when needed.
+Local enforcement is lighter because tripwire and review move to CI, but no checks are removed from the merge gate. Rule B still enforces test deltas in post, and CI remains the blocking authority. Developers can still run `harness:ci` locally when needed.
 
 ## Conformance & Enforcement
 

@@ -6,7 +6,7 @@
  * Commands:
  *   prep          - Print MUST block from Harness.md
  *   iterate       - Format + lint fix (changed files)
- *   post          - Medium verification (tests + policy + docs)
+ *   post          - Medium verification (tests + policy)
  *   ci            - Full CI gate (lint + typecheck + tripwire + review)
  *   new:learned   - Create a learned entry from template
  *   new:decision  - Create a decision entry from template
@@ -83,7 +83,7 @@ function printRecoveryPointers() {
 \x1b[33mRecovery:\x1b[0m
   1. Rerun the right stage:
      - \x1b[36mnpm run harness:iterate\x1b[0m (format + lint fix on changed files)
-     - \x1b[36mnpm run harness:post\x1b[0m (medium verification: tests + policy + docs)
+     - \x1b[36mnpm run harness:post\x1b[0m (medium verification: tests + policy)
      - \x1b[36mnpm run harness:ci\x1b[0m (full verification: lint + typecheck + tripwire + review)
   2. If you didn't run prep (or you're stuck):
      - \x1b[36mnpm run harness:prep\x1b[0m (prints MUST summary + grep recipe)
@@ -442,9 +442,9 @@ function cmdIterate() {
 function isParallelizableAgent(command) {
   return (
     command.includes("undocumented-detector") ||
-    command.includes("memory-coherence-checker") ||
+    command.includes("agent-memory-coherence") ||
     command.includes("harness-guardian") ||
-    command.includes("review-adapter")
+    command.includes("agent-code-review")
   );
 }
 
@@ -488,40 +488,42 @@ async function cmdPost() {
 
   console.log("[HARNESS_PHASE:STATIC_PASS]");
 
-  // Phase 2: Dynamic Checks (Agents)
-  log(`\n\x1b[36m▶ Phase 2: Agents (${agentChecks.length})\x1b[0m`);
+  if (agentChecks.length > 0) {
+    // Phase 2: Dynamic Checks (Agents)
+    log(`\n\x1b[36m▶ Phase 2: Agents (${agentChecks.length})\x1b[0m`);
 
-  const results = await Promise.all(
-    agentChecks.map((step) => runCommandAsync(step.command, step.files)),
-  );
+    const results = await Promise.all(
+      agentChecks.map((step) => runCommandAsync(step.command, step.files)),
+    );
 
-  // Check for failures
-  const failures = results.filter((r) => !r.success);
+    // Check for failures
+    const failures = results.filter((r) => !r.success);
 
-  if (SHOW_TIMING) {
-    log("\n\x1b[36m=== Execution Timing ===\x1b[0m");
-    // Sort by duration descending
-    const allResults = [...results]; // Only agents here
-    const sortedResults = allResults.sort((a, b) => b.duration - a.duration);
+    if (SHOW_TIMING) {
+      log("\n\x1b[36m=== Execution Timing ===\x1b[0m");
+      // Sort by duration descending
+      const allResults = [...results]; // Only agents here
+      const sortedResults = allResults.sort((a, b) => b.duration - a.duration);
 
-    for (const r of sortedResults) {
-      let name = r.command
-        .replace("node .harness/framework/scripts/", "")
-        .replace(".mjs", "");
-      if (name.length > 50) name = name.substring(0, 47) + "...";
-      const seconds = (r.duration / 1000).toFixed(2);
-      log(`${name.padEnd(30)} : ${seconds}s`);
+      for (const r of sortedResults) {
+        let name = r.command
+          .replace("node .harness/framework/scripts/", "")
+          .replace(".mjs", "");
+        if (name.length > 50) name = name.substring(0, 47) + "...";
+        const seconds = (r.duration / 1000).toFixed(2);
+        log(`${name.padEnd(30)} : ${seconds}s`);
+      }
+      log("");
     }
-    log("");
-  }
 
-  if (failures.length > 0) {
-    log("\n\x1b[31mPost verification failed!\x1b[0m");
-    for (const failure of failures) {
-      logError(`Failed: ${failure.command}`);
+    if (failures.length > 0) {
+      log("\n\x1b[31mPost verification failed!\x1b[0m");
+      for (const failure of failures) {
+        logError(`Failed: ${failure.command}`);
+      }
+      printRecoveryPointers();
+      process.exit(1);
     }
-    printRecoveryPointers();
-    process.exit(1);
   }
 
   logSuccess("Post verification complete");
@@ -548,31 +550,6 @@ function cmdCi() {
   }
 
   logSuccess("CI verification complete");
-}
-
-function cmdReview() {
-  log("\n\x1b[36m=== harness:review ===\x1b[0m");
-  log("Running anti-gamification review...\n");
-
-  // Run base tripwire
-  if (
-    !runCommand("node .harness/framework/scripts/base-tripwire.mjs").success
-  ) {
-    logError("Base tripwire failed");
-    printRecoveryPointers();
-    process.exit(1);
-  }
-
-  // Run code reviewer
-  if (
-    !runCommand("node .harness/framework/scripts/review-adapter.mjs").success
-  ) {
-    logError("Code review failed");
-    printRecoveryPointers();
-    process.exit(1);
-  }
-
-  logSuccess("Review complete");
 }
 
 function getCurrentDate() {
@@ -793,10 +770,6 @@ switch (command) {
     cmdCi();
     break;
 
-  case "review":
-    cmdReview();
-    break;
-
   case "new:learned":
     if (!slug) {
       logError("Usage: harness new:learned --slug <slug>");
@@ -829,11 +802,10 @@ switch (command) {
     log("Commands:");
     log("  prep              Print MUST block from Harness.md");
     log("  iterate           Format + lint fix (changed files)");
-    log("  post              Medium verification (tests + policy + docs)");
+    log("  post              Medium verification (tests + policy)");
     log(
       "  ci                Full CI gate (lint + typecheck + tripwire + review)",
     );
-    log("  review            Anti-gamification review (tripwire + adapter)");
     log("  new:learned       Create a learned entry");
     log("  new:decision      Create a decision entry");
     log("  new:meta          Create a harness meta-decision entry");

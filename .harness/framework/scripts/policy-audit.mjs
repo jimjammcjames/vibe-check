@@ -48,7 +48,7 @@ function printRecoveryPointers() {
 \x1b[33mRecovery:\x1b[0m
   1. Rerun the right stage:
      - \x1b[36mnpm run harness:iterate\x1b[0m (format + lint fix on changed files)
-     - \x1b[36mnpm run harness:post\x1b[0m (medium verification: tests + policy + docs)
+     - \x1b[36mnpm run harness:post\x1b[0m (medium verification: tests + policy)
      - \x1b[36mnpm run harness:ci\x1b[0m (full verification: lint + typecheck + tripwire + review)
   2. If you didn't run prep (or you're stuck):
      - \x1b[36mnpm run harness:prep\x1b[0m (prints MUST summary + grep recipe)

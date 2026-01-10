@@ -1,5 +1,5 @@
 /**
- * Tests for review-adapter.mjs
+ * Tests for agent-code-review.mjs
  *
  * Exercises adapter selection and review result normalization.
  */
@@ -11,7 +11,7 @@ import {
   selectAdapter,
   getProviderConfig,
   buildReviewResult,
-} from "../../.harness/framework/scripts/review-adapter.mjs";
+} from "../../.harness/framework/scripts/agent-code-review.mjs";
 
 async function withEnv(vars, fn) {
   const previous = {};
@@ -36,7 +36,7 @@ async function withEnv(vars, fn) {
   }
 }
 
-describe("review-adapter logic", () => {
+describe("agent-code-review logic", () => {
   describe("buildReviewResult", () => {
     it("returns high severity when gaming is detected", () => {
       const result = buildReviewResult({

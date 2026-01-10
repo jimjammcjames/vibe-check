@@ -96,7 +96,7 @@ ${contextFiles}`,
       additionalProperties: false,
     };
   }
-  // Match review-adapter snake_case schema exactly
+  // Match agent-code-review snake_case schema exactly
   if (instructions.includes("change_type")) {
     schema = {
       type: "object",

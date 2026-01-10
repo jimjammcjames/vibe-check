@@ -7,7 +7,7 @@
 ```bash
 npm run harness:prep      # You're here - prints this block
 npm run harness:iterate   # Format + lint fix (changed files only)
-npm run harness:post      # Medium verification (tests + policy + docs)
+npm run harness:post      # Medium verification (tests + policy)
 npm run harness:ci        # Full CI gate (adds tripwire + review)
 ```
 
@@ -16,7 +16,7 @@ npm run harness:ci        # Full CI gate (adds tripwire + review)
 | Loop   | Command         | Purpose                                          |
 | ------ | --------------- | ------------------------------------------------ |
 | Inner  | harness:iterate | Format + lint fix on changed files               |
-| Medium | harness:post    | Tests + policy + doc agents (no tripwire/review) |
+| Medium | harness:post    | Tests + policy (no agents)                       |
 | Outer  | harness:ci      | Full gate (lint + typecheck + tripwire + review) |
 
 ## Lookup Before Creating
@@ -180,14 +180,12 @@ Edit the entry to include:
 - `Related:` links to related entries, or `NONE`
 - `Tags:` relevant tags like `#auth`, `#api`, `#bug`
 
-### "CI is failing with Base Tripwire or Review Adapter"
+### "CI is failing with Base Tripwire or Agent Code Review"
 
 These only run in the outer loop.
 
 ```bash
 npm run harness:ci
-# OR run just the heavy review gate
-npm run harness:review
 ```
 
 ### "I'm lost / didn't run prep"

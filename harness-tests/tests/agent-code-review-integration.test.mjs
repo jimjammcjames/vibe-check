@@ -1,12 +1,12 @@
 /**
- * Integration tests for review-adapter.mjs
+ * Integration tests for agent-code-review.mjs
  *
  * Validates the shared adapter can execute with the stub provider.
  */
 
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { adapters } from "../../.harness/framework/scripts/review-adapter.mjs";
+import { adapters } from "../../.harness/framework/scripts/agent-code-review.mjs";
 
 async function withEnv(vars, fn) {
   const previous = {};
@@ -31,7 +31,7 @@ async function withEnv(vars, fn) {
   }
 }
 
-describe("review-adapter integration", () => {
+describe("agent-code-review integration", () => {
   it("runs shared adapter via stub provider and returns normalized result", async () => {
     const context = {
       diff: "diff --git a/file b/file",
