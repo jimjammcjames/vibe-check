@@ -34,7 +34,7 @@ rg -n "#tag" .harness/context/history
 ## Context Safety (CRITICAL)
 
 - **NEVER** manually create, move, or delete files in `.harness/context/history`.
-- **ALWAYS** use the CLI commands: `npm run harness:new:entry` (or wrappers).
+- **ALWAYS** use the CLI command: `npm run harness:new:entry`.
 - **Reason:** Manual edits break the audit trail and can cause data loss.
 
 ## History Creation
@@ -82,6 +82,8 @@ Every history entry must include:
 - `error_signature` in frontmatter (exact error text)
 - `## Validation` (how the fix was verified)
 - `## Systemic Gap` with explicit `Gap Closure: Added test/validation: <path>`
+- `## Class Prevention` (generalized guardrail/invariant, min 30 words)
+  - Exemption tag: `#class-prevention-exempt` (must justify in the entry)
 
 ---
 

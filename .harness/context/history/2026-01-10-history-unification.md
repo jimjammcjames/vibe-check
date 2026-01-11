@@ -21,16 +21,17 @@ tags:
 
 ## Summary
 
-Unified harness context into a single history trail, updated enforcement scripts, and aligned CI-only agents with new frontmatter validation.
+Unified harness context into a single history trail, removed legacy entry commands, and added class-level prevention enforcement for fixes.
 
 ## Context
 
-We needed one searchable context trail instead of separate learned and decision folders. The change required migrating entries, updating CLI commands, and adjusting policy checks so agents and auditors read the same history schema.
+We needed one searchable context trail instead of separate learned and decision folders. The change required migrating entries, updating CLI commands, and adjusting policy checks so agents and auditors read the same history schema. We also tightened fix requirements to emphasize class-level prevention rather than one-off patches.
 
 ## Technical Decision
 
 - Introduced `.harness/context/history` with YAML frontmatter + markdown body templates.
-- Updated CLI creation and migration commands to target history entries and meta types.
+- Removed legacy `new:learned` and `new:decision` commands in favor of `new:entry --type`.
+- Added `## Class Prevention` requirements for fix/incident entries with an exemption tag for edge cases.
 - Reworked policy, guardian, and agent scripts to read history entries and frontmatter.
 
 ## Security & Integrity Impact
@@ -39,7 +40,7 @@ Centralizing history improves auditability and reduces accidental omissions. The
 
 ## Conformance & Enforcement
 
-- Policy audit now validates frontmatter fields, schema versions, and strict fix requirements.
+- Policy audit now validates frontmatter fields, schema versions, strict fix requirements, and class prevention sections.
 - Base tripwire and agent checks consume history entries to avoid split sources of truth.
 - Post stage rejects agent steps, keeping AI review confined to CI.
 

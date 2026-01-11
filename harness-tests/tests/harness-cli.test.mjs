@@ -170,6 +170,10 @@ describe("harness CLI", { concurrency: 1 }, () => {
         content.includes("## Systemic Gap"),
         "should have Systemic Gap section",
       );
+      assert.ok(
+        content.includes("## Class Prevention"),
+        "should have Class Prevention section",
+      );
     });
 
     it("fails if file already exists", (t) => {

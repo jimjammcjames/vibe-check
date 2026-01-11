@@ -26,4 +26,6 @@ tags:
 
 ## Systemic Gap
 
+## Class Prevention
+
 ## Raw Notes

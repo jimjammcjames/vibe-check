@@ -276,6 +276,10 @@ Ran the new test and reproduced the fix locally.
 The logout flow lacked a guard for stale refresh cache entries, so the issue escaped review.
 
 Gap Closure: Added test: \`harness-tests/tests/session-refresh.test.mjs\`
+
+## Class Prevention
+
+We added a generalized guardrail that invalidates refresh cache entries on any logout path and asserts the invariant in a new test. The test covers multiple session states, not just the repro, so similar token refresh bugs are prevented.
 `;
       const issues = validateEntryContent({
         file: "history-entry.md",
@@ -320,6 +324,10 @@ Ran the new test and reproduced the fix locally.
 This gap explains why the issue escaped review and highlights the missing coverage.
 
 Gap Closure: Added test: \`harness-tests/tests/nonexistent.test.mjs\`
+
+## Class Prevention
+
+We added a generalized guardrail that invalidates refresh cache entries on any logout path and asserts the invariant in a new test. The test covers multiple session states, not just the repro, so similar token refresh bugs are prevented.
 `;
       const issues = validateEntryContent({
         file: "history-entry.md",
@@ -328,6 +336,95 @@ Gap Closure: Added test: \`harness-tests/tests/nonexistent.test.mjs\`
         isNewEntry: true,
       });
       assert.ok(issues.some((i) => i.code === "GAP_FILE_NOT_IN_DIFF"));
+    });
+
+    it("fails when Class Prevention section is missing", () => {
+      const content = `---
+date: 2026-01-02
+type: fix
+status: active
+schema: v2
+error_signature: "ExampleError: boom"
+search_terms:
+  - "logout bug"
+related:
+  - "NONE"
+tags:
+  - "#bug"
+---
+
+# Test Entry
+
+## Summary
+
+Fixed the token refresh bug that caused expired sessions to persist after logout by correcting cache invalidation and retry handling.
+
+## Context
+
+Users reported that sessions stayed active after logout because the refresh cache survived in-memory. The issue only appeared after rapid logins, and the logs were noisy. We traced it to the cache key not being cleared during sign-out and verified the flow with a local repro.
+
+## Validation
+
+Ran the new test and reproduced the fix locally.
+
+## Systemic Gap
+
+The logout flow lacked a guard for stale refresh cache entries, so the issue escaped review.
+
+Gap Closure: Added test: \`harness-tests/tests/session-refresh.test.mjs\`
+`;
+      const issues = validateEntryContent({
+        file: "history-entry.md",
+        content,
+        diffFiles: ["harness-tests/tests/session-refresh.test.mjs"],
+        isNewEntry: true,
+      });
+      assert.ok(issues.some((i) => i.code === "CLASS_PREVENTION_MISSING"));
+    });
+
+    it("allows Class Prevention exemption tag", () => {
+      const content = `---
+date: 2026-01-02
+type: fix
+status: active
+schema: v2
+error_signature: "ExampleError: boom"
+search_terms:
+  - "logout bug"
+related:
+  - "NONE"
+tags:
+  - "#bug"
+  - "#class-prevention-exempt"
+---
+
+# Test Entry
+
+## Summary
+
+Fixed the token refresh bug that caused expired sessions to persist after logout by correcting cache invalidation and retry handling.
+
+## Context
+
+Users reported that sessions stayed active after logout because the refresh cache survived in-memory. The issue only appeared after rapid logins, and the logs were noisy. We traced it to the cache key not being cleared during sign-out and verified the flow with a local repro.
+
+## Validation
+
+Ran the new test and reproduced the fix locally.
+
+## Systemic Gap
+
+The logout flow lacked a guard for stale refresh cache entries, so the issue escaped review.
+
+Gap Closure: Added test: \`harness-tests/tests/session-refresh.test.mjs\`
+`;
+      const issues = validateEntryContent({
+        file: "history-entry.md",
+        content,
+        diffFiles: ["harness-tests/tests/session-refresh.test.mjs"],
+        isNewEntry: true,
+      });
+      assert.ok(!issues.some((i) => i.code === "CLASS_PREVENTION_MISSING"));
     });
   });
 });

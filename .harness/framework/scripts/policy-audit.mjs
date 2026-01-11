@@ -307,8 +307,10 @@ const MIN_SUMMARY_WORDS = 15;
 const MIN_CONTEXT_WORDS = 25;
 const MIN_SUMMARY_WORDS_STRICT = 20;
 const MIN_CONTEXT_WORDS_STRICT = 40;
+const MIN_CLASS_PREVENTION_WORDS_STRICT = 30;
 const ALLOWED_SCHEMAS = new Set(["v1", "v2"]);
 const ALLOWED_STATUSES = new Set(["active", "superseded", "deprecated"]);
+const CLASS_PREVENTION_EXEMPT_TAG = "#class-prevention-exempt";
 
 function validateEntryContent({
   file,
@@ -402,6 +404,7 @@ function validateEntryContent({
   }
 
   const isStrict = STRICT_TYPES.has(type);
+  const hasClassPreventionExempt = tags.includes(CLASS_PREVENTION_EXEMPT_TAG);
 
   if (schema === "v2") {
     const summary = extractMarkdownSection(body, "Summary");
@@ -539,6 +542,31 @@ function validateEntryContent({
     }
   }
 
+  // CLASS PREVENTION ENFORCEMENT (fix/incident entries only, v2 schema)
+  if (isStrict && schema === "v2" && !hasClassPreventionExempt) {
+    const classContent = extractMarkdownSection(body, "Class Prevention");
+
+    if (!classContent) {
+      issues.push({
+        code: "CLASS_PREVENTION_MISSING",
+        message: 'Missing "## Class Prevention" section',
+        fix: `Explain the generalized guardrail/invariant (min ${MIN_CLASS_PREVENTION_WORDS_STRICT} words) or add ${CLASS_PREVENTION_EXEMPT_TAG} with justification.`,
+      });
+    } else if (countWords(classContent) < MIN_CLASS_PREVENTION_WORDS_STRICT) {
+      issues.push({
+        code: "CLASS_PREVENTION_SHORT",
+        message: `"Class Prevention" is too short (${countWords(classContent)} words)`,
+        fix: `Expand Class Prevention to at least ${MIN_CLASS_PREVENTION_WORDS_STRICT} words.`,
+      });
+    } else if (/\b(?:todo|tbd|fill this|placeholder)\b/i.test(classContent)) {
+      issues.push({
+        code: "CLASS_PREVENTION_PLACEHOLDER",
+        message: '"Class Prevention" contains placeholder text',
+        fix: "Replace placeholders with the actual class-level guardrail.",
+      });
+    }
+  }
+
   return issues;
 }
 
@@ -655,6 +683,7 @@ Fix/incident entries also require:
   - error_signature in frontmatter
   - ## Validation section
   - ## Systemic Gap with Gap Closure evidence
+  - ## Class Prevention (min 30 words) unless tagged #class-prevention-exempt
   - tests in the diff (Rule B)`,
     };
   }

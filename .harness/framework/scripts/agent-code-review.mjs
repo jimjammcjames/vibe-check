@@ -416,7 +416,12 @@ ANALYSIS:
    Bad example: "Fixed the issue" (no systemic analysis)
    Bad example: "None" (unacceptable for fix/incident entries)
 
-3. GAMING: Are entries hollow/generic? Do they match the actual code change?
+3. CLASS PREVENTION (CRITICAL for fix/incident entries):
+   - Does the entry include "## Class Prevention" that describes the general guardrail/invariant?
+   - Is it more than the single repro? (class-level, not instance-level)
+   - If the entry uses #class-prevention-exempt, ensure it explains why.
+
+4. GAMING: Are entries hollow/generic? Do they match the actual code change?
    - Flag no-op assertions (e.g., assert.ok(true), expect(true).toBe(true))
    - Flag tests that read source files and assert string includes instead of behavior
    - Flag network calls in tests without HARNESS_ALLOW_NETWORK_TESTS gating
@@ -424,7 +429,7 @@ ANALYSIS:
    - Flag tests that duplicate production logic instead of invoking it
    - Flag tests that depend on ambient env or git state without explicit setup/teardown
 
-4. QUALITY (1-10): Is Context real? Is Decision specific? Is Systemic Gap deep?
+5. QUALITY (1-10): Is Context real? Is Decision specific? Is Systemic Gap deep?
 
 MANDATORY: Create COMPLIANCE_REVIEW.json with this format (build up evidence FIRST, then conclude):
 {
@@ -444,6 +449,7 @@ MANDATORY: Create COMPLIANCE_REVIEW.json with this format (build up evidence FIR
   // STEP 4: Check for issues
   "entry_type_mismatch": false,
   "missing_tests_for_fix": false,
+  "class_prevention_missing": false,
   "gaming_detected": false,
   "critical_issues": "None",
   "violations": [
