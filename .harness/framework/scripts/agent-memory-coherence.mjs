@@ -9,7 +9,7 @@
  */
 
 import { execSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -87,7 +87,25 @@ function getChangedHistoryEntries() {
       .split("\n")
       .filter(Boolean);
 
-    return diff.filter(
+    const staged = execSync("git diff --cached --name-only", {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+    })
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+
+    const untracked = execSync("git ls-files --others --exclude-standard", {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+    })
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+
+    const allFiles = [...new Set([...diff, ...staged, ...untracked])];
+
+    return allFiles.filter(
       (f) =>
         f.includes(".harness/context/history/") &&
         f.endsWith(".md") &&
@@ -96,6 +114,57 @@ function getChangedHistoryEntries() {
   } catch {
     return [];
   }
+}
+
+function getUntrackedFiles() {
+  try {
+    return execSync("git ls-files --others --exclude-standard", {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    })
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function buildUntrackedDiff(untrackedFiles) {
+  if (!untrackedFiles.length) return "";
+  const MAX_UNTRACKED_DIFF_BYTES = 200_000;
+  let diff = "";
+
+  for (const file of untrackedFiles) {
+    const fullPath = join(REPO_ROOT, file);
+    if (!existsSync(fullPath)) continue;
+    try {
+      const stats = statSync(fullPath);
+      if (!stats.isFile()) continue;
+
+      let content = readFileSync(fullPath, "utf-8");
+      let truncated = false;
+      if (stats.size > MAX_UNTRACKED_DIFF_BYTES) {
+        content = content.slice(0, MAX_UNTRACKED_DIFF_BYTES);
+        truncated = true;
+      }
+
+      const lines = content.split("\n");
+      diff += `\ndiff --git a/${file} b/${file}\n`;
+      diff += `new file mode 100644\n--- /dev/null\n+++ b/${file}\n`;
+      diff += `@@ -0,0 +1,${lines.length} @@\n`;
+      diff += lines.map((line) => `+${line}`).join("\n");
+      if (truncated) {
+        diff += "\n+...[truncated]";
+      }
+      diff += "\n";
+    } catch {
+      // Ignore unreadable/binary files in untracked diff
+    }
+  }
+
+  return diff;
 }
 
 // ============================================================================
@@ -121,6 +190,18 @@ async function main() {
       cwd: REPO_ROOT,
       encoding: "utf-8",
     });
+    const stagedDiff = execSync("git diff --cached", {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+    });
+    const unstagedDiff = execSync("git diff", {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+    });
+    const untrackedDiff = buildUntrackedDiff(getUntrackedFiles());
+    diff = [diff, stagedDiff, unstagedDiff, untrackedDiff]
+      .filter(Boolean)
+      .join("\n");
   } catch {
     diff = "";
   }

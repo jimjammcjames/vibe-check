@@ -74,6 +74,18 @@ function logWarning(msg) {
   console.log(`\x1b[33m⚠ ${msg}\x1b[0m`);
 }
 
+const DEFAULT_DIAGNOSTICS_DIR = join(HARNESS_ROOT, "diagnostics", "latest");
+
+function prepareDiagnosticsForRun() {
+  process.env.HARNESS_DIAGNOSTICS_DIR = DEFAULT_DIAGNOSTICS_DIR;
+  try {
+    rmSync(DEFAULT_DIAGNOSTICS_DIR, { recursive: true, force: true });
+    mkdirSync(DEFAULT_DIAGNOSTICS_DIR, { recursive: true });
+  } catch {
+    // Diagnostics are best-effort only.
+  }
+}
+
 /**
  * Kill orphaned processes from previous failed harness runs.
  * This ensures idempotency - iterate always starts from a clean state.
@@ -462,6 +474,7 @@ async function cmdPost() {
 
   // Clean up orphaned processes from previous failed runs
   killOrphanedProcesses();
+  prepareDiagnosticsForRun();
 
   const config = loadConfig();
   const stage = config.stages.post || [];
@@ -515,6 +528,7 @@ function cmdCi() {
 
   // Clean up orphaned processes from previous failed runs
   killOrphanedProcesses();
+  prepareDiagnosticsForRun();
 
   log("Running CI verification...\n");
 
@@ -777,6 +791,10 @@ const command = args[0];
 let slug = null;
 let type = null;
 let SHOW_TIMING = false;
+let geminiModel = null;
+let codexModel = null;
+let codexReasoning = null;
+let providerOverride = null;
 for (let i = 1; i < args.length; i++) {
   if (args[i] === "--slug" && args[i + 1]) {
     slug = args[i + 1];
@@ -789,6 +807,38 @@ for (let i = 1; i < args.length; i++) {
   if (args[i] === "--timing") {
     SHOW_TIMING = true;
   }
+  if (args[i] === "--gemini-model" && args[i + 1]) {
+    geminiModel = args[i + 1];
+    i++;
+  }
+  if (args[i] === "--codex-model" && args[i + 1]) {
+    codexModel = args[i + 1];
+    i++;
+  }
+  if (args[i] === "--codex-reasoning" && args[i + 1]) {
+    codexReasoning = args[i + 1];
+    i++;
+  }
+  if (args[i] === "--provider" && args[i + 1]) {
+    providerOverride = args[i + 1];
+    i++;
+  }
+  if (args[i] === "--codex") {
+    providerOverride = "codex";
+  }
+}
+
+if (geminiModel) {
+  process.env.HARNESS_GEMINI_MODEL = geminiModel;
+}
+if (codexModel) {
+  process.env.HARNESS_CODEX_MODEL = codexModel;
+}
+if (codexReasoning) {
+  process.env.HARNESS_CODEX_REASONING = codexReasoning;
+}
+if (providerOverride) {
+  process.env.HARNESS_PROVIDER = providerOverride;
 }
 
 switch (command) {
@@ -853,5 +903,12 @@ switch (command) {
     );
     log("  --slug <slug>     Slug for new entries (required for new:*)");
     log("  --type <type>     Entry type (required for new:entry)");
+    log("  --gemini-model <model>  Gemini model override for agent steps");
+    log("  --codex                Use Codex CLI for agent steps");
+    log("  --codex-model <model>  Codex model override for agent steps");
+    log(
+      "  --codex-reasoning <level>  Codex reasoning override for agent steps",
+    );
+    log("  --provider <name>       Provider override for agent steps");
     process.exit(1);
 }

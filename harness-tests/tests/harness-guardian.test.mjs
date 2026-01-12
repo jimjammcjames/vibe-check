@@ -8,10 +8,6 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const REPO_ROOT = join(__dirname, "..", "..");
-const { stubProvider } = await import(
-  join(REPO_ROOT, ".harness", "framework", "providers", "stub.mjs")
-);
-
 /**
  * BEHAVIORAL TESTS: Harness Guardian
  *
@@ -31,7 +27,6 @@ test("Harness Guardian: Enforcement Protocol", async (t) => {
         {
           cwd: REPO_ROOT,
           encoding: "utf-8",
-          env: { ...process.env, HARNESS_PROVIDER: "stub" },
         },
       );
       const isVerified =
@@ -56,20 +51,6 @@ test("Harness Guardian: Enforcement Protocol", async (t) => {
         );
       }
     }
-  });
-
-  await t.test("stub provider returns valid guardian schema", async () => {
-    const result = await stubProvider.invoke({
-      prompt: "guardian",
-      files: {},
-      outputFile: "GUARDIAN_RESULT.json",
-      config: {},
-    });
-
-    assert.strictEqual(result.success, true);
-    assert.ok(result.result);
-    assert.ok(["pass", "fail"].includes(result.result.verdict));
-    assert.strictEqual(typeof result.result.gaming_detected, "boolean");
   });
 
   await t.test("meta-entry folder structure", () => {

@@ -122,17 +122,21 @@ describe("agent-code-review logic", () => {
 
   describe("selectAdapter", () => {
     it("prefers shared adapter when HARNESS_PROVIDER is set", async () => {
-      const adapter = await withEnv({ HARNESS_PROVIDER: "stub" }, () =>
+      const adapter = await withEnv({ HARNESS_PROVIDER: "gemini" }, () =>
         selectAdapter("auto"),
       );
       assert.strictEqual(adapter.name, adapters.shared.name);
     });
 
-    it("uses stub adapter when explicitly configured", async () => {
+    it("falls back to shared adapter for unknown adapter names", async () => {
       const adapter = await withEnv({ HARNESS_PROVIDER: null }, () =>
-        selectAdapter("stub"),
+        selectAdapter("unknown"),
       );
-      assert.strictEqual(adapter.name, adapters.stub.name);
+      assert.strictEqual(adapter.name, adapters.shared.name);
+    });
+
+    it("does not register stub adapter", () => {
+      assert.strictEqual(adapters.stub, undefined);
     });
   });
 });

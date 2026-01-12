@@ -19,6 +19,17 @@ npm run harness:ci        # Full CI gate (lint + typecheck + tripwire + agents)
 | Medium | harness:post    | Tests + policy (no agents)                             |
 | Outer  | harness:ci      | Full gate (lint + typecheck + tripwire + agent review) |
 
+## Agent Runtime Requirements
+
+- Agent steps require network access; in restricted environments run with escalated permissions.
+- Gemini CLI writes to `~/.gemini`; set `agents.gemini_home` (or `HARNESS_GEMINI_HOME`) to a repo-local writable path.
+- Override Gemini model per run with `npm run harness:ci -- --gemini-model <model>` or set `HARNESS_GEMINI_MODEL` / `agents.gemini_model`.
+- Use Codex CLI for agent steps with `npm run harness:ci -- --codex` or set `HARNESS_PROVIDER=codex` / `agents.provider`.
+- Override Codex model per run with `npm run harness:ci -- --codex-model <model>` or set `HARNESS_CODEX_MODEL` / `agents.codex_model`.
+- Override Codex reasoning per run with `npm run harness:ci -- --codex-reasoning <level>` or set `HARNESS_CODEX_REASONING` / `agents.codex_reasoning`.
+- Override provider per run with `npm run harness:ci -- --provider <name>` or set `HARNESS_PROVIDER` / `agents.provider`.
+- Agent runtime failures are logged to `.harness/diagnostics/latest/agent-failures.log` (cleared at the start of `harness:post` and `harness:ci`).
+
 ## Lookup Before Creating
 
 Before creating new code or fixing bugs, search existing history:

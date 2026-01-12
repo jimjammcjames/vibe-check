@@ -4,7 +4,12 @@ import globals from "globals";
 
 export default tseslint.config(
   {
-    ignores: ["node_modules/**", "dist/**"],
+    ignores: [
+      "node_modules/**",
+      "dist/**",
+      ".harness/.gemini-home/**",
+      ".harness/diagnostics/**",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

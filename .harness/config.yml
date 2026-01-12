@@ -2,6 +2,7 @@
 
 agents:
   provider: gemini
+  gemini_home: ".harness/.gemini-home"
 
 # Anti-Gamification Review Layer
 reviewers:

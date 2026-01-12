@@ -6,20 +6,18 @@
  */
 
 import { codexProvider } from "./codex.mjs";
-import { stubProvider } from "./stub.mjs";
 import { geminiProvider } from "./gemini.mjs";
 import { httpApiProvider } from "./http-api.mjs";
 
 const providers = {
   codex: codexProvider,
-  stub: stubProvider,
   gemini: geminiProvider,
   http: httpApiProvider,
 };
 
 /**
  * Get a provider by name
- * @param {string} name - Provider name ('codex', 'stub', etc.)
+ * @param {string} name - Provider name ('codex', 'gemini', 'http', etc.)
  * @returns {object} Provider instance
  */
 export function getProvider(name = "http") {
