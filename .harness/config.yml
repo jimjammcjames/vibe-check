@@ -30,7 +30,7 @@ stages:
       files: changed
 
   post:
-    - command: "npm test"
+    - command: "npm run test:local"
     - command: "node .harness/framework/scripts/test-lint.mjs"
     - command: "node .harness/framework/scripts/policy-audit.mjs"
 

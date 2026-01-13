@@ -1,0 +1,41 @@
+# MCP Server Manifest (v1)
+# Secrets should be referenced via environment variables, not stored here.
+#
+# Schema: version 1 (tool-agnostic YAML)
+# - servers[].id: unique identifier
+# - servers[].transport: stdio | http
+# - stdio: command, args, cwd (optional), env (optional), require_env (optional)
+# - http: url, auth (optional), headers (optional)
+#   - auth.type: bearer | oauth
+#   - auth.token_env: env var name (required for bearer)
+
+version: 1
+# namespace: myrepo   # optional; defaults to normalized repo folder name
+
+servers: []
+  # Example stdio server:
+  # - id: fetch
+  #   transport: stdio
+  #   command: uvx
+  #   args: ["mcp-server-fetch"]
+  #   cwd: "."
+  #   require_env: ["FETCH_API_KEY"]
+  #   env:
+  #     FETCH_API_KEY: FETCH_API_KEY  # server_env -> local_env_name
+
+  # Example http server with bearer auth:
+  # - id: figma
+  #   transport: http
+  #   url: "https://mcp.figma.com/mcp"
+  #   auth:
+  #     type: bearer
+  #     token_env: FIGMA_TOKEN
+  #   headers:
+  #     X-Figma-Region: "us-east-1"
+
+  # Example http server with oauth:
+  # - id: linear
+  #   transport: http
+  #   url: "https://mcp.linear.app/mcp"
+  #   auth:
+  #     type: oauth

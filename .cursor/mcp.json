@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "vibe-check-workflow.fetch": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-fetch"
+      ]
+    },
+    "vibe-check-workflow.figma": {
+      "url": "https://mcp.figma.com/mcp",
+      "headers": {
+        "Authorization": "Bearer test-token-12345"
+      }
+    },
+    "vibe-check-workflow.linear": {
+      "url": "https://mcp.linear.app/mcp"
+    }
+  }
+}

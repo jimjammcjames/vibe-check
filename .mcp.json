@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "manually-added.server": {
+      "type": "stdio",
+      "command": "manual"
+    },
+    "vibe-check-workflow.fetch": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-fetch"]
+    },
+    "vibe-check-workflow.figma": {
+      "type": "http",
+      "url": "https://mcp.figma.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${FIGMA_TOKEN}"
+      }
+    },
+    "vibe-check-workflow.linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp"
+    }
+  }
+}

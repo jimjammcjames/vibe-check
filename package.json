@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --import tsx --test --test-concurrency=4 harness-tests/tests/*.test.mjs",
+    "test:local": "node --import tsx --test --test-concurrency=4 harness-tests/tests/agent-code-review.test.mjs harness-tests/tests/harness-cli.test.mjs harness-tests/tests/http-provider.test.mjs harness-tests/tests/mcp-gen.test.mjs harness-tests/tests/mcp-gen-e2e.test.mjs harness-tests/tests/minimatch.test.mjs harness-tests/tests/policy-audit.test.mjs harness-tests/tests/test-lint.test.mjs",
     "harness:prep": "node .harness/framework/cli/harness.mjs prep",
     "harness:iterate": "node .harness/framework/cli/harness.mjs iterate",
     "harness:post": "node .harness/framework/cli/harness.mjs post",
@@ -12,7 +13,10 @@
     "harness:simulate": "bash harness-tests/simulation/run.sh",
     "harness:new:entry": "node .harness/framework/cli/harness.mjs new:entry",
     "harness:new:meta": "node .harness/framework/cli/harness.mjs new:meta",
-    "harness:migrate:history": "node .harness/framework/cli/harness.mjs migrate:history"
+    "harness:migrate:history": "node .harness/framework/cli/harness.mjs migrate:history",
+    "mcp-gen": "node workflows/bin/mcp-gen",
+    "mcp-gen:test": "node workflows/mcp/test-runner.mjs",
+    "test:e2e": "node --import tsx --test harness-tests/tests/mcp-gen-e2e.test.mjs"
   },
   "keywords": [
     "agent",
@@ -25,7 +29,8 @@
     "@eslint/js": "^9.39.2",
     "eslint": "^9.39.2",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.51.0"
+    "typescript-eslint": "^8.51.0",
+    "yaml": "^2.8.2"
   },
   "devDependencies": {
     "prettier": "^3.4.0",
