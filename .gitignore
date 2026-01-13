@@ -12,3 +12,9 @@ key.txt
 
 # Test fixtures (created/deleted during test runs)
 **/test-fixture-*.md
+
+# Test temp files
+harness-tests/tests/.tmp/
+
+# Cursor MCP config (contains secrets)
+.cursor/mcp.json

@@ -1,0 +1,67 @@
+# MCP Test Fixture
+# This file is used by both automated tests and the interactive test runner.
+# It exercises all server types and edge cases.
+
+version: 1
+namespace: test-fixture
+
+servers:
+  # ============================================================================
+  # stdio servers
+  # ============================================================================
+
+  # Basic stdio server (no env requirements)
+  - id: basic-stdio
+    transport: stdio
+    command: echo
+    args: ["hello", "world"]
+
+  # stdio with cwd
+  - id: stdio-with-cwd
+    transport: stdio
+    command: ls
+    args: ["-la"]
+    cwd: "."
+
+  # stdio with env mapping
+  - id: stdio-with-env
+    transport: stdio
+    command: myapi
+    args: ["--verbose"]
+    env:
+      API_KEY: TEST_API_KEY
+      API_SECRET: TEST_API_SECRET
+
+  # stdio with require_env (will be skipped if env missing)
+  - id: stdio-required-env
+    transport: stdio
+    command: secure-cli
+    require_env: ["REQUIRED_SECRET"]
+    env:
+      SECRET: REQUIRED_SECRET
+
+  # ============================================================================
+  # http servers
+  # ============================================================================
+
+  # Basic http (no auth)
+  - id: http-no-auth
+    transport: http
+    url: "https://api.example.com/mcp"
+
+  # http with bearer auth
+  - id: http-bearer
+    transport: http
+    url: "https://mcp.figma.com/mcp"
+    auth:
+      type: bearer
+      token_env: FIGMA_TOKEN
+    headers:
+      X-Custom-Header: "custom-value"
+
+  # http with oauth
+  - id: http-oauth
+    transport: http
+    url: "https://mcp.linear.app/mcp"
+    auth:
+      type: oauth

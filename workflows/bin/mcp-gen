@@ -1,0 +1,28 @@
+#!/usr/bin/env node
+
+/**
+ * mcp-gen - Generate MCP configs for Claude, Cursor, and Codex.
+ *
+ * Usage: node workflows/bin/mcp-gen
+ *
+ * This script computes the repo root from its own location,
+ * so it works correctly regardless of the current working directory.
+ */
+
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { run } from "../mcp/src/run.mjs";
+
+// Compute repo root from script location
+// Script is at: <repoRoot>/workflows/bin/mcp-gen
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const repoRoot = resolve(__dirname, "..", "..");
+
+// Run the generator
+const result = run({ repoRoot });
+
+if (!result.success) {
+  process.exit(1);
+}
