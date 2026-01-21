@@ -165,6 +165,7 @@ workflows/
 .cursor/mcp.json
 
 # Test temp files
+# Portability note: only needed if you also copy harness-tests/.
 harness-tests/tests/.tmp/
 ```
 

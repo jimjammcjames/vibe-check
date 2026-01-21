@@ -6,6 +6,9 @@
  * Usage: node workflows/mcp/test-runner.mjs
  *    or: npm run mcp-gen:test
  *
+ * Portability note: this script depends on harness-tests/ fixtures.
+ * If you only drop in .harness/ and workflows/, omit or adapt this runner.
+ *
  * This script:
  * 1. Creates a temp directory with the shared fixture
  * 2. Optionally sets test env vars

@@ -27,6 +27,9 @@ import {
   isOwnedKey,
   mergeMcpServers,
   run,
+  ensureGitignorePatterns,
+  REQUIRED_PATTERNS,
+  GITIGNORE_MARKER,
 } from "../../workflows/mcp/index.mjs";
 
 // Note: HARNESS_ALLOW_NETWORK_TESTS - this file uses readFileSync on temp output files only
@@ -853,5 +856,213 @@ servers:
     assert.ok(codexOutput.includes("codex mcp add test-fixture.basic-stdio"));
     assert.ok(codexOutput.includes("codex mcp add test-fixture.http-oauth"));
     assert.ok(codexOutput.includes("codex mcp login test-fixture.http-oauth"));
+  });
+});
+
+// ============================================================================
+// Unit tests: gitignore
+// ============================================================================
+
+describe("ensureGitignorePatterns", () => {
+  it("creates .gitignore if missing", async (t) => {
+    const dir = createTestDir("gitignore-create");
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    const result = ensureGitignorePatterns(dir);
+
+    assert.ok(result.updated);
+    assert.deepEqual(result.added, REQUIRED_PATTERNS);
+
+    const content = readFileSync(join(dir, ".gitignore"), "utf-8");
+    assert.ok(content.includes(GITIGNORE_MARKER));
+    for (const pattern of REQUIRED_PATTERNS) {
+      assert.ok(content.includes(pattern), `Missing pattern: ${pattern}`);
+    }
+  });
+
+  it("appends missing patterns to existing .gitignore", async (t) => {
+    const dir = createTestDir("gitignore-append");
+
+    const existingContent = "node_modules/\n*.log\n";
+    writeFileSync(join(dir, ".gitignore"), existingContent);
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    const result = ensureGitignorePatterns(dir);
+
+    assert.ok(result.updated);
+    assert.deepEqual(result.added, REQUIRED_PATTERNS);
+
+    const content = readFileSync(join(dir, ".gitignore"), "utf-8");
+
+    // Existing content preserved at the start
+    assert.ok(content.startsWith(existingContent.trim()));
+
+    // New patterns appended
+    assert.ok(content.includes(GITIGNORE_MARKER));
+    for (const pattern of REQUIRED_PATTERNS) {
+      assert.ok(content.includes(pattern), `Missing pattern: ${pattern}`);
+    }
+  });
+
+  it("is idempotent - second run makes no changes", async (t) => {
+    const dir = createTestDir("gitignore-idem");
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    // First run
+    const result1 = ensureGitignorePatterns(dir);
+    assert.ok(result1.updated);
+    const content1 = readFileSync(join(dir, ".gitignore"), "utf-8");
+
+    // Second run
+    const result2 = ensureGitignorePatterns(dir);
+    assert.ok(!result2.updated);
+    assert.deepEqual(result2.added, []);
+    const content2 = readFileSync(join(dir, ".gitignore"), "utf-8");
+
+    // Content unchanged
+    assert.equal(content1, content2);
+  });
+
+  it("only appends patterns that are actually missing", async (t) => {
+    const dir = createTestDir("gitignore-partial");
+
+    // Pre-populate with one of the patterns
+    const existingContent = "node_modules/\n.env\n";
+    writeFileSync(join(dir, ".gitignore"), existingContent);
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    const result = ensureGitignorePatterns(dir);
+
+    assert.ok(result.updated);
+    // .env already exists, so only the other two should be added
+    assert.ok(!result.added.includes(".env"));
+    assert.ok(result.added.includes(".cursor/mcp*.json"));
+    assert.ok(result.added.includes(".env.local"));
+
+    const content = readFileSync(join(dir, ".gitignore"), "utf-8");
+
+    // Count occurrences of .env - should only appear once (the original)
+    const envMatches = content.split("\n").filter((l) => l.trim() === ".env");
+    assert.equal(envMatches.length, 1);
+  });
+
+  it("preserves existing content exactly (append-only)", async (t) => {
+    const dir = createTestDir("gitignore-preserve");
+
+    // Complex existing content with comments and blank lines
+    const existingContent = `# Build output
+dist/
+*.js.map
+
+# Dependencies
+node_modules/
+
+# Editor
+.vscode/
+*.swp
+`;
+    writeFileSync(join(dir, ".gitignore"), existingContent);
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    ensureGitignorePatterns(dir);
+
+    const content = readFileSync(join(dir, ".gitignore"), "utf-8");
+
+    // All existing lines preserved in order
+    const existingLines = existingContent.split("\n").filter(Boolean);
+    for (const line of existingLines) {
+      assert.ok(content.includes(line), `Missing line: ${line}`);
+    }
+
+    // Existing content comes before marker
+    const markerIndex = content.indexOf(GITIGNORE_MARKER);
+    for (const line of existingLines) {
+      const lineIndex = content.indexOf(line);
+      assert.ok(
+        lineIndex < markerIndex,
+        `Line "${line}" should appear before marker`,
+      );
+    }
+  });
+});
+
+// ============================================================================
+// Integration tests: gitignore + run()
+// ============================================================================
+
+describe("integration - gitignore", () => {
+  it("run() ensures gitignore patterns", async (t) => {
+    const dir = createTestDir("run-gitignore");
+
+    writeFileSync(
+      join(dir, "workflows", "mcp", "servers.yml"),
+      `
+version: 1
+namespace: test
+servers:
+  - id: api
+    transport: stdio
+    command: test
+`,
+    );
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    const stdout = createCaptureStream();
+    const stderr = createCaptureStream();
+
+    run({ repoRoot: dir, stdout, stderr });
+
+    // .gitignore should be created with patterns
+    assert.ok(existsSync(join(dir, ".gitignore")));
+    const content = readFileSync(join(dir, ".gitignore"), "utf-8");
+
+    for (const pattern of REQUIRED_PATTERNS) {
+      assert.ok(content.includes(pattern), `Missing pattern: ${pattern}`);
+    }
+
+    // stderr should mention the addition
+    assert.ok(stderr.getContent().includes("INFO: Added to .gitignore"));
+  });
+
+  it("run() gitignore is idempotent", async (t) => {
+    const dir = createTestDir("run-gitignore-idem");
+
+    writeFileSync(
+      join(dir, "workflows", "mcp", "servers.yml"),
+      `
+version: 1
+namespace: test
+servers:
+  - id: api
+    transport: stdio
+    command: test
+`,
+    );
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    const stdout1 = createCaptureStream();
+    const stderr1 = createCaptureStream();
+    run({ repoRoot: dir, stdout: stdout1, stderr: stderr1 });
+
+    const content1 = readFileSync(join(dir, ".gitignore"), "utf-8");
+
+    const stdout2 = createCaptureStream();
+    const stderr2 = createCaptureStream();
+    run({ repoRoot: dir, stdout: stdout2, stderr: stderr2 });
+
+    const content2 = readFileSync(join(dir, ".gitignore"), "utf-8");
+
+    // Content unchanged after second run
+    assert.equal(content1, content2);
+
+    // Second run should not mention adding to gitignore
+    assert.ok(!stderr2.getContent().includes("INFO: Added to .gitignore"));
   });
 });

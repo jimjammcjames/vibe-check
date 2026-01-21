@@ -30,6 +30,7 @@ stages:
       files: changed
 
   post:
+    # Portable installs must replace this with the repo's test command (usually npm test).
     - command: "npm run test:local"
     - command: "node .harness/framework/scripts/test-lint.mjs"
     - command: "node .harness/framework/scripts/policy-audit.mjs"
@@ -57,6 +58,7 @@ globs:
     - ".harness/framework/scripts/**/*.mjs"
     - ".harness/framework/cli/**/*.mjs"
     - ".harness/config.yml"
+    # Remove these lines when porting without harness-tests/ in the target repo.
     - "harness-tests/simulation/**/*.sh"
     - "harness-tests/simulation/**/*.sh"
     - "harness-tests/simulation/**/*.mjs"

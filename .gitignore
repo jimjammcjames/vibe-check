@@ -18,3 +18,8 @@ harness-tests/tests/.tmp/
 
 # Cursor MCP config (contains secrets)
 .cursor/mcp.json
+
+# mcp-gen (auto-managed; append-only)
+.cursor/mcp*.json
+.env
+.env.local

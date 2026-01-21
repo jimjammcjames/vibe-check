@@ -14,6 +14,7 @@ import { buildClaudeServerEntry } from "./builders/claude.mjs";
 import { buildCursorServerEntry } from "./builders/cursor.mjs";
 import { buildCodexCommands } from "./builders/codex.mjs";
 import { mergeMcpServers } from "./merge.mjs";
+import { ensureGitignorePatterns } from "./gitignore.mjs";
 
 /**
  * Run the mcp-gen generator.
@@ -132,6 +133,13 @@ export function run({
   if (spec.servers.length > 0) {
     const codexOutput = buildCodexCommands(spec, namespace);
     stdout.write(codexOutput + "\n");
+  }
+
+  // Ensure secret-bearing generated files are gitignored (append-only)
+  const gitignoreResult = ensureGitignorePatterns(repoRoot);
+  if (gitignoreResult.updated) {
+    const added = gitignoreResult.added.join(", ");
+    stderr.write(`INFO: Added to .gitignore: ${added}\n`);
   }
 
   return {
