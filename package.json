@@ -15,7 +15,6 @@
     "harness:new:meta": "node .harness/framework/cli/harness.mjs new:meta",
     "harness:migrate:history": "node .harness/framework/cli/harness.mjs migrate:history",
     "mcp-gen": "node workflows/bin/mcp-gen",
-    "mcp-gen:test": "node workflows/mcp/test-runner.mjs",
     "test:e2e": "node --import tsx --test harness-tests/tests/mcp-gen-e2e.test.mjs"
   },
   "keywords": [

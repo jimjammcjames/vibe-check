@@ -163,10 +163,12 @@ workflows/
 ```gitignore
 # Cursor MCP config (contains secrets)
 .cursor/mcp.json
-
-# Test temp files
-# Portability note: only needed if you also copy harness-tests/.
-harness-tests/tests/.tmp/
 ```
 
 Note: `.mcp.json` (Claude) is safe to commit as it only contains placeholders.
+
+## Testing
+
+Automated coverage should live in your repo's normal test suite.
+There is no interactive runner in `workflows/` anymore; use the normal
+tests for this repo when you need to validate mcp-gen behavior.
