@@ -114,8 +114,9 @@ async function main() {
     const { data } = parseFrontmatter(content);
     const tags = normalizeList(data?.tags);
     const hasMetaTag = tags.some((tag) => tag.includes("#harness-meta"));
+    const isAllowedType = ["meta", "fix", "incident"].includes(data?.type);
 
-    if (data?.type === "meta" && hasMetaTag) {
+    if (isAllowedType && hasMetaTag) {
       hasMetaEntry = true;
       metaContent += `\n### [META-ENTRY] ${relativePath}\n${content}\n`;
     }
@@ -123,12 +124,14 @@ async function main() {
 
   if (!hasMetaEntry) {
     logError("Harness meta-security violation!");
-    log("Changes to .harness/ framework require a meta history entry.");
+    log(
+      "Changes to .harness/ framework require a #harness-meta history entry.",
+    );
     log(
       'Command: npm run harness:new:meta -- --slug "your-change-description"',
     );
     log("Location: .harness/context/history/");
-    log("Type: meta (frontmatter)");
+    log("Type: meta | fix | incident (frontmatter)");
     log("Tag: #harness-meta");
     process.exit(1);
   }

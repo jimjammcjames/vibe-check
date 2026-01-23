@@ -37,6 +37,10 @@ test("Harness Guardian: Enforcement Protocol", async (t) => {
         isVerified,
         "Should verify existing legitimate changes or detect no changes",
       );
+      assert.ok(
+        !output.includes("Harness meta-security violation"),
+        "Should not flag meta-security violation when tagged entry exists",
+      );
     } catch (error) {
       const stdout = error.stdout || "";
       const stderr = error.stderr || "";
