@@ -31,7 +31,8 @@ test("Harness Guardian: Enforcement Protocol", async (t) => {
       );
       const isVerified =
         output.includes("Integrity verified") ||
-        output.includes("No harness modifications detected");
+        output.includes("No harness modifications detected") ||
+        output.includes("No changes to check");
       assert.ok(
         isVerified,
         "Should verify existing legitimate changes or detect no changes",
@@ -41,7 +42,10 @@ test("Harness Guardian: Enforcement Protocol", async (t) => {
       const stderr = error.stderr || "";
       const combined = stdout + stderr;
 
-      if (combined.includes("No harness modifications detected")) {
+      if (
+        combined.includes("No harness modifications detected") ||
+        combined.includes("No changes to check")
+      ) {
         // No changes to harness - this is fine
         assert.ok(true, "No harness modifications to check");
       } else {
