@@ -112,6 +112,8 @@ function validateStdioServer(server) {
       );
     }
   }
+
+  validateEnvHints(server);
 }
 
 /**
@@ -155,6 +157,32 @@ function validateHttpServer(server) {
       if (typeof value !== "string") {
         throw new Error(`Server "${id}": headers["${key}"] must be a string`);
       }
+    }
+  }
+
+  validateEnvHints(server);
+}
+
+/**
+ * Validate env_hints field (optional, shared by stdio and http).
+ * @param {object} server
+ */
+function validateEnvHints(server) {
+  const { id, env_hints } = server;
+
+  if (env_hints === undefined) {
+    return;
+  }
+
+  if (typeof env_hints !== "object" || Array.isArray(env_hints)) {
+    throw new Error(`Server "${id}": "env_hints" must be an object`);
+  }
+
+  for (const [key, value] of Object.entries(env_hints)) {
+    if (typeof value !== "string") {
+      throw new Error(
+        `Server "${id}": env_hints["${key}"] must be a string (template value)`,
+      );
     }
   }
 }

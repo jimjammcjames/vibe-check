@@ -4,6 +4,8 @@
  * Cursor uses resolved literal values - must be gitignored.
  */
 
+import { isPlaceholderValue } from "../scaffold.mjs";
+
 /**
  * Build a Cursor server entry.
  *
@@ -18,8 +20,10 @@ export function buildCursorServerEntry(server, namespace, envMap) {
   // Collect all required env vars
   const requiredEnvVars = collectRequiredEnv(server);
 
-  // Check for missing env vars
-  const missingEnv = requiredEnvVars.filter((v) => !envMap[v]);
+  // Check for missing or placeholder env vars
+  const missingEnv = requiredEnvVars.filter(
+    (v) => !envMap[v] || isPlaceholderValue(envMap[v]),
+  );
 
   if (missingEnv.length > 0) {
     return { key, missingEnv };

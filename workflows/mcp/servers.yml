@@ -12,7 +12,24 @@
 version: 1
 # namespace: myrepo   # optional; defaults to normalized repo folder name
 
-servers: []
+servers:
+  # Time server (stdio, no env) - validates the simplest path
+  - id: time
+    transport: stdio
+    command: uvx
+    args: ["mcp-server-time"]
+
+  # Notion server (stdio, env + require_env) - validates env mapping
+  - id: notion
+    transport: stdio
+    command: npx
+    args: ["-y", "@notionhq/notion-mcp-server"]
+    require_env: ["NOTION_OPENAPI_HEADERS"]
+    env:
+      OPENAPI_MCP_HEADERS: NOTION_OPENAPI_HEADERS
+    env_hints:
+      NOTION_OPENAPI_HEADERS: '{"Authorization":"Bearer YOUR_NOTION_TOKEN","Notion-Version":"2022-06-28"}'
+
   # Example stdio server:
   # - id: fetch
   #   transport: stdio

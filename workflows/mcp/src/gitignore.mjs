@@ -12,7 +12,12 @@ import { join } from "node:path";
  * Patterns that mcp-gen should ensure are in .gitignore.
  * These are files that can contain secrets when generated.
  */
-const REQUIRED_PATTERNS = [".cursor/mcp*.json", ".env", ".env.local"];
+const REQUIRED_PATTERNS = [
+  ".mcp.json",
+  ".cursor/mcp*.json",
+  ".env",
+  ".env.local",
+];
 
 /**
  * Marker comment for the auto-managed section.

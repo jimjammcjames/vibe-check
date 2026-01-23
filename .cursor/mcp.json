@@ -14,6 +14,12 @@
     },
     "vibe-check-workflow.linear": {
       "url": "https://mcp.linear.app/mcp"
+    },
+    "vibe-check.time": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-time"
+      ]
     }
   }
 }

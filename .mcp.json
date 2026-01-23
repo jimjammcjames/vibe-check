@@ -7,7 +7,9 @@
     "vibe-check-workflow.fetch": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["mcp-server-fetch"]
+      "args": [
+        "mcp-server-fetch"
+      ]
     },
     "vibe-check-workflow.figma": {
       "type": "http",
@@ -19,6 +21,24 @@
     "vibe-check-workflow.linear": {
       "type": "http",
       "url": "https://mcp.linear.app/mcp"
+    },
+    "vibe-check.time": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "mcp-server-time"
+      ]
+    },
+    "vibe-check.notion": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@notionhq/notion-mcp-server"
+      ],
+      "env": {
+        "OPENAPI_MCP_HEADERS": "${NOTION_OPENAPI_HEADERS}"
+      }
     }
   }
 }

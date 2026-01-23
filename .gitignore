@@ -20,6 +20,7 @@ harness-tests/tests/.tmp/
 .cursor/mcp.json
 
 # mcp-gen (auto-managed; append-only)
+.mcp.json
 .cursor/mcp*.json
 .env
 .env.local

@@ -15,6 +15,7 @@ import { buildCursorServerEntry } from "./builders/cursor.mjs";
 import { buildCodexCommands } from "./builders/codex.mjs";
 import { mergeMcpServers } from "./merge.mjs";
 import { ensureGitignorePatterns } from "./gitignore.mjs";
+import { scaffoldEnvLocal, collectMissingEnvs } from "./scaffold.mjs";
 
 /**
  * Run the mcp-gen generator.
@@ -140,6 +141,16 @@ export function run({
   if (gitignoreResult.updated) {
     const added = gitignoreResult.added.join(", ");
     stderr.write(`INFO: Added to .gitignore: ${added}\n`);
+  }
+
+  // Scaffold .env.local with missing env vars (append-only)
+  const missingEnvs = collectMissingEnvs(spec.servers, namespace, envMap);
+  if (missingEnvs.length > 0) {
+    const scaffoldResult = scaffoldEnvLocal(repoRoot, missingEnvs);
+    if (scaffoldResult.updated) {
+      const added = scaffoldResult.added.join(", ");
+      stderr.write(`INFO: Scaffolded .env.local with: ${added}\n`);
+    }
   }
 
   return {

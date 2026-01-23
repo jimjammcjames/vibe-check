@@ -271,6 +271,21 @@ describe("parseDotenv", () => {
     assert.deepEqual(parseDotenv("FOO='bar baz'"), { FOO: "bar baz" });
   });
 
+  it("strips inline comments after quoted values", () => {
+    assert.deepEqual(parseDotenv("FOO='bar' # comment"), { FOO: "bar" });
+    assert.deepEqual(parseDotenv('FOO="bar # baz" # comment'), {
+      FOO: "bar # baz",
+    });
+    assert.deepEqual(parseDotenv("FOO='bar'#comment"), { FOO: "bar" });
+    assert.deepEqual(parseDotenv("FOO='bar#baz'#comment"), { FOO: "bar#baz" });
+  });
+
+  it("strips inline comments for unquoted values", () => {
+    assert.deepEqual(parseDotenv("FOO=bar # comment"), { FOO: "bar" });
+    assert.deepEqual(parseDotenv("FOO=bar#comment"), { FOO: "bar" });
+    assert.deepEqual(parseDotenv("FOO=bar# <-- fill in"), { FOO: "bar" });
+  });
+
   it("ignores comments", () => {
     assert.deepEqual(parseDotenv("# comment\nFOO=bar"), { FOO: "bar" });
   });
@@ -938,8 +953,9 @@ describe("ensureGitignorePatterns", () => {
     const result = ensureGitignorePatterns(dir);
 
     assert.ok(result.updated);
-    // .env already exists, so only the other two should be added
+    // .env already exists, so only the other three should be added
     assert.ok(!result.added.includes(".env"));
+    assert.ok(result.added.includes(".mcp.json"));
     assert.ok(result.added.includes(".cursor/mcp*.json"));
     assert.ok(result.added.includes(".env.local"));
 
@@ -1064,5 +1080,476 @@ servers:
 
     // Second run should not mention adding to gitignore
     assert.ok(!stderr2.getContent().includes("INFO: Added to .gitignore"));
+  });
+});
+
+// ============================================================================
+// Unit tests: scaffold
+// ============================================================================
+
+import {
+  scaffoldEnvLocal,
+  collectMissingEnvs,
+  isPlaceholderValue,
+  SCAFFOLD_MARKER,
+} from "../../workflows/mcp/index.mjs";
+
+describe("scaffoldEnvLocal", () => {
+  it("creates .env.local with missing env vars", async (t) => {
+    const dir = createTestDir("scaffold-create");
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    const missingEnvs = [
+      { serverKey: "test.api", envVar: "API_KEY", hint: "your-api-key" },
+    ];
+
+    const result = scaffoldEnvLocal(dir, missingEnvs);
+
+    assert.ok(result.updated);
+    assert.deepEqual(result.added, ["API_KEY"]);
+
+    const content = readFileSync(join(dir, ".env.local"), "utf-8");
+    assert.ok(content.includes(SCAFFOLD_MARKER));
+    assert.ok(content.includes("# Server: test.api"));
+    assert.ok(content.includes("API_KEY='your-api-key' # <-- fill in"));
+  });
+
+  it("includes inline fill-in marker", async (t) => {
+    const dir = createTestDir("scaffold-fill-in");
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    const missingEnvs = [
+      { serverKey: "ns.server", envVar: "MY_TOKEN", hint: "secret123" },
+    ];
+
+    scaffoldEnvLocal(dir, missingEnvs);
+
+    const content = readFileSync(join(dir, ".env.local"), "utf-8");
+    assert.ok(
+      content.includes("MY_TOKEN='secret123' # <-- fill in"),
+      "Should include inline fill-in marker",
+    );
+  });
+
+  it("outputs uncommented placeholders", async (t) => {
+    const dir = createTestDir("scaffold-uncommented");
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    const missingEnvs = [
+      { serverKey: "ns.server", envVar: "MY_VAR", hint: "value" },
+    ];
+
+    scaffoldEnvLocal(dir, missingEnvs);
+
+    const content = readFileSync(join(dir, ".env.local"), "utf-8");
+    // Should be uncommented (no leading #)
+    assert.ok(content.includes("MY_VAR='value'"), "Should be uncommented");
+    assert.ok(
+      !content.includes("# MY_VAR="),
+      "Should not have commented version",
+    );
+  });
+
+  it("uses default hint when none provided", async (t) => {
+    const dir = createTestDir("scaffold-default-hint");
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    const missingEnvs = [{ serverKey: "test.api", envVar: "NO_HINT" }];
+
+    scaffoldEnvLocal(dir, missingEnvs);
+
+    const content = readFileSync(join(dir, ".env.local"), "utf-8");
+    assert.ok(content.includes("NO_HINT='YOUR_VALUE_HERE' # <-- fill in"));
+  });
+
+  it("is idempotent - second run makes no changes", async (t) => {
+    const dir = createTestDir("scaffold-idem");
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    const missingEnvs = [{ serverKey: "test.api", envVar: "API_KEY" }];
+
+    // First run
+    const result1 = scaffoldEnvLocal(dir, missingEnvs);
+    assert.ok(result1.updated);
+    const content1 = readFileSync(join(dir, ".env.local"), "utf-8");
+
+    // Second run
+    const result2 = scaffoldEnvLocal(dir, missingEnvs);
+    assert.ok(!result2.updated);
+    assert.deepEqual(result2.added, []);
+    const content2 = readFileSync(join(dir, ".env.local"), "utf-8");
+
+    // Content unchanged
+    assert.equal(content1, content2);
+  });
+
+  it("skips env vars that already exist (commented or not)", async (t) => {
+    const dir = createTestDir("scaffold-skip-existing");
+
+    // Pre-populate with one commented and one uncommented var
+    const existingContent = "EXISTING_VAR=value\n# COMMENTED_VAR=old\n";
+    writeFileSync(join(dir, ".env.local"), existingContent);
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    const missingEnvs = [
+      { serverKey: "test.api", envVar: "EXISTING_VAR" },
+      { serverKey: "test.api", envVar: "COMMENTED_VAR" },
+      { serverKey: "test.api", envVar: "NEW_VAR" },
+    ];
+
+    const result = scaffoldEnvLocal(dir, missingEnvs);
+
+    assert.ok(result.updated);
+    assert.deepEqual(result.added, ["NEW_VAR"]);
+
+    const content = readFileSync(join(dir, ".env.local"), "utf-8");
+    // Should only add NEW_VAR
+    assert.ok(content.includes("NEW_VAR='YOUR_VALUE_HERE' # <-- fill in"));
+    // Should not duplicate existing vars
+    const existingMatches = content.match(/EXISTING_VAR/g);
+    assert.equal(existingMatches.length, 1);
+  });
+
+  it("groups by server for readability", async (t) => {
+    const dir = createTestDir("scaffold-group");
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    const missingEnvs = [
+      { serverKey: "ns.server1", envVar: "VAR_A" },
+      { serverKey: "ns.server1", envVar: "VAR_B" },
+      { serverKey: "ns.server2", envVar: "VAR_C" },
+    ];
+
+    scaffoldEnvLocal(dir, missingEnvs);
+
+    const content = readFileSync(join(dir, ".env.local"), "utf-8");
+    assert.ok(content.includes("# Server: ns.server1"));
+    assert.ok(content.includes("# Server: ns.server2"));
+  });
+});
+
+describe("collectMissingEnvs", () => {
+  it("collects missing env vars from servers", () => {
+    const servers = [
+      {
+        id: "api",
+        transport: "stdio",
+        command: "test",
+        require_env: ["API_KEY"],
+        env_hints: { API_KEY: "hint-value" },
+      },
+    ];
+    const envMap = {}; // Empty - all missing
+
+    const missing = collectMissingEnvs(servers, "ns", envMap);
+
+    assert.equal(missing.length, 1);
+    assert.equal(missing[0].serverKey, "ns.api");
+    assert.equal(missing[0].envVar, "API_KEY");
+    assert.equal(missing[0].hint, "hint-value");
+  });
+
+  it("skips env vars that are present", () => {
+    const servers = [
+      {
+        id: "api",
+        transport: "stdio",
+        command: "test",
+        require_env: ["API_KEY"],
+      },
+    ];
+    const envMap = { API_KEY: "exists" };
+
+    const missing = collectMissingEnvs(servers, "ns", envMap);
+
+    assert.equal(missing.length, 0);
+  });
+
+  it("collects bearer token_env", () => {
+    const servers = [
+      {
+        id: "web",
+        transport: "http",
+        url: "https://example.com",
+        auth: { type: "bearer", token_env: "WEB_TOKEN" },
+      },
+    ];
+    const envMap = {};
+
+    const missing = collectMissingEnvs(servers, "ns", envMap);
+
+    assert.equal(missing.length, 1);
+    assert.equal(missing[0].envVar, "WEB_TOKEN");
+  });
+});
+
+describe("isPlaceholderValue", () => {
+  it("returns true for values containing YOUR_", () => {
+    assert.ok(isPlaceholderValue("YOUR_TOKEN_HERE"));
+    assert.ok(isPlaceholderValue("YOUR_API_KEY"));
+    assert.ok(isPlaceholderValue('{"Authorization":"Bearer YOUR_TOKEN"}'));
+  });
+
+  it("returns true for values containing _HERE", () => {
+    assert.ok(isPlaceholderValue("VALUE_HERE"));
+    assert.ok(isPlaceholderValue("INSERT_HERE"));
+  });
+
+  it("returns false for real values", () => {
+    assert.ok(!isPlaceholderValue("actual-token-12345"));
+    assert.ok(!isPlaceholderValue('{"Authorization":"Bearer ntn_abc123"}'));
+    assert.ok(!isPlaceholderValue("my-secret-key"));
+  });
+
+  it("returns true for empty or undefined", () => {
+    assert.ok(isPlaceholderValue(""));
+    assert.ok(isPlaceholderValue(null));
+    assert.ok(isPlaceholderValue(undefined));
+  });
+});
+
+describe("buildCursorServerEntry - placeholder detection", () => {
+  it("skips servers when env has placeholder value", () => {
+    const server = {
+      id: "api",
+      transport: "stdio",
+      command: "test",
+      env: { TOKEN: "MY_TOKEN" },
+    };
+    const envMap = { MY_TOKEN: "YOUR_VALUE_HERE" }; // Placeholder
+
+    const result = buildCursorServerEntry(server, "ns", envMap);
+
+    assert.ok("missingEnv" in result);
+    assert.ok(result.missingEnv.includes("MY_TOKEN"));
+  });
+
+  it("includes servers when env has real value", () => {
+    const server = {
+      id: "api",
+      transport: "stdio",
+      command: "test",
+      env: { TOKEN: "MY_TOKEN" },
+    };
+    const envMap = { MY_TOKEN: "actual-secret-12345" }; // Real value
+
+    const result = buildCursorServerEntry(server, "ns", envMap);
+
+    assert.ok("value" in result);
+    assert.equal(result.value.env.TOKEN, "actual-secret-12345");
+  });
+});
+
+// ============================================================================
+// Integration tests: scaffold + run()
+// ============================================================================
+
+describe("integration - scaffold", () => {
+  it("run() scaffolds .env.local with missing env vars", async (t) => {
+    const dir = createTestDir("run-scaffold");
+
+    writeFileSync(
+      join(dir, "workflows", "mcp", "servers.yml"),
+      `
+version: 1
+namespace: test
+servers:
+  - id: api
+    transport: stdio
+    command: test
+    require_env: ["MISSING_VAR"]
+    env_hints:
+      MISSING_VAR: "template-value"
+`,
+    );
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    const stdout = createCaptureStream();
+    const stderr = createCaptureStream();
+
+    run({ repoRoot: dir, stdout, stderr });
+
+    // .env.local should be created with scaffold
+    assert.ok(existsSync(join(dir, ".env.local")));
+    const content = readFileSync(join(dir, ".env.local"), "utf-8");
+
+    assert.ok(content.includes(SCAFFOLD_MARKER));
+    assert.ok(content.includes("MISSING_VAR='template-value' # <-- fill in"));
+
+    // stderr should mention the scaffolding
+    assert.ok(stderr.getContent().includes("INFO: Scaffolded .env.local"));
+  });
+
+  it("run() scaffold is idempotent", async (t) => {
+    const dir = createTestDir("run-scaffold-idem");
+
+    writeFileSync(
+      join(dir, "workflows", "mcp", "servers.yml"),
+      `
+version: 1
+namespace: test
+servers:
+  - id: api
+    transport: stdio
+    command: test
+    require_env: ["MISSING_VAR"]
+`,
+    );
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    const stdout1 = createCaptureStream();
+    const stderr1 = createCaptureStream();
+    run({ repoRoot: dir, stdout: stdout1, stderr: stderr1 });
+
+    const content1 = readFileSync(join(dir, ".env.local"), "utf-8");
+
+    const stdout2 = createCaptureStream();
+    const stderr2 = createCaptureStream();
+    run({ repoRoot: dir, stdout: stdout2, stderr: stderr2 });
+
+    const content2 = readFileSync(join(dir, ".env.local"), "utf-8");
+
+    // Content unchanged after second run
+    assert.equal(content1, content2);
+
+    // Second run should not mention scaffolding
+    assert.ok(!stderr2.getContent().includes("INFO: Scaffolded .env.local"));
+  });
+
+  it("end-to-end: scaffold -> fill in -> Cursor includes server", async (t) => {
+    const dir = createTestDir("e2e-scaffold-flow");
+
+    writeFileSync(
+      join(dir, "workflows", "mcp", "servers.yml"),
+      `
+version: 1
+namespace: test
+servers:
+  - id: api
+    transport: stdio
+    command: my-server
+    args: ["--mode", "api"]
+    require_env: ["API_TOKEN"]
+    env:
+      TOKEN: API_TOKEN
+    env_hints:
+      API_TOKEN: "YOUR_API_TOKEN_HERE"
+`,
+    );
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    // === Step 1: Run with missing env var ===
+    const stdout1 = createCaptureStream();
+    const stderr1 = createCaptureStream();
+    run({ repoRoot: dir, stdout: stdout1, stderr: stderr1 });
+
+    // .env.local should be created with scaffold
+    const envLocalPath = join(dir, ".env.local");
+    assert.ok(existsSync(envLocalPath), ".env.local should be created");
+
+    const scaffoldContent = readFileSync(envLocalPath, "utf-8");
+    assert.ok(
+      scaffoldContent.includes("API_TOKEN='YOUR_API_TOKEN_HERE' # <-- fill in"),
+      "Should have uncommented placeholder with fill-in marker",
+    );
+
+    // Cursor config should skip the server
+    const cursorPath = join(dir, ".cursor", "mcp.json");
+    assert.ok(existsSync(cursorPath), "Cursor config should exist");
+    const cursorConfig1 = JSON.parse(readFileSync(cursorPath, "utf-8"));
+    assert.ok(
+      !("test.api" in cursorConfig1.mcpServers),
+      "Cursor should skip server with missing/placeholder env",
+    );
+
+    // stderr should warn about skipping
+    assert.ok(
+      stderr1.getContent().includes("Skipping test.api for Cursor"),
+      "Should warn about skipping",
+    );
+
+    // === Step 2: Simulate user filling in the value ===
+    writeFileSync(envLocalPath, "API_TOKEN='real-secret-token-12345'\n");
+
+    // === Step 3: Run again with real value ===
+    const stdout2 = createCaptureStream();
+    const stderr2 = createCaptureStream();
+    run({ repoRoot: dir, stdout: stdout2, stderr: stderr2 });
+
+    // Cursor config should now include the server
+    const cursorConfig2 = JSON.parse(readFileSync(cursorPath, "utf-8"));
+    assert.ok(
+      "test.api" in cursorConfig2.mcpServers,
+      "Cursor should now include server with real value",
+    );
+
+    const serverEntry = cursorConfig2.mcpServers["test.api"];
+    assert.equal(serverEntry.command, "my-server");
+    assert.deepEqual(serverEntry.args, ["--mode", "api"]);
+    assert.equal(
+      serverEntry.env.TOKEN,
+      "real-secret-token-12345",
+      "Env should have resolved real value",
+    );
+
+    // stderr should NOT warn about skipping anymore
+    assert.ok(
+      !stderr2.getContent().includes("Skipping test.api"),
+      "Should not warn when env is present",
+    );
+  });
+
+  it("Cursor skips server when env has placeholder value from scaffold", async (t) => {
+    const dir = createTestDir("e2e-placeholder-skip");
+
+    writeFileSync(
+      join(dir, "workflows", "mcp", "servers.yml"),
+      `
+version: 1
+namespace: test
+servers:
+  - id: svc
+    transport: stdio
+    command: svc-cmd
+    require_env: ["SVC_KEY"]
+    env:
+      KEY: SVC_KEY
+    env_hints:
+      SVC_KEY: "YOUR_SERVICE_KEY"
+`,
+    );
+
+    // Pre-create .env.local with the placeholder (as if scaffold just ran)
+    writeFileSync(join(dir, ".env.local"), "SVC_KEY='YOUR_SERVICE_KEY'\n");
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    const stdout = createCaptureStream();
+    const stderr = createCaptureStream();
+    run({ repoRoot: dir, stdout, stderr });
+
+    // Cursor should skip because value contains YOUR_
+    const cursorConfig = JSON.parse(
+      readFileSync(join(dir, ".cursor", "mcp.json"), "utf-8"),
+    );
+    assert.ok(
+      !("test.svc" in cursorConfig.mcpServers),
+      "Cursor should skip server with placeholder value",
+    );
+
+    assert.ok(
+      stderr.getContent().includes("Skipping test.svc for Cursor"),
+      "Should warn about placeholder value",
+    );
   });
 });

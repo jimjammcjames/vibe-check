@@ -37,12 +37,40 @@ export function parseDotenv(content) {
     const key = trimmed.slice(0, eqIndex).trim();
     let value = trimmed.slice(eqIndex + 1).trim();
 
-    // Handle quoted values
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
+    // Handle quoted values (allow inline comments after closing quote)
+    if (value.startsWith('"') || value.startsWith("'")) {
+      const quote = value[0];
+      let endIndex = -1;
+      for (let i = 1; i < value.length; i += 1) {
+        if (value[i] !== quote) {
+          continue;
+        }
+        // Count consecutive backslashes before the quote to detect escaping
+        let backslashes = 0;
+        for (let j = i - 1; j >= 0 && value[j] === "\\"; j -= 1) {
+          backslashes += 1;
+        }
+        if (backslashes % 2 === 0) {
+          endIndex = i;
+          break;
+        }
+      }
+      if (endIndex !== -1) {
+        value = value.slice(1, endIndex);
+      } else {
+        // Fallback: strip leading quote if unmatched
+        value = value.slice(1);
+        const hashIndex = value.indexOf("#");
+        if (hashIndex !== -1) {
+          value = value.slice(0, hashIndex).trim();
+        }
+      }
+    } else {
+      // Strip inline comments for unquoted values (any #)
+      const hashIndex = value.indexOf("#");
+      if (hashIndex !== -1) {
+        value = value.slice(0, hashIndex).trim();
+      }
     }
 
     if (key) {

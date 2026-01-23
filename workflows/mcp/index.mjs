@@ -16,3 +16,10 @@ export {
   REQUIRED_PATTERNS,
   MARKER as GITIGNORE_MARKER,
 } from "./src/gitignore.mjs";
+export {
+  scaffoldEnvLocal,
+  collectMissingEnvs,
+  isPlaceholderValue,
+  SCAFFOLD_MARKER,
+  PLACEHOLDER_PATTERN,
+} from "./src/scaffold.mjs";
