@@ -467,6 +467,13 @@ const sharedAdapter = {
         : "Harness.md not found";
       files["HARNESS_RULES.md"] = harnessMd;
 
+      // Read AGENTS.md for repo-specific guidance
+      const agentsDocPath = join(REPO_ROOT, "AGENTS.md");
+      const agentsMd = existsSync(agentsDocPath)
+        ? readFileSync(agentsDocPath, "utf-8")
+        : "AGENTS.md not found";
+      files["AGENTS.md"] = agentsMd;
+
       // Load prompt from skill at runtime
       const prompt = loadSkillPrompt("review-code");
 

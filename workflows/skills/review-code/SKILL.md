@@ -16,9 +16,11 @@ FILES PROVIDED:
 - DIFF.txt: The code changes
 - HISTORY_ENTRIES.txt: History entries created
 - HARNESS_RULES.md: The rules
+- AGENTS.md: Repo-specific rules and conventions
 
 ANALYSIS:
 
+0. REPO RULES: Apply AGENTS.md as mandatory, repo-specific guidance.
 1. CHANGE TYPE: Is this a FIX (bug/error/correction) or FEATURE (new/add/implement)?
    - Fixes MUST use "fix" or "incident" history entries and MUST have tests
    - Features MAY use "decision" history entries and MAY skip tests
