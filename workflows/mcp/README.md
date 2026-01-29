@@ -91,9 +91,10 @@ Generates/merges MCP configs for multiple tools from `servers.yml`.
 
 #### Claude (`.mcp.json`)
 
-- Uses `${ENV}` placeholders — **safe to commit**
+- Uses **resolved literal values** — **must be gitignored**
 - Server keys: `<namespace>.<id>`
-- Bearer auth: `Authorization: "Bearer ${TOKEN_ENV}"`
+- Bearer auth: `Authorization: "Bearer <token>"`
+- Skips servers when required env vars are missing
 
 #### Cursor (`.cursor/mcp.json`)
 
@@ -111,17 +112,17 @@ Generates/merges MCP configs for multiple tools from `servers.yml`.
 The generator only manages keys with the **owned prefix** (`<namespace>.`).
 
 - ✅ Upserts owned entries
-- ✅ Deletes owned entries (when env is missing for Cursor)
+- ✅ Deletes owned entries (when env is missing for Claude/Cursor)
 - ❌ Never touches non-owned entries
 
 This means you can manually add other MCP servers and they won't be overwritten.
 
 ### Missing Environment Variables
 
-| Tool   | Behavior                                    |
-| ------ | ------------------------------------------- |
-| Claude | Writes placeholder; env resolved at runtime |
-| Cursor | **Skips** server entry; prints warning      |
+| Tool   | Behavior                               |
+| ------ | -------------------------------------- |
+| Claude | **Skips** server entry; prints warning |
+| Cursor | **Skips** server entry; prints warning |
 
 Required env detection includes:
 
@@ -161,11 +162,12 @@ workflows/
 ## .gitignore Recommendations
 
 ```gitignore
-# Cursor MCP config (contains secrets)
+# Claude + Cursor MCP configs (contain secrets)
+.mcp.json
 .cursor/mcp.json
 ```
 
-Note: `.mcp.json` (Claude) is safe to commit as it only contains placeholders.
+Note: `.mcp.json` contains secrets and must stay gitignored (mcp-gen enforces this).
 
 ## Testing
 

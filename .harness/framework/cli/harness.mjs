@@ -24,6 +24,8 @@ import {
 import { join, dirname, isAbsolute, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { listSkillMeta } from "../lib/skills.mjs";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const HARNESS_ROOT = join(__dirname, "..", "..");
@@ -404,6 +406,21 @@ function cmdPrep() {
   );
 
   log(mustMatch[1].trim());
+
+  // Skills summary
+  const skills = listSkillMeta();
+  if (skills.length > 0) {
+    log(
+      "\n\x1b[36m╔══════════════════════════════════════════════════════════════════════╗\x1b[0m",
+    );
+    log(
+      "\x1b[36m║                         AVAILABLE SKILLS                             ║\x1b[0m",
+    );
+    log(
+      "\x1b[36m╚══════════════════════════════════════════════════════════════════════╝\x1b[0m\n",
+    );
+    log(JSON.stringify(skills, null, 2));
+  }
 
   // Meta-Infrastructure check
   const changedFiles = getChangedFiles();

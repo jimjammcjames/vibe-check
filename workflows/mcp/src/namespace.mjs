@@ -5,9 +5,12 @@
 /**
  * Normalize a namespace string:
  * - lowercase
- * - replace non [a-z0-9._-] sequences with -
+ * - replace non [a-z0-9_-] sequences with -
  * - trim leading/trailing -
  * - fallback to "repo" if empty
+ *
+ * Note: dots are NOT allowed because `codex mcp add` only accepts
+ * letters, numbers, hyphens, and underscores in server names.
  *
  * @param {string} name
  * @returns {string}
@@ -19,7 +22,7 @@ export function normalizeNamespace(name) {
 
   let normalized = name
     .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
 
   return normalized || "repo";

@@ -20,7 +20,7 @@ export function buildCodexCommands(spec, namespace) {
   lines.push("");
 
   for (const server of spec.servers) {
-    const serverKey = `${namespace}.${server.id}`;
+    const serverKey = `${namespace}-${server.id}`;
 
     if (server.transport === "stdio") {
       lines.push(buildStdioCommand(server, serverKey));

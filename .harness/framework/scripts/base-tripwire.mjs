@@ -23,8 +23,14 @@
  */
 
 import { execSync, spawnSync } from "node:child_process";
-import { readFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
-import { join, dirname } from "node:path";
+import {
+  readFileSync,
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  realpathSync,
+} from "node:fs";
+import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { minimatch } from "./minimatch.mjs";
@@ -59,6 +65,21 @@ function logWarning(msg) {
 
 function logInfo(msg) {
   if (!QUIET) console.log(`\x1b[36mℹ ${msg}\x1b[0m`);
+}
+
+function normalizeFsPath(pathValue) {
+  try {
+    return realpathSync(pathValue);
+  } catch {
+    return pathValue;
+  }
+}
+
+function getEnvOverride(name) {
+  const value = process.env[name];
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
 }
 
 function loadConfig() {
@@ -241,6 +262,67 @@ function extractExemptReason(content, tag) {
 // Git Worktree Operations
 // ============================================================================
 
+/**
+ * Idempotently removes stale tripwire worktrees from previous runs.
+ * This is best-effort and scoped to the temp prefix to avoid touching user worktrees.
+ */
+function cleanupStaleTripwireWorktrees() {
+  const tmpRoot = normalizeFsPath(tmpdir());
+  const tripwirePrefix = join(tmpRoot, "harness-tripwire-");
+
+  try {
+    const output = execSync("git worktree list --porcelain", {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    // Extract worktree paths from porcelain output.
+    const tripwireCandidates = output
+      .split("\n")
+      .filter((line) => line.startsWith("worktree "))
+      .map((line) => line.replace("worktree ", "").trim())
+      .filter(Boolean)
+      .map((pathValue) => ({
+        raw: pathValue,
+        normalized: normalizeFsPath(pathValue),
+      }))
+      .filter(
+        ({ raw, normalized }) =>
+          raw.startsWith(tripwirePrefix) ||
+          normalized.startsWith(tripwirePrefix),
+      );
+
+    // Remove every tripwire worktree to keep runs idempotent.
+    for (const { raw, normalized } of tripwireCandidates) {
+      try {
+        execSync(`git worktree remove --force "${raw}"`, {
+          cwd: REPO_ROOT,
+          stdio: "ignore",
+        });
+        // Ensure the temp directory is also gone.
+        rmSync(raw, { recursive: true, force: true });
+        if (normalized !== raw) {
+          rmSync(normalized, { recursive: true, force: true });
+        }
+        logInfo(`Cleaned up tripwire worktree: ${raw}`);
+      } catch (error) {
+        // Best-effort cleanup; skip failures and continue.
+        logWarning(`Failed to remove tripwire worktree: ${raw}`);
+      }
+    }
+
+    // Prune any remaining stale worktree metadata.
+    execSync("git worktree prune", {
+      cwd: REPO_ROOT,
+      stdio: "ignore",
+    });
+  } catch (error) {
+    // Non-fatal: do not block the tripwire run.
+    logWarning(`Failed to clean up stale tripwire worktrees: ${error.message}`);
+  }
+}
+
 function createWorktree(baseRef) {
   const worktreePath = mkdtempSync(join(tmpdir(), "harness-tripwire-"));
 
@@ -330,10 +412,7 @@ function applyPatch(worktreePath, patch) {
   }
 }
 
-function runTestsOnWorktree(worktreePath, testFiles, config) {
-  const testCommand =
-    config.reviewers?.base_tripwire?.run_tests_cmd || "npm test";
-
+function ensureNodeModules(worktreePath) {
   // Link node_modules instead of slow npm install
   try {
     const hostNodeModules = join(REPO_ROOT, "node_modules");
@@ -349,6 +428,13 @@ function runTestsOnWorktree(worktreePath, testFiles, config) {
   } catch (e) {
     logWarning(`Failed to symlink node_modules: ${e.message}`);
   }
+}
+
+function runTestsOnWorktree(worktreePath, testFiles, config) {
+  const testCommand =
+    getEnvOverride("HARNESS_RUN_TESTS_CMD") ||
+    config.reviewers?.base_tripwire?.run_tests_cmd ||
+    "npm test";
 
   // Run the tests
   const result = spawnSync("sh", ["-c", testCommand], {
@@ -364,6 +450,103 @@ function runTestsOnWorktree(worktreePath, testFiles, config) {
     stderr: result.stderr,
     signal: result.signal,
   };
+}
+
+function normalizePath(pathValue) {
+  return pathValue.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function parseDiscoveredTests(output, pattern) {
+  const results = new Set();
+  if (!pattern) return [];
+  let regex;
+  try {
+    regex = new RegExp(pattern, "gm");
+  } catch (error) {
+    throw new Error(`Invalid list_tests_pattern: ${error.message}`);
+  }
+
+  let match;
+  while ((match = regex.exec(output)) !== null) {
+    const value = match[1] || match[0];
+    if (value) results.add(normalizePath(value.trim()));
+  }
+
+  return Array.from(results);
+}
+
+function resolveDiscoveredTests(worktreePath, discovered) {
+  return new Set(
+    discovered.map((entry) => {
+      const absolute = entry.startsWith("/")
+        ? entry
+        : resolve(worktreePath, entry);
+      return normalizePath(relative(worktreePath, absolute));
+    }),
+  );
+}
+
+function validateTestDiscovery(worktreePath, testFiles, config) {
+  const tripwireConfig = config.reviewers?.base_tripwire || {};
+  if (tripwireConfig.validate_test_discovery !== true) return;
+
+  const listCommand =
+    getEnvOverride("HARNESS_LIST_TESTS_CMD") || tripwireConfig.list_tests_cmd;
+  const listPattern =
+    getEnvOverride("HARNESS_LIST_TESTS_PATTERN") ||
+    tripwireConfig.list_tests_pattern;
+  if (!listCommand || !listPattern) {
+    logError(
+      "Test discovery validation requires list_tests_cmd and list_tests_pattern",
+    );
+    process.exit(1);
+  }
+
+  const listResult = spawnSync("sh", ["-c", listCommand], {
+    cwd: worktreePath,
+    encoding: "utf-8",
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  if (listResult.status !== 0) {
+    logError("Failed to list discovered tests from runner");
+    const output = (listResult.stdout || "") + (listResult.stderr || "");
+    if (output.trim()) log(output.trim());
+    process.exit(1);
+  }
+
+  let discovered;
+  try {
+    discovered = parseDiscoveredTests(listResult.stdout || "", listPattern);
+  } catch (error) {
+    logError(error.message);
+    process.exit(1);
+  }
+
+  const discoveredSet = resolveDiscoveredTests(worktreePath, discovered);
+  const missing = testFiles
+    .map((file) => normalizePath(file))
+    .filter((file) => !discoveredSet.has(file));
+
+  if (missing.length > 0) {
+    logError("Test discovery mismatch detected");
+    log("\nAdded test files (from harness globs):");
+    missing.forEach((file) => log(`  - ${file}`));
+    log("\nTests discovered by runner:");
+    const discoveredList = Array.from(discoveredSet);
+    if (discoveredList.length === 0) {
+      log("  - (none matching)");
+    } else {
+      discoveredList.slice(0, 20).forEach((file) => log(`  - ${file}`));
+      if (discoveredList.length > 20) {
+        log(`  - ... (${discoveredList.length - 20} more)`);
+      }
+    }
+    log(
+      "\nThis test file doesn't match the test runner's discovery pattern.\nEither rename the test to match, or update test runner config.",
+    );
+    process.exit(1);
+  }
 }
 
 function classifyResult(testResult) {
@@ -453,6 +636,9 @@ async function main() {
     process.exit(0);
   }
 
+  // Idempotent cleanup of any prior tripwire worktrees.
+  cleanupStaleTripwireWorktrees();
+
   const baseRef = tripwireConfig.base_ref || "origin/main";
   const exemptTag = tripwireConfig.exempt_tag || "#basefail-exempt";
   const allowWeakPass = tripwireConfig.allow_weak_pass !== false;
@@ -533,6 +719,12 @@ async function main() {
         execSync(`cp "${srcPath}" "${destPath}"`, { cwd: REPO_ROOT });
       }
     }
+
+    // Ensure node_modules are available for discovery and test runs
+    ensureNodeModules(worktreePath);
+
+    // Validate test discovery before running tests
+    validateTestDiscovery(worktreePath, testFiles, config);
 
     // Run tests on base
     log("\nRunning tests on base worktree...");

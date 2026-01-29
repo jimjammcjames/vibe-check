@@ -223,8 +223,8 @@ describe("namespace", () => {
       assert.equal(normalizeNamespace("--my-repo--"), "my-repo");
     });
 
-    it("preserves dots and underscores", () => {
-      assert.equal(normalizeNamespace("my.repo_name"), "my.repo_name");
+    it("preserves underscores but replaces dots", () => {
+      assert.equal(normalizeNamespace("my.repo_name"), "my-repo_name");
     });
 
     it('returns "repo" for empty', () => {
@@ -304,7 +304,7 @@ describe("parseDotenv", () => {
 // ============================================================================
 
 describe("buildClaudeServerEntry", () => {
-  it("builds stdio with env placeholders", () => {
+  it("builds stdio with resolved env values", () => {
     const server = {
       id: "fetch",
       transport: "stdio",
@@ -312,16 +312,17 @@ describe("buildClaudeServerEntry", () => {
       args: ["mcp-server-fetch"],
       env: { API_KEY: "MY_API_KEY" },
     };
-    const { key, value } = buildClaudeServerEntry(server, "myrepo");
+    const envMap = { MY_API_KEY: "secret123" };
+    const { key, value } = buildClaudeServerEntry(server, "myrepo", envMap);
 
     assert.equal(key, "myrepo.fetch");
     assert.equal(value.type, "stdio");
     assert.equal(value.command, "uvx");
     assert.deepEqual(value.args, ["mcp-server-fetch"]);
-    assert.deepEqual(value.env, { API_KEY: "${MY_API_KEY}" });
+    assert.deepEqual(value.env, { API_KEY: "secret123" });
   });
 
-  it("builds http with bearer placeholder", () => {
+  it("builds http with resolved bearer token", () => {
     const server = {
       id: "figma",
       transport: "http",
@@ -329,13 +330,30 @@ describe("buildClaudeServerEntry", () => {
       auth: { type: "bearer", token_env: "FIGMA_TOKEN" },
       headers: { "X-Custom": "value" },
     };
-    const { key, value } = buildClaudeServerEntry(server, "myrepo");
+    const envMap = { FIGMA_TOKEN: "tok123" };
+    const { key, value } = buildClaudeServerEntry(server, "myrepo", envMap);
 
     assert.equal(key, "myrepo.figma");
     assert.equal(value.type, "http");
     assert.equal(value.url, "https://mcp.figma.com");
-    assert.equal(value.headers["Authorization"], "Bearer ${FIGMA_TOKEN}");
+    assert.equal(value.headers["Authorization"], "Bearer tok123");
     assert.equal(value.headers["X-Custom"], "value");
+  });
+
+  it("returns missingEnv when required env is missing", () => {
+    const server = {
+      id: "fetch",
+      transport: "stdio",
+      command: "uvx",
+      env: { API_KEY: "MY_API_KEY" },
+      require_env: ["OTHER_KEY"],
+    };
+    const envMap = {};
+    const result = buildClaudeServerEntry(server, "myrepo", envMap);
+
+    assert.ok("missingEnv" in result);
+    assert.ok(result.missingEnv.includes("MY_API_KEY"));
+    assert.ok(result.missingEnv.includes("OTHER_KEY"));
   });
 
   it("builds http oauth without auth header", () => {
@@ -345,7 +363,7 @@ describe("buildClaudeServerEntry", () => {
       url: "https://mcp.linear.app",
       auth: { type: "oauth" },
     };
-    const { value } = buildClaudeServerEntry(server, "myrepo");
+    const { value } = buildClaudeServerEntry(server, "myrepo", {});
 
     assert.equal(value.headers, undefined);
   });
@@ -412,7 +430,7 @@ describe("buildCodexCommands", () => {
     };
     const output = buildCodexCommands(spec, "myrepo");
 
-    assert.ok(output.includes("codex mcp add myrepo.fetch"));
+    assert.ok(output.includes("codex mcp add myrepo-fetch"));
     assert.ok(output.includes('--env API_KEY="$MY_API_KEY"'));
     assert.ok(output.includes("-- uvx mcp-server-fetch"));
   });
@@ -447,8 +465,8 @@ describe("buildCodexCommands", () => {
     };
     const output = buildCodexCommands(spec, "myrepo");
 
-    assert.ok(output.includes("codex mcp add myrepo.linear --url"));
-    assert.ok(output.includes("codex mcp login myrepo.linear"));
+    assert.ok(output.includes("codex mcp add myrepo-linear --url"));
+    assert.ok(output.includes("codex mcp login myrepo-linear"));
   });
 });
 
@@ -566,7 +584,7 @@ servers:
     assert.ok("testns.test" in claude.mcpServers);
   });
 
-  it("Claude uses placeholders, Cursor uses literals", async (t) => {
+  it("Claude and Cursor use literals", async (t) => {
     const dir = createTestDir("placeholders");
 
     writeFileSync(
@@ -597,7 +615,10 @@ servers:
       readFileSync(join(dir, ".cursor", "mcp.json"), "utf-8"),
     );
 
-    assert.equal(claude.mcpServers["test.api"].env.TOKEN, "${MY_SECRET}");
+    assert.equal(
+      claude.mcpServers["test.api"].env.TOKEN,
+      "actual_secret_value",
+    );
     assert.equal(
       cursor.mcpServers["test.api"].env.TOKEN,
       "actual_secret_value",
@@ -650,7 +671,7 @@ servers:
     assert.ok("myns.new" in cursor.mcpServers);
   });
 
-  it("Cursor skips on missing env and emits warning", async (t) => {
+  it("Claude and Cursor skip on missing env and emit warning", async (t) => {
     const dir = createTestDir("missing-env");
 
     writeFileSync(
@@ -677,17 +698,27 @@ servers:
     assert.ok(result.warnings.some((w) => w.includes("MISSING_VAR")));
     assert.ok(stderr.getContent().includes("WARN"));
 
+    const claude = JSON.parse(readFileSync(join(dir, ".mcp.json"), "utf-8"));
     const cursor = JSON.parse(
       readFileSync(join(dir, ".cursor", "mcp.json"), "utf-8"),
     );
+    assert.ok(!("test.api" in claude.mcpServers));
     assert.ok(!("test.api" in cursor.mcpServers));
   });
 
-  it("Cursor deletes previously-existing owned entry when env goes missing", async (t) => {
+  it("Claude and Cursor delete owned entry when env goes missing", async (t) => {
     const dir = createTestDir("delete-missing");
 
-    // Write existing cursor config with the server
+    // Write existing configs with the server
     mkdirSync(join(dir, ".cursor"), { recursive: true });
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "test.api": { type: "stdio", command: "old", args: [] },
+        },
+      }),
+    );
     writeFileSync(
       join(dir, ".cursor", "mcp.json"),
       JSON.stringify({
@@ -717,9 +748,11 @@ servers:
 
     t.after(() => rmSync(dir, { recursive: true, force: true }));
 
+    const claude = JSON.parse(readFileSync(join(dir, ".mcp.json"), "utf-8"));
     const cursor = JSON.parse(
       readFileSync(join(dir, ".cursor", "mcp.json"), "utf-8"),
     );
+    assert.ok(!("test.api" in claude.mcpServers));
     assert.ok(!("test.api" in cursor.mcpServers));
   });
 
@@ -791,10 +824,10 @@ servers:
     t.after(() => rmSync(dir, { recursive: true, force: true }));
 
     const output = stdout.getContent();
-    assert.ok(output.includes("codex mcp add codextest.api"));
+    assert.ok(output.includes("codex mcp add codextest-api"));
     assert.ok(output.includes('--env TOKEN="$API_TOKEN"'));
     assert.ok(output.includes("-- myapi --flag"));
-    assert.ok(output.includes("codex mcp add codextest.web"));
+    assert.ok(output.includes("codex mcp add codextest-web"));
     assert.ok(output.includes("--bearer-token-env-var WEB_TOKEN"));
   });
 
@@ -829,24 +862,24 @@ servers:
       readFileSync(join(dir, ".cursor", "mcp.json"), "utf-8"),
     );
 
-    // Claude should have all 7 servers
-    assert.equal(Object.keys(claude.mcpServers).length, 7);
+    // Claude should have 6 servers (missing stdio-required-env)
+    assert.equal(Object.keys(claude.mcpServers).length, 6);
     assert.ok("test-fixture.basic-stdio" in claude.mcpServers);
     assert.ok("test-fixture.stdio-with-cwd" in claude.mcpServers);
     assert.ok("test-fixture.stdio-with-env" in claude.mcpServers);
-    assert.ok("test-fixture.stdio-required-env" in claude.mcpServers);
     assert.ok("test-fixture.http-no-auth" in claude.mcpServers);
     assert.ok("test-fixture.http-bearer" in claude.mcpServers);
     assert.ok("test-fixture.http-oauth" in claude.mcpServers);
+    assert.ok(!("test-fixture.stdio-required-env" in claude.mcpServers));
 
-    // Claude uses placeholders
+    // Claude uses literals
     assert.equal(
       claude.mcpServers["test-fixture.stdio-with-env"].env.API_KEY,
-      "${TEST_API_KEY}",
+      "test-key-123",
     );
     assert.equal(
       claude.mcpServers["test-fixture.http-bearer"].headers.Authorization,
-      "Bearer ${FIGMA_TOKEN}",
+      "Bearer figma-tok-789",
     );
 
     // Cursor should have 6 servers (missing stdio-required-env due to missing REQUIRED_SECRET)
@@ -868,9 +901,9 @@ servers:
 
     // Codex commands should include all servers
     const codexOutput = stdout.getContent();
-    assert.ok(codexOutput.includes("codex mcp add test-fixture.basic-stdio"));
-    assert.ok(codexOutput.includes("codex mcp add test-fixture.http-oauth"));
-    assert.ok(codexOutput.includes("codex mcp login test-fixture.http-oauth"));
+    assert.ok(codexOutput.includes("codex mcp add test-fixture-basic-stdio"));
+    assert.ok(codexOutput.includes("codex mcp add test-fixture-http-oauth"));
+    assert.ok(codexOutput.includes("codex mcp login test-fixture-http-oauth"));
   });
 });
 

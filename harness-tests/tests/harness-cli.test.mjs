@@ -86,6 +86,51 @@ describe("harness CLI", { concurrency: 1 }, () => {
         "should mention Harness.md",
       );
     });
+
+    it("includes skills summary as JSON", () => {
+      const result = runHarness("prep");
+
+      assert.strictEqual(result.exitCode, 0, "prep should exit with code 0");
+      assert.ok(
+        result.output.includes("AVAILABLE SKILLS"),
+        "should show skills banner",
+      );
+
+      // Extract JSON array from output (match array with objects inside)
+      const jsonMatch = result.output.match(/\[\s*\n\s*\{[\s\S]*?\n\]/);
+      assert.ok(jsonMatch, "should contain JSON array in output");
+
+      const skills = JSON.parse(jsonMatch[0]);
+      assert.ok(Array.isArray(skills), "skills should be an array");
+      assert.ok(skills.length > 0, "should have at least one skill");
+
+      // Verify each skill has id and summary
+      for (const skill of skills) {
+        assert.ok(
+          skill.id,
+          `skill should have id, got: ${JSON.stringify(skill)}`,
+        );
+        assert.ok(
+          skill.summary,
+          `skill should have summary, got: ${JSON.stringify(skill)}`,
+        );
+        assert.strictEqual(
+          typeof skill.id,
+          "string",
+          "skill id should be a string",
+        );
+        assert.strictEqual(
+          typeof skill.summary,
+          "string",
+          "skill summary should be a string",
+        );
+      }
+
+      // Verify skills are sorted by id
+      const ids = skills.map((s) => s.id);
+      const sortedIds = [...ids].sort();
+      assert.deepStrictEqual(ids, sortedIds, "skills should be sorted by id");
+    });
   });
 
   describe("new:entry command", () => {

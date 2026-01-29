@@ -14,6 +14,9 @@ reviewers:
     allow_weak_pass: true
     exempt_tag: "#basefail-exempt"
     run_tests_cmd: "npm test"
+    list_tests_cmd: "find harness-tests/tests -maxdepth 1 -name '*.test.mjs' -print"
+    list_tests_pattern: "(.+\\.test\\.mjs)"
+    validate_test_discovery: true
 
   # Pluggable reviewer (adapter-based)
   code_reviewer:

@@ -56,11 +56,22 @@ export function run({
   // Load env
   const envMap = loadEnvMap(repoRoot);
 
-  // Build Claude entries
+  // Build Claude entries (may have missing env)
   const claudeUpserts = new Map();
+  const claudeDeletes = new Set();
   for (const server of spec.servers) {
-    const { key, value } = buildClaudeServerEntry(server, namespace);
-    claudeUpserts.set(key, value);
+    const result = buildClaudeServerEntry(server, namespace, envMap);
+
+    if ("missingEnv" in result) {
+      // Skip this server for Claude
+      claudeDeletes.add(result.key);
+      const missing = result.missingEnv.join(", ");
+      const msg = `WARN: Skipping ${result.key} for Claude (missing env: ${missing})`;
+      warnings.push(msg);
+      stderr.write(msg + "\n");
+    } else {
+      claudeUpserts.set(result.key, result.value);
+    }
   }
 
   // Build Cursor entries (may have missing env)
@@ -98,7 +109,7 @@ export function run({
   const mergedClaude = mergeMcpServers(
     existingClaude,
     claudeUpserts,
-    new Set(),
+    claudeDeletes,
     namespace,
   );
   writeFileSync(claudePath, JSON.stringify(mergedClaude, null, 2) + "\n");

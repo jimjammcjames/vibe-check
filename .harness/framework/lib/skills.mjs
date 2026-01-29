@@ -5,7 +5,7 @@
  * Skills are the source of truth for review agent prompts.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseFrontmatter } from "./history-entry.mjs";
@@ -80,4 +80,40 @@ export function getSkillMeta(skillId) {
     id: data?.id || skillId,
     summary: data?.summary || "",
   };
+}
+
+/**
+ * List metadata for all skills in workflows/skills/
+ *
+ * Enumerates skill folders, reads frontmatter, and returns sorted array of { id, summary }.
+ *
+ * @returns {Array<{ id: string, summary: string }>} Skill metadata sorted by id
+ */
+export function listSkillMeta() {
+  const skillsDir = join(REPO_ROOT, "workflows", "skills");
+
+  if (!existsSync(skillsDir)) {
+    return [];
+  }
+
+  const entries = readdirSync(skillsDir, { withFileTypes: true });
+  const skills = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+
+    const skillPath = join(skillsDir, entry.name, "SKILL.md");
+    if (!existsSync(skillPath)) continue;
+
+    const content = readFileSync(skillPath, "utf-8");
+    const { data } = parseFrontmatter(content);
+
+    skills.push({
+      id: data?.id || entry.name,
+      summary: data?.summary || "",
+    });
+  }
+
+  // Sort by id for stable output
+  return skills.sort((a, b) => a.id.localeCompare(b.id));
 }
