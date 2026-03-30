@@ -11,11 +11,13 @@ search_terms:
 related_entries:
   - ".harness/context/history/2026-03-26-canonical-harness-refresh.md"
 affected_files:
+  - ".gitignore"
   - ".harness/Harness.md"
   - ".harness/framework/cli/harness.mjs"
   - "README.md"
   - "harness-tests/tests/harness-cli.test.mjs"
   - "CANONICAL_HARNESS_TRACE_RESEARCH.md"
+  - "package-lock.json"
 session_refs:
   - ".harness/context/sessions/2026-03-30-0758-remove-close-session-and-trace-research.md"
 tags:
@@ -78,6 +80,9 @@ harness by default.
   meta entry with repo-relative session refs and a matching session backlink.
 - Added `CANONICAL_HARNESS_TRACE_RESEARCH.md` so future ports can distinguish
   portable harness primitives from repo-specific runtime governance.
+- Restored the committed npm lockfile expected by the GitHub Actions workflow by
+  unignoring `package-lock.json` and keeping it tracked with the canonical
+  harness repo.
 
 ## Raw Notes
 
@@ -90,3 +95,6 @@ harness by default.
   repo-owned execution surface" porting pattern.
 - `mooo`: contributes remote-runtime, upmerge, and Copilot-production ideas, but
   not a better local history/session contract than the `moves` lineage.
+- PR follow-up root cause: `.github/workflows/harness.yml` uses
+  `actions/setup-node` with `cache: npm`, so excluding `package-lock.json`
+  breaks the workflow before `npm ci` or `npm run harness:ci` even start.
