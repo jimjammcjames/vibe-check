@@ -138,12 +138,12 @@ The cleanest lineage read is:
 
 ### Repo Paths and Canonical Surfaces
 
-| Repo | Path | Canonical harness surface used in this report |
-| --- | --- | --- |
-| `moves` | `/Users/jamesdugle/Repos/moves` | `AGENTS.md`, `.harness/Harness.md`, `.harness/config.yml`, `.husky/*`, `.harness/context/*`, `workflows/skills/*` |
-| `moves-algorithm` | `/Users/jamesdugle/Repos/moves-algorithm` | `AGENTS.md`, `.harness/Harness.md`, `.harness/config.yml`, `.husky/pre-commit`, `.harness/context/*`, `workflows/skills/*` |
-| `life.exe` | `/Users/jamesdugle/Repos/life.exe` | `AGENTS.md`, `README.md`, `history/*`, `.githooks/*`, `tools/history/*`, `tools/system-review/*`, `tools/box-git.sh`, `box/AGENTS.md`, `skills/*`, `system/features/*` |
-| `mooo` | `/Users/jamesdugle/Repos/mooo` | `README.md`, `docs/*`, `.github/workflows/*`, `scripts/deploy-openclaw.sh`, `openclaw/vm-scripts/openclaw-upmerge.sh`, `openclaw/workspace/*` |
+| Repo              | Path                                      | Canonical harness surface used in this report                                                                                                                          |
+| ----------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `moves`           | `/Users/jamesdugle/Repos/moves`           | `AGENTS.md`, `.harness/Harness.md`, `.harness/config.yml`, `.husky/*`, `.harness/context/*`, `workflows/skills/*`                                                      |
+| `moves-algorithm` | `/Users/jamesdugle/Repos/moves-algorithm` | `AGENTS.md`, `.harness/Harness.md`, `.harness/config.yml`, `.husky/pre-commit`, `.harness/context/*`, `workflows/skills/*`                                             |
+| `life.exe`        | `/Users/jamesdugle/Repos/life.exe`        | `AGENTS.md`, `README.md`, `history/*`, `.githooks/*`, `tools/history/*`, `tools/system-review/*`, `tools/box-git.sh`, `box/AGENTS.md`, `skills/*`, `system/features/*` |
+| `mooo`            | `/Users/jamesdugle/Repos/mooo`            | `README.md`, `docs/*`, `.github/workflows/*`, `scripts/deploy-openclaw.sh`, `openclaw/vm-scripts/openclaw-upmerge.sh`, `openclaw/workspace/*`                          |
 
 ### Naming Assumption
 
@@ -773,20 +773,20 @@ This is a young repo. Most of its evolution so far is deployment and runtime-syn
 
 ## Cross-Repo Matrix
 
-| Axis | `moves` | `moves-algorithm` | `life.exe` | `mooo` |
-| --- | --- | --- | --- | --- |
-| Main shape | Explicit local `.harness` | Ported local `.harness` | Hybrid host/box operating system | Remote bot repo + CI/CD + upmerge |
-| Primary purpose | Product delivery harness | Backend/service delivery harness | Life operations + mounted agent runtime governance | Hosted OpenClaw deployment and workspace |
-| Execution boundary | Local worktree | Local worktree | Root host + mounted `box/` + NanoClaw | Azure VM + GitHub Actions |
-| Main memory model | Structured history + structured sessions | Same structured model, smaller volume | Structured history + sessions + feature catalog + automations | Workspace markdown memory + runtime-upmerged docs |
-| Commit provenance | Strongest staged enforcement | Strong staged enforcement | Auto-drafted root context + brokered box context | Not commit-centric |
-| Enforcement locus | Hooks + policy audit + tripwire + agent reviewers | Same core layer, thinner repo edge | Hooks + policy audit + vibe-check + broker + monitor policy | GitHub Actions + deploy scripts + runtime guards |
-| Review model | Agent-backed diff review inside harness | Same core review scripts | Copilot-backed `vibe-check` + live NanoClaw validation | PR/CI-centric, no local diff-review harness |
-| Skill model | Broadest and most repo-specific | Minimal core review skills only | Two root skills; many durable rules in docs/system | Small OpenClaw workspace skill set |
-| Provider abstraction | Gemini, Codex, Copilot, fallback, overrides | Gemini, Codex, http-api | Not the center of gravity | Not present |
-| Live validation bias | Medium | Medium | Very high for runtime-boundary work | High, but through deploy/runtime ops rather than formal skill gates |
-| Git model | Rebase-first, PR-oriented, staged provenance | Pre-commit provenance | Brokered git, main protection, push audit | Source-of-truth repo with bot upmerge PRs |
-| Current maturity | Most mature | Young but clean | Rapidly maturing and expanding | Young and infra-centric |
+| Axis                 | `moves`                                           | `moves-algorithm`                     | `life.exe`                                                    | `mooo`                                                              |
+| -------------------- | ------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Main shape           | Explicit local `.harness`                         | Ported local `.harness`               | Hybrid host/box operating system                              | Remote bot repo + CI/CD + upmerge                                   |
+| Primary purpose      | Product delivery harness                          | Backend/service delivery harness      | Life operations + mounted agent runtime governance            | Hosted OpenClaw deployment and workspace                            |
+| Execution boundary   | Local worktree                                    | Local worktree                        | Root host + mounted `box/` + NanoClaw                         | Azure VM + GitHub Actions                                           |
+| Main memory model    | Structured history + structured sessions          | Same structured model, smaller volume | Structured history + sessions + feature catalog + automations | Workspace markdown memory + runtime-upmerged docs                   |
+| Commit provenance    | Strongest staged enforcement                      | Strong staged enforcement             | Auto-drafted root context + brokered box context              | Not commit-centric                                                  |
+| Enforcement locus    | Hooks + policy audit + tripwire + agent reviewers | Same core layer, thinner repo edge    | Hooks + policy audit + vibe-check + broker + monitor policy   | GitHub Actions + deploy scripts + runtime guards                    |
+| Review model         | Agent-backed diff review inside harness           | Same core review scripts              | Copilot-backed `vibe-check` + live NanoClaw validation        | PR/CI-centric, no local diff-review harness                         |
+| Skill model          | Broadest and most repo-specific                   | Minimal core review skills only       | Two root skills; many durable rules in docs/system            | Small OpenClaw workspace skill set                                  |
+| Provider abstraction | Gemini, Codex, Copilot, fallback, overrides       | Gemini, Codex, http-api               | Not the center of gravity                                     | Not present                                                         |
+| Live validation bias | Medium                                            | Medium                                | Very high for runtime-boundary work                           | High, but through deploy/runtime ops rather than formal skill gates |
+| Git model            | Rebase-first, PR-oriented, staged provenance      | Pre-commit provenance                 | Brokered git, main protection, push audit                     | Source-of-truth repo with bot upmerge PRs                           |
+| Current maturity     | Most mature                                       | Young but clean                       | Rapidly maturing and expanding                                | Young and infra-centric                                             |
 
 ## Independent Evolution Analysis
 

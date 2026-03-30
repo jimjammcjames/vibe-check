@@ -14,12 +14,12 @@ npm run harness:ci                # Outer loop only: PR update / merge gate
 
 ## Loop Tiers
 
-| Loop   | Command                  | Purpose                                            |
-| ------ | ------------------------ | -------------------------------------------------- |
-| Inner  | harness:iterate          | Format + lint fix on changed files                 |
-| Medium | harness:post             | Tests + policy (no agents)                         |
-| Commit | harness:post -- --staged | Staged history + staged session coverage           |
-| Outer  | harness:ci               | Full gate for PR creation/update or final merge    |
+| Loop   | Command                  | Purpose                                         |
+| ------ | ------------------------ | ----------------------------------------------- |
+| Inner  | harness:iterate          | Format + lint fix on changed files              |
+| Medium | harness:post             | Tests + policy (no agents)                      |
+| Commit | harness:post -- --staged | Staged history + staged session coverage        |
+| Outer  | harness:ci               | Full gate for PR creation/update or final merge |
 
 - `harness:ci` is not your every-save loop. Use it right before pushing a PR
   update or before merging.

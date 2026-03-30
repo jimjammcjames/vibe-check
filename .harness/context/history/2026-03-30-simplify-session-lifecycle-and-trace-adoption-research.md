@@ -14,9 +14,12 @@ affected_files:
   - ".gitignore"
   - ".harness/Harness.md"
   - ".harness/framework/cli/harness.mjs"
+  - ".harness/framework/lib/agent-runner.mjs"
+  - ".harness/framework/scripts/policy-audit.mjs"
   - "README.md"
   - "harness-tests/tests/harness-cli.test.mjs"
   - "CANONICAL_HARNESS_TRACE_RESEARCH.md"
+  - "HARNESS_EVOLUTION_REPORT.md"
   - "package-lock.json"
 session_refs:
   - ".harness/context/sessions/2026-03-30-0758-remove-close-session-and-trace-research.md"
@@ -83,6 +86,8 @@ harness by default.
 - Restored the committed npm lockfile expected by the GitHub Actions workflow by
   unignoring `package-lock.json` and keeping it tracked with the canonical
   harness repo.
+- Normalized the tracked files hit by the repo-wide prettier gate and kept the
+  local tripwire baseline byproducts out of the published PR.
 
 ## Raw Notes
 
@@ -98,3 +103,6 @@ harness by default.
 - PR follow-up root cause: `.github/workflows/harness.yml` uses
   `actions/setup-node` with `cache: npm`, so excluding `package-lock.json`
   breaks the workflow before `npm ci` or `npm run harness:ci` even start.
+- Second PR follow-up root cause: once the lockfile fix let CI reach the
+  outer-loop checks, `npx prettier --check .` still flagged five tracked files
+  that needed normalization for the repo-wide formatter gate.

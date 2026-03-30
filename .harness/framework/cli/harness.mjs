@@ -22,7 +22,14 @@ import {
   readdirSync,
   rmSync,
 } from "node:fs";
-import { join, dirname, isAbsolute, basename, resolve, relative } from "node:path";
+import {
+  join,
+  dirname,
+  isAbsolute,
+  basename,
+  resolve,
+  relative,
+} from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadHarnessConfig } from "../lib/harness-config.mjs";
 import { normalizeList, parseFrontmatter } from "../lib/history-entry.mjs";
@@ -430,7 +437,8 @@ function cmdPrep() {
   const changedFiles = getChangedFiles();
   const isHarnessWork = changedFiles.some(
     (file) =>
-      matchesAnyGlob(file, harnessCoreGlobs) || file.startsWith("harness-tests/"),
+      matchesAnyGlob(file, harnessCoreGlobs) ||
+      file.startsWith("harness-tests/"),
   );
 
   if (isHarnessWork) {
@@ -489,9 +497,7 @@ function isAgentCommand(command) {
 }
 
 async function cmdPost({ stagedOnly = false } = {}) {
-  log(
-    `\n\x1b[36m=== harness:post${stagedOnly ? " --staged" : ""} ===\x1b[0m`,
-  );
+  log(`\n\x1b[36m=== harness:post${stagedOnly ? " --staged" : ""} ===\x1b[0m`);
 
   killOrphanedProcesses();
   prepareDiagnosticsForRun();
@@ -614,9 +620,7 @@ async function runCiStage(
   }
 
   if (agentSteps.length > 0) {
-    log(
-      `\n\x1b[36m▶ Agent Reviews (${agentSteps.length}, parallel)\x1b[0m`,
-    );
+    log(`\n\x1b[36m▶ Agent Reviews (${agentSteps.length}, parallel)\x1b[0m`);
     const agentResults = await Promise.all(
       agentSteps.map(async (step) => {
         const result = await runner(step.command, step.files);
@@ -818,9 +822,7 @@ function formatSessionChoices(sessionFiles) {
 
 function getCurrentDateSessionFiles(sessionFiles) {
   const datePrefix = `${getCurrentDate()}-`;
-  return sessionFiles.filter((file) =>
-    basename(file).startsWith(datePrefix),
-  );
+  return sessionFiles.filter((file) => basename(file).startsWith(datePrefix));
 }
 
 function resolveSessionRefs(sessionFiles, sessionSlug = null) {
@@ -1155,7 +1157,9 @@ function cmdMigrateHistory() {
     const searchTerms = parseLegacyList(
       extractLegacySection(content, "Search terms"),
     );
-    const relatedRaw = parseLegacyList(extractLegacySection(content, "Related"));
+    const relatedRaw = parseLegacyList(
+      extractLegacySection(content, "Related"),
+    );
     const tags = parseLegacyTags(extractLegacySection(content, "Tags"));
     const date = baseName.slice(0, 10);
     const related = relatedRaw.map((value) => updateLegacyLinks(value));
@@ -1326,7 +1330,9 @@ function main() {
       log("  prep              Print MUST block from Harness.md");
       log("  iterate           Format + lint fix (changed files)");
       log("  post              Medium verification (tests + policy)");
-      log("  ci                Full CI gate (lint + typecheck + tripwire + agents)");
+      log(
+        "  ci                Full CI gate (lint + typecheck + tripwire + agents)",
+      );
       log("  new:entry         Create a history entry (requires --type)");
       log("  new:meta          Create a harness meta entry");
       log("  new:session       Create a task session entry");
@@ -1341,15 +1347,25 @@ function main() {
         "  --session-slug <slug>  Explicit session slug to link when multiple candidate sessions exist",
       );
       log("  --type <type>     Entry type (required for new:entry)");
-      log("  --staged          Run staged-only commit policy verification for post");
-      log("  --parallel-agent-reviews    Run CI agent review steps in parallel");
-      log("  --gemini-model <model>      Gemini model override for agent steps");
+      log(
+        "  --staged          Run staged-only commit policy verification for post",
+      );
+      log(
+        "  --parallel-agent-reviews    Run CI agent review steps in parallel",
+      );
+      log(
+        "  --gemini-model <model>      Gemini model override for agent steps",
+      );
       log("  --codex                      Use Codex CLI for agent steps");
-      log("  --codex-model <model>        Codex model override for agent steps");
+      log(
+        "  --codex-model <model>        Codex model override for agent steps",
+      );
       log(
         "  --codex-reasoning <level>   Codex reasoning override for agent steps",
       );
-      log("  --copilot                    Use GitHub Copilot CLI for agent steps");
+      log(
+        "  --copilot                    Use GitHub Copilot CLI for agent steps",
+      );
       log(
         "  --copilot-model <model>     GitHub Copilot model override for agent steps",
       );

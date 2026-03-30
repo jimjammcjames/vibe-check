@@ -209,7 +209,10 @@ export async function runAgent({
   providerOverride,
 }) {
   const config = loadConfig();
-  const providerSequence = resolveProviderSequence({ providerOverride, config });
+  const providerSequence = resolveProviderSequence({
+    providerOverride,
+    config,
+  });
   let lastRateLimitedResult = null;
 
   for (const [index, providerName] of providerSequence.entries()) {

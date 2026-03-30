@@ -191,7 +191,12 @@ function getAddedFiles({ stagedOnly = false } = {}) {
       }
     }
 
-    const staged = runGit(["diff", "--cached", "--name-status", "--diff-filter=A"])
+    const staged = runGit([
+      "diff",
+      "--cached",
+      "--name-status",
+      "--diff-filter=A",
+    ])
       .trim()
       .split("\n")
       .filter(Boolean);
@@ -252,7 +257,8 @@ function getHistoryEntries(diffFiles, config, scope = {}) {
   return diffFiles
     .filter(
       (file) =>
-        matchesAnyGlob(file, config.globs.history) && !file.endsWith("TIMELINE.md"),
+        matchesAnyGlob(file, config.globs.history) &&
+        !file.endsWith("TIMELINE.md"),
     )
     .map((file) => {
       const content = readFileAtScope(file, scope);
@@ -482,7 +488,9 @@ function validateEntryContent({
     }
 
     if (
-      ["feature", "decision", "refactor", "investigation", "note"].includes(type)
+      ["feature", "decision", "refactor", "investigation", "note"].includes(
+        type,
+      )
     ) {
       const decision = extractMarkdownSection(body, "Decision");
       const rationale = extractMarkdownSection(body, "Rationale");
@@ -697,7 +705,9 @@ function validateStructuredSessionCorrections({
   }
 
   const mixedNoneTypes = SESSION_CORRECTION_TYPES.filter((type) => {
-    const typeEntries = correctionEntries.filter((entry) => entry.type === type);
+    const typeEntries = correctionEntries.filter(
+      (entry) => entry.type === type,
+    );
     if (typeEntries.length === 0) return false;
     const noneCount = typeEntries.filter((entry) =>
       SESSION_NONE_RE.test(entry.value),
@@ -735,8 +745,8 @@ function validateStructuredSessionCorrections({
   }
 
   const unknownEvidence = userCorrections.filter((entry) => {
-    const marker =
-      entry.value.match(SESSION_USER_CORRECTION_EVIDENCE_RE)?.groups?.marker;
+    const marker = entry.value.match(SESSION_USER_CORRECTION_EVIDENCE_RE)
+      ?.groups?.marker;
     return marker && !timelineMarkers.has(marker);
   });
   if (unknownEvidence.length > 0) {
@@ -749,7 +759,11 @@ function validateStructuredSessionCorrections({
   }
 }
 
-function validateSessionContent({ file = "", content, requireFilledBullets = false }) {
+function validateSessionContent({
+  file = "",
+  content,
+  requireFilledBullets = false,
+}) {
   const issues = [];
   const { data, body } = parseFrontmatter(content);
 
@@ -836,7 +850,8 @@ function validateSessionContent({ file = "", content, requireFilledBullets = fal
     if (invalidTimelineLine) {
       issues.push({
         code: "SESSION_TIMELINE_FORMAT",
-        message: "Timeline bullets must use the required timestamp + speaker format",
+        message:
+          "Timeline bullets must use the required timestamp + speaker format",
         fix: "Use bullets like `- [10:32] user: asked for ...` or `- [seq-01] assistant: ...`.",
       });
     }
@@ -864,7 +879,8 @@ function validateSessionContent({ file = "", content, requireFilledBullets = fal
     ) {
       issues.push({
         code: "SESSION_WORKFLOW_FORMAT",
-        message: "Workflow Repetition bullets must use repeated_workflow:/custom_script:",
+        message:
+          "Workflow Repetition bullets must use repeated_workflow:/custom_script:",
         fix: "Use bullets like `- repeated_workflow: reran X three times`.",
       });
     }
@@ -881,7 +897,8 @@ function validateSessionContent({ file = "", content, requireFilledBullets = fal
     ) {
       issues.push({
         code: "SESSION_CANDIDATE_FORMAT",
-        message: "Codify Candidates bullets must use the required target format",
+        message:
+          "Codify Candidates bullets must use the required target format",
         fix: "Use bullets like `- candidate: target=skill; stabilize the repeated workflow`.",
       });
     }
@@ -907,7 +924,8 @@ function checkRuleA(diffFiles, config) {
 
   const historyFiles = diffFiles.filter(
     (file) =>
-      matchesAnyGlob(file, config.globs.history) && !file.endsWith("TIMELINE.md"),
+      matchesAnyGlob(file, config.globs.history) &&
+      !file.endsWith("TIMELINE.md"),
   );
   if (historyFiles.length === 0) {
     return {
@@ -1134,12 +1152,15 @@ Fix: update session_refs or recreate the history entry after creating the matchi
 
   return {
     passed: true,
-    message: "Staged real code is covered by staged history and session context",
+    message:
+      "Staged real code is covered by staged history and session context",
   };
 }
 
 function main() {
-  log(`\n\x1b[36m=== Policy Audit${STAGED_ONLY ? " (staged)" : ""} ===\x1b[0m\n`);
+  log(
+    `\n\x1b[36m=== Policy Audit${STAGED_ONLY ? " (staged)" : ""} ===\x1b[0m\n`,
+  );
 
   const config = loadConfig();
   const scope = { stagedOnly: STAGED_ONLY };

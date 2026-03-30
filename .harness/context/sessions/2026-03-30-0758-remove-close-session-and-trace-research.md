@@ -37,12 +37,15 @@ what the canonical harness should and should not absorb.
 - [seq-08] assistant: While creating this task's own meta entry, discovered that the canonical CLI had started writing absolute `session_refs` and patched it back to exact repo-relative paths with regression coverage.
 - [seq-09] assistant: Wrote the trace-backed adoption memo and updated canonical docs so sessions are described as append-only task notes with no close step.
 - [seq-10] assistant: Opened the draft PR, saw GitHub Actions fail before any project checks ran because `actions/setup-node` expected a committed npm lockfile, then prepared the follow-up fix by unignoring and staging `package-lock.json`.
+- [seq-11] assistant: After the lockfile fix, the rerun reached the global prettier gate and failed on five tracked files; normalized those files, confirmed the formatter issue locally, and discarded the temporary tripwire baseline artifacts that the local outer-loop run generated during its own self-check.
 
 ## Corrections & Thrash
 
 - user_correction: [seq-03] The user explicitly rejected the active/closed lifecycle and asked to keep session data without any close step.
 - agent_correction: [seq-08] The new meta entry exposed that `session_refs` were being written as absolute filesystem paths, so the CLI and tests were corrected before continuing.
+- agent_correction: [seq-11] The first CI follow-up fixed the missing lockfile but assumed that was the only remote blocker; the rerun showed the repo still needed global prettier normalization before merge.
 - process_issue: [seq-10] The PR's `Harness CI Check` failed in GitHub Actions before running the repo checks because `.gitignore` excluded `package-lock.json` while the workflow used `actions/setup-node` with `cache: npm`.
+- process_issue: [seq-11] The local `harness:ci` run generates temporary tripwire baseline artifacts in the worktree, so those byproducts had to be removed instead of being folded into the PR.
 - thrash: none
 
 ## Workflow Repetition
@@ -62,4 +65,5 @@ state, session linking now stays repo-relative, and the repo now includes a
 trace-backed memo that separates portable harness patterns from `life.exe` and
 `mooo` runtime-specific governance. The merge follow-up also restores the
 committed npm lockfile expected by the CI workflow so the published PR can pass
-its GitHub Actions setup step.
+its GitHub Actions setup step, and the tracked files checked by global prettier
+have now been normalized for the GitHub Actions outer loop as well.
