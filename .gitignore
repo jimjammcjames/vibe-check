@@ -1,5 +1,4 @@
 node_modules
-package-lock.json
 harness-dev/simulation/logs/
 harness-tests/simulation/latest
 harness-tests/simulation/logs/.last_sandbox_path
@@ -7,7 +6,9 @@ harness-tests/simulation/logs/*
 harness-tests/simulation/temp/
 key.txt
 .harness/.gemini-home/
+.harness/.copilot/
 .harness/diagnostics/
+.harness/config.local.yml
 .harness/context/history/diagnostics/
 
 # Test fixtures (created/deleted during test runs)

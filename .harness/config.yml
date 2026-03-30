@@ -2,7 +2,10 @@
 
 agents:
   provider: gemini
+  fallback_provider: codex
   gemini_home: ".harness/.gemini-home"
+  copilot_reasoning: high
+  copilot_config_dir: ".harness/.copilot"
 
 # Anti-Gamification Review Layer
 reviewers:
@@ -60,17 +63,24 @@ globs:
     - "src/**/*.jsx"
     - ".harness/framework/scripts/**/*.mjs"
     - ".harness/framework/cli/**/*.mjs"
+    - ".harness/framework/lib/**/*.mjs"
+    - ".harness/framework/providers/**/*.mjs"
+    - ".harness/framework/templates/**/*.md"
+    - ".harness/Harness.md"
     - ".harness/config.yml"
+    - "AGENTS.md"
     # Remove these lines when porting without harness-tests/ in the target repo.
     - "harness-tests/simulation/**/*.sh"
-    - "harness-tests/simulation/**/*.sh"
     - "harness-tests/simulation/**/*.mjs"
+    - "harness-tests/tests/**/*.mjs"
 
   # Files that are exempt from memory requirement
   exempt:
     - "*.json"
     - ".github/**"
-    - "*.md"
+    - ".harness/setup/**"
+    - "README.md"
+    - "workflows/**/*.md"
     - ".gitignore"
     - ".eslintrc*"
     - ".prettierrc*"
@@ -91,6 +101,18 @@ globs:
 
   # Memory entry locations
   history: ".harness/context/history/**/*.md"
+
+  # Session artifact locations
+  sessions: ".harness/context/sessions/**/*.md"
+
+  # Harness core enforcement surfaces (context artifacts excluded)
+  harnessCore:
+    - ".harness/framework/**"
+    - ".harness/config.yml"
+    - ".harness/Harness.md"
+    - "AGENTS.md"
+    - "package.json"
+    - "workflows/skills/**"
 
   # Test-side files (applied to base commit in tripwire)
   testSide:

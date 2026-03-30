@@ -10,9 +10,10 @@
  *   ci            - Full CI gate (lint + typecheck + tripwire + agents)
  *   new:entry     - Create a context history entry from template
  *   new:meta      - Create a harness meta entry
+ *   new:session   - Create a task session entry
  */
 
-import { execSync } from "node:child_process";
+import { exec, execSync } from "node:child_process";
 import {
   readFileSync,
   writeFileSync,
@@ -21,29 +22,28 @@ import {
   readdirSync,
   rmSync,
 } from "node:fs";
-import { join, dirname, isAbsolute, basename } from "node:path";
-import { fileURLToPath } from "node:url";
-
+import {
+  join,
+  dirname,
+  isAbsolute,
+  basename,
+  resolve,
+  relative,
+} from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { loadHarnessConfig } from "../lib/harness-config.mjs";
+import { normalizeList, parseFrontmatter } from "../lib/history-entry.mjs";
 import { listSkillMeta } from "../lib/skills.mjs";
+import { minimatch } from "../scripts/minimatch.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const HARNESS_ROOT = join(__dirname, "..", "..");
 const REPO_ROOT = join(HARNESS_ROOT, "..");
 
-// Global verbose flag - default to quiet mode
 const VERBOSE =
   process.argv.includes("--verbose") || process.argv.includes("-v");
-
-// Set environment for child processes
-// FIX: Remove HARNESS_QUIET to ensure tests run in standard environment (Isolation)
-// if (!VERBOSE) {
-//     process.env.HARNESS_QUIET = '1';
-// }
-
-// ============================================================================
-// Utilities
-// ============================================================================
+let SHOW_TIMING = false;
 
 const HISTORY_TYPES = new Set([
   "fix",
@@ -88,17 +88,11 @@ function prepareDiagnosticsForRun() {
   }
 }
 
-/**
- * Kill orphaned processes from previous failed harness runs.
- * This ensures idempotency - iterate always starts from a clean state.
- */
 function killOrphanedProcesses() {
   const patterns = ["prettier", "eslint", "tsc"];
 
   for (const pattern of patterns) {
     try {
-      // Find processes matching the pattern that are related to this repo
-      // Using pkill with -f to match command line arguments
       execSync(
         `pkill -f "${pattern}.*--write\\|--check\\|--fix" 2>/dev/null || true`,
         {
@@ -108,7 +102,7 @@ function killOrphanedProcesses() {
         },
       );
     } catch {
-      // pkill returns non-zero if no processes matched - that's fine
+      // pkill returns non-zero when no processes matched.
     }
   }
 }
@@ -119,6 +113,7 @@ function printRecoveryPointers() {
 \x1b[33mRecovery:\x1b[0m
   1. Rerun the right stage:
      - \x1b[36mnpm run harness:iterate\x1b[0m (format + lint fix on changed files)
+     - \x1b[36mnpm run harness:post -- --staged\x1b[0m (staged commit intent gate)
      - \x1b[36mnpm run harness:post\x1b[0m (medium verification: tests + policy)
      - \x1b[36mnpm run harness:ci\x1b[0m (full verification: lint + typecheck + tripwire + agents)
   2. If you didn't run prep (or you're stuck):
@@ -130,94 +125,11 @@ function printRecoveryPointers() {
 }
 
 function loadConfig() {
-  const configPath = join(HARNESS_ROOT, "config.yml");
-  if (!existsSync(configPath)) {
-    throw new Error(`Config not found: ${configPath}`);
-  }
-  // Simple YAML parser for our limited structure
-  const content = readFileSync(configPath, "utf-8");
-  return parseSimpleYaml(content);
-}
-
-function parseSimpleYaml(content) {
-  const config = { stages: {}, globs: {} };
-  let currentSection = null;
-  let currentStage = null;
-  let currentGlob = null;
-
-  const lines = content.split("\n");
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-
-    if (trimmed === "stages:") {
-      currentSection = "stages";
-      continue;
-    }
-    if (trimmed === "globs:") {
-      currentSection = "globs";
-      continue;
-    }
-
-    if (currentSection === "stages") {
-      const stageMatch = trimmed.match(/^(\w+):$/);
-      if (stageMatch && !trimmed.includes("command")) {
-        currentStage = stageMatch[1];
-        config.stages[currentStage] = [];
-        continue;
-      }
-
-      if (currentStage && trimmed.startsWith("- command:")) {
-        const cmd = trimmed
-          .replace("- command:", "")
-          .trim()
-          .replace(/^["']|["']$/g, "");
-        config.stages[currentStage].push({ command: cmd, files: "all" });
-        continue;
-      }
-
-      if (currentStage && trimmed.startsWith("files:")) {
-        const lastCmd =
-          config.stages[currentStage][config.stages[currentStage].length - 1];
-        if (lastCmd) {
-          lastCmd.files = trimmed.replace("files:", "").trim();
-        }
-        continue;
-      }
-    }
-
-    if (currentSection === "globs") {
-      const globKeyMatch = trimmed.match(/^(\w+):(.*)$/);
-      if (globKeyMatch) {
-        const key = globKeyMatch[1];
-        const value = globKeyMatch[2].trim();
-        if (value && value !== "") {
-          // Single-line value (learned/decisions)
-          config.globs[key] = value.replace(/^["']|["']$/g, "");
-        } else {
-          // Multi-line array
-          currentGlob = key;
-          config.globs[key] = [];
-        }
-        continue;
-      }
-
-      if (currentGlob && trimmed.startsWith("-")) {
-        const pattern = trimmed
-          .slice(1)
-          .trim()
-          .replace(/^["']|["']$/g, "");
-        config.globs[currentGlob].push(pattern);
-      }
-    }
-  }
-
-  return config;
+  return loadHarnessConfig({ harnessRoot: HARNESS_ROOT });
 }
 
 function getChangedFiles() {
   try {
-    // Get staged files
     const staged = execSync("git diff --cached --name-only", {
       cwd: REPO_ROOT,
       encoding: "utf-8",
@@ -226,7 +138,6 @@ function getChangedFiles() {
       .split("\n")
       .filter(Boolean);
 
-    // Get unstaged modified files
     const unstaged = execSync("git diff --name-only", {
       cwd: REPO_ROOT,
       encoding: "utf-8",
@@ -235,7 +146,6 @@ function getChangedFiles() {
       .split("\n")
       .filter(Boolean);
 
-    // Get untracked files
     const untracked = execSync("git ls-files --others --exclude-standard", {
       cwd: REPO_ROOT,
       encoding: "utf-8",
@@ -250,31 +160,125 @@ function getChangedFiles() {
   }
 }
 
-function runCommand(command, files = "all") {
-  const start = Date.now();
-  const changedFiles = files === "changed" ? getChangedFiles() : [];
+function filterRelevantChangedFiles(
+  changedFiles,
+  fileExists = (file) => existsSync(join(REPO_ROOT, file)),
+) {
+  return changedFiles.filter(
+    (file) =>
+      fileExists(file) &&
+      (file.endsWith(".ts") ||
+        file.endsWith(".tsx") ||
+        file.endsWith(".js") ||
+        file.endsWith(".jsx") ||
+        file.endsWith(".json") ||
+        file.endsWith(".md") ||
+        file.endsWith(".mjs") ||
+        file.endsWith(".yml") ||
+        file.endsWith(".yaml")),
+  );
+}
 
+function prepareCommand(command, files = "all") {
+  const changedFiles = files === "changed" ? getChangedFiles() : [];
   if (files === "changed") {
     if (changedFiles.length === 0) {
       if (VERBOSE) logInfo(`Skipping (no changed files): ${command}`);
-      return { success: true, output: "", duration: 0 };
+      return {
+        command,
+        skipped: true,
+        result: { success: true, output: "", duration: 0 },
+      };
     }
-    // Filter to relevant files for the command
-    const relevantFiles = changedFiles.filter(
-      (f) =>
-        f.endsWith(".ts") ||
-        f.endsWith(".tsx") ||
-        f.endsWith(".js") ||
-        f.endsWith(".jsx") ||
-        f.endsWith(".json") ||
-        f.endsWith(".md"),
-    );
+    const relevantFiles = filterRelevantChangedFiles(changedFiles);
     if (relevantFiles.length === 0) {
       if (VERBOSE) logInfo(`Skipping (no relevant files): ${command}`);
-      return { success: true, output: "", duration: 0 };
+      return {
+        command,
+        skipped: true,
+        result: { success: true, output: "", duration: 0 },
+      };
     }
     command = `${command} ${relevantFiles.join(" ")}`;
   }
+
+  return { command, skipped: false };
+}
+
+function extractDisplayName(command) {
+  let displayName = command.split(" ")[0];
+  if (displayName === "node") {
+    displayName = command.split(" ")[1].split("/").pop();
+  }
+  return displayName;
+}
+
+function extractEssentialLines(output) {
+  const lines = output.split("\n");
+  return lines.filter((line) => {
+    const trimmed = line.trim();
+    return (
+      trimmed.startsWith("✓ Rule") ||
+      trimmed.startsWith("✗ Rule") ||
+      trimmed.startsWith("✓ Policy") ||
+      trimmed.startsWith("✓ All changes") ||
+      trimmed.startsWith("✓ All entries") ||
+      trimmed.startsWith("[TRIPWIRE:PASS]") ||
+      trimmed.startsWith("[TRIPWIRE:FAIL]") ||
+      trimmed.includes("Verdict:") ||
+      trimmed.startsWith("Severity:") ||
+      trimmed.startsWith("✗ Review failed") ||
+      trimmed.includes("INTEGRITY BREACH")
+    );
+  });
+}
+
+function finalizeFailedCommand({ command, error, start }) {
+  const stdout = error.stdout?.toString() || "";
+  const stderr = error.stderr?.toString() || "";
+  const duration = Date.now() - start;
+
+  const wasTerminated =
+    error.signal === "SIGTERM" ||
+    error.signal === "SIGKILL" ||
+    stderr.toLowerCase().includes("terminated") ||
+    stderr.toLowerCase().includes("killed");
+
+  if (wasTerminated) {
+    logError(`Command was terminated externally: ${command}`);
+    log("\n\x1b[33m⚠ PROCESS COLLISION DETECTED\x1b[0m");
+    log("Another harness instance may have killed this process.");
+    log("\x1b[36m→ ACTION: Simply rerun the command. This is safe.\x1b[0m\n");
+    return {
+      success: false,
+      output: stdout + stderr,
+      duration,
+      terminated: true,
+    };
+  }
+
+  logError(`Command failed: ${command}`);
+  if (stdout) {
+    log("\n--- stdout ---");
+    log(stdout);
+  }
+  if (stderr) {
+    log("\n--- stderr ---");
+    log(stderr);
+  }
+  log("--------------\n");
+
+  return { success: false, output: stdout + stderr, duration };
+}
+
+function runCommand(command, files = "all") {
+  const start = Date.now();
+  const prepared = prepareCommand(command, files);
+  if (prepared.skipped) {
+    return prepared.result;
+  }
+
+  command = prepared.command;
 
   if (VERBOSE) {
     log(`\n\x1b[90m$ ${command}\x1b[0m`);
@@ -287,104 +291,111 @@ function runCommand(command, files = "all") {
         stdio: "inherit",
         shell: true,
       });
-      const duration = Date.now() - start;
-      return { success: true, output: "", duration };
-    } else {
-      // Standard mode: capture output, print ONLY essential status
-      // Note: stdio 'pipe' captures output without printing it
-      const output = execSync(command, {
-        cwd: REPO_ROOT,
-        encoding: "utf-8",
-        stdio: "pipe",
-        shell: true,
-      });
-
-      // Extract only the most essential lines for visual heartbeat
-      const lines = output.split("\n");
-      const essentialLines = lines.filter((line) => {
-        const trimmed = line.trim();
-        // Only show: Rule pass/fail, Verdict, final summary
-        return (
-          trimmed.startsWith("✓ Rule") ||
-          trimmed.startsWith("✗ Rule") ||
-          trimmed.startsWith("✓ Policy") ||
-          trimmed.startsWith("✓ All changes") ||
-          trimmed.startsWith("✓ All entries") ||
-          trimmed.includes("Verdict:") ||
-          trimmed.startsWith("Severity:") ||
-          trimmed.startsWith("✗ Review failed") ||
-          trimmed.includes("INTEGRITY BREACH")
-        );
-      });
-
-      if (essentialLines.length > 0) {
-        log(essentialLines.join("\n"));
-      }
-
-      return { success: true, output, duration: Date.now() - start };
+      return { success: true, output: "", duration: Date.now() - start };
     }
+
+    logInfo(`Running ${extractDisplayName(command)}...`);
+    const output = execSync(command, {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+      stdio: "pipe",
+      shell: true,
+    });
+
+    const essentialLines = extractEssentialLines(output);
+    if (essentialLines.length > 0) {
+      log(essentialLines.join("\n"));
+    }
+
+    return { success: true, output, duration: Date.now() - start };
   } catch (error) {
-    // FAIL CASE: Print everything explicitly
-    const stdout = error.stdout?.toString() || "";
-    const stderr = error.stderr?.toString() || "";
-
-    const duration = Date.now() - start;
-
-    // Detect if process was killed externally (SIGTERM/SIGKILL)
-    const wasTerminated =
-      error.signal === "SIGTERM" ||
-      error.signal === "SIGKILL" ||
-      stderr.toLowerCase().includes("terminated") ||
-      stderr.toLowerCase().includes("killed");
-
-    if (wasTerminated) {
-      logError(`Command was terminated externally: ${command}`);
-      log("\n\x1b[33m⚠️  PROCESS COLLISION DETECTED\x1b[0m");
-      log("Another harness instance may have killed this process.");
-      log("\x1b[36m→ ACTION: Simply rerun the command. This is safe.\x1b[0m\n");
-      return {
-        success: false,
-        output: stdout + stderr,
-        duration,
-        terminated: true,
-      };
-    }
-
-    // BUBBLE UP ERROR SINK -> LOG IMMEDIATELY
-    logError(`Command failed: ${command}`);
-    if (stdout) {
-      log("\n--- stdout ---");
-      log(stdout);
-    }
-    if (stderr) {
-      log("\n--- stderr ---");
-      log(stderr);
-    }
-    log("--------------\n");
-
-    return { success: false, output: stdout + stderr, duration };
+    return finalizeFailedCommand({ command, error, start });
   }
 }
 
-/**
- * Async version of runCommand for parallel execution.
- * Returns a Promise that resolves to { success, output, command }.
- */
-// ============================================================================
-// Commands
-// ============================================================================
+function runCommandAsync(command, files = "all") {
+  const start = Date.now();
+  const prepared = prepareCommand(command, files);
+  if (prepared.skipped) {
+    return Promise.resolve(prepared.result);
+  }
+
+  command = prepared.command;
+
+  if (VERBOSE) {
+    log(`\n\x1b[90m$ ${command}\x1b[0m`);
+  } else {
+    logInfo(`Running ${extractDisplayName(command)}...`);
+  }
+
+  return new Promise((resolvePromise) => {
+    const child = exec(command, {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+      shell: true,
+      maxBuffer: 50 * 1024 * 1024,
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk;
+      if (VERBOSE) process.stdout.write(chunk);
+    });
+
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk;
+      if (VERBOSE) process.stderr.write(chunk);
+    });
+
+    child.on("close", (code, signal) => {
+      if (code === 0) {
+        if (!VERBOSE) {
+          const essentialLines = extractEssentialLines(stdout);
+          if (essentialLines.length > 0) {
+            log(essentialLines.join("\n"));
+          }
+        }
+
+        resolvePromise({
+          success: true,
+          output: stdout,
+          duration: Date.now() - start,
+        });
+        return;
+      }
+
+      resolvePromise(
+        finalizeFailedCommand({
+          command,
+          error: { stdout, stderr, signal },
+          start,
+        }),
+      );
+    });
+
+    child.on("error", (error) => {
+      resolvePromise(
+        finalizeFailedCommand({
+          command,
+          error: { ...error, stdout, stderr },
+          start,
+        }),
+      );
+    });
+  });
+}
 
 function cmdPrep() {
   const harnessDocPath = join(HARNESS_ROOT, "Harness.md");
 
   if (!existsSync(harnessDocPath)) {
-    logError("Harness.md not found at " + harnessDocPath);
+    logError(`Harness.md not found at ${harnessDocPath}`);
     process.exit(1);
   }
 
   const content = readFileSync(harnessDocPath, "utf-8");
-
-  // Extract MUST block
   const mustMatch = content.match(
     /<!-- BEGIN MUST -->([\s\S]*?)<!-- END MUST -->/,
   );
@@ -407,7 +418,6 @@ function cmdPrep() {
 
   log(mustMatch[1].trim());
 
-  // Skills summary
   const skills = listSkillMeta();
   if (skills.length > 0) {
     log(
@@ -422,17 +432,20 @@ function cmdPrep() {
     log(JSON.stringify(skills, null, 2));
   }
 
-  // Meta-Infrastructure check
+  const config = loadConfig();
+  const harnessCoreGlobs = config.globs.harnessCore || [];
   const changedFiles = getChangedFiles();
   const isHarnessWork = changedFiles.some(
-    (f) => f.startsWith(".harness/") || f.startsWith("harness-tests/"),
+    (file) =>
+      matchesAnyGlob(file, harnessCoreGlobs) ||
+      file.startsWith("harness-tests/"),
   );
 
   if (isHarnessWork) {
-    log("\n\x1b[31m⚠️  Meta-Infrastructure detected:\x1b[0m");
+    log("\n\x1b[31m⚠ Meta-infrastructure detected:\x1b[0m");
     log("\x1b[31mYou are modifying the harness itself.\x1b[0m");
     log(
-      "\x1b[31mEnsure ARCHITECTURAL changes are documented in .harness/context/history/\x1b[0m",
+      "\x1b[31mDocument harness-core changes in .harness/context/history/\x1b[0m",
     );
   }
 
@@ -451,8 +464,6 @@ function cmdPrep() {
 
 function cmdIterate() {
   log("\n\x1b[36m=== harness:iterate ===\x1b[0m");
-
-  // Clean up orphaned processes from previous failed runs (idempotency)
   killOrphanedProcesses();
 
   log("Running format + lint fix on changed files...\n");
@@ -464,7 +475,6 @@ function cmdIterate() {
   for (const step of stage) {
     if (!runCommand(step.command, step.files).success) {
       success = false;
-      // Continue anyway for iterate - we want to fix as much as possible
     }
   }
 
@@ -486,16 +496,32 @@ function isAgentCommand(command) {
   );
 }
 
-async function cmdPost() {
-  log("\n\x1b[36m=== harness:post ===\x1b[0m");
+async function cmdPost({ stagedOnly = false } = {}) {
+  log(`\n\x1b[36m=== harness:post${stagedOnly ? " --staged" : ""} ===\x1b[0m`);
 
-  // Clean up orphaned processes from previous failed runs
   killOrphanedProcesses();
   prepareDiagnosticsForRun();
 
+  if (stagedOnly) {
+    log("Running staged commit policy verification...\n");
+
+    const result = runCommand(
+      "node .harness/framework/scripts/policy-audit.mjs --staged",
+    );
+
+    if (!result.success) {
+      logError("Staged post check failed");
+      printRecoveryPointers();
+      process.exit(1);
+    }
+
+    logSuccess("Staged policy verification complete");
+    console.log("[HARNESS_VERDICT:PASS]");
+    return;
+  }
+
   const config = loadConfig();
   const stage = config.stages.post || [];
-
   const agentSteps = stage.filter((step) => isAgentCommand(step.command));
   if (agentSteps.length > 0) {
     logError("Agent scripts are CI-only. Remove them from harness:post.");
@@ -525,13 +551,14 @@ async function cmdPost() {
   if (SHOW_TIMING && results.length > 0) {
     log("\n\x1b[36m=== Execution Timing ===\x1b[0m");
     const sortedResults = [...results].sort((a, b) => b.duration - a.duration);
-    for (const r of sortedResults) {
-      let name = r.command
+    for (const result of sortedResults) {
+      let name = result.command
         .replace("node .harness/framework/scripts/", "")
         .replace(".mjs", "");
-      if (name.length > 50) name = name.substring(0, 47) + "...";
-      const seconds = (r.duration / 1000).toFixed(2);
-      log(`${name.padEnd(30)} : ${seconds}s`);
+      if (name.length > 50) {
+        name = `${name.substring(0, 47)}...`;
+      }
+      log(`${name.padEnd(30)} : ${(result.duration / 1000).toFixed(2)}s`);
     }
     log("");
   }
@@ -540,10 +567,90 @@ async function cmdPost() {
   console.log("[HARNESS_VERDICT:PASS]");
 }
 
-function cmdCi() {
+async function runCiStage(
+  stage,
+  { runner = runCommandAsync, parallelAgentReviews = false } = {},
+) {
+  const results = [];
+
+  if (!parallelAgentReviews) {
+    let ciChecksLogged = false;
+    let agentReviewsLogged = false;
+
+    for (const step of stage) {
+      const agentStep = isAgentCommand(step.command);
+      if (agentStep && !agentReviewsLogged) {
+        const agentCount = stage.filter((item) =>
+          isAgentCommand(item.command),
+        ).length;
+        log(`\n\x1b[36m▶ Agent Reviews (${agentCount})\x1b[0m`);
+        agentReviewsLogged = true;
+      }
+      if (!agentStep && !ciChecksLogged) {
+        const ciCount = stage.filter(
+          (item) => !isAgentCommand(item.command),
+        ).length;
+        log(`\n\x1b[36m▶ CI Checks (${ciCount})\x1b[0m`);
+        ciChecksLogged = true;
+      }
+
+      const result = await runner(step.command, step.files);
+      results.push({ command: step.command, duration: result.duration });
+      if (!result.success) {
+        return { success: false, failedCommand: step.command, results };
+      }
+    }
+
+    return { success: true, failedCommand: null, results };
+  }
+
+  const serialSteps = stage.filter((step) => !isAgentCommand(step.command));
+  const agentSteps = stage.filter((step) => isAgentCommand(step.command));
+
+  if (serialSteps.length > 0) {
+    log(`\n\x1b[36m▶ CI Checks (${serialSteps.length})\x1b[0m`);
+  }
+
+  for (const step of serialSteps) {
+    const result = await runner(step.command, step.files);
+    results.push({ command: step.command, duration: result.duration });
+    if (!result.success) {
+      return { success: false, failedCommand: step.command, results };
+    }
+  }
+
+  if (agentSteps.length > 0) {
+    log(`\n\x1b[36m▶ Agent Reviews (${agentSteps.length}, parallel)\x1b[0m`);
+    const agentResults = await Promise.all(
+      agentSteps.map(async (step) => {
+        const result = await runner(step.command, step.files);
+        return {
+          command: step.command,
+          success: result.success,
+          duration: result.duration,
+        };
+      }),
+    );
+    results.push(
+      ...agentResults.map(({ command, duration }) => ({ command, duration })),
+    );
+
+    const failedAgent = agentResults.find((result) => !result.success);
+    if (failedAgent) {
+      return {
+        success: false,
+        failedCommand: failedAgent.command,
+        results,
+      };
+    }
+  }
+
+  return { success: true, failedCommand: null, results };
+}
+
+async function cmdCi() {
   log("\n\x1b[36m=== harness:ci ===\x1b[0m");
 
-  // Clean up orphaned processes from previous failed runs
   killOrphanedProcesses();
   prepareDiagnosticsForRun();
 
@@ -551,13 +658,16 @@ function cmdCi() {
 
   const config = loadConfig();
   const stage = config.stages.ci || [];
+  const outcome = await runCiStage(stage, {
+    parallelAgentReviews:
+      process.env.HARNESS_PARALLEL_AGENT_REVIEWS === "1" ||
+      config.agents?.parallel_agent_reviews === true,
+  });
 
-  for (const step of stage) {
-    if (!runCommand(step.command, step.files).success) {
-      logError(`Failed: ${step.command}`);
-      printRecoveryPointers();
-      process.exit(1);
-    }
+  if (!outcome.success) {
+    logError(`Failed: ${outcome.failedCommand}`);
+    printRecoveryPointers();
+    process.exit(1);
   }
 
   logSuccess("CI verification complete");
@@ -565,6 +675,14 @@ function cmdCi() {
 
 function getCurrentDate() {
   return process.env.HARNESS_DATE || new Date().toISOString().slice(0, 10);
+}
+
+function getCurrentTimestamp() {
+  return process.env.HARNESS_TIMESTAMP || new Date().toISOString();
+}
+
+function getCurrentTimeCompact() {
+  return getCurrentTimestamp().slice(11, 16).replace(":", "");
 }
 
 function getContextRoot() {
@@ -579,7 +697,206 @@ function getHistoryDir() {
   return join(getContextRoot(), "history");
 }
 
-function getTemplatePathForType(type) {
+function getSessionsDir() {
+  return join(getContextRoot(), "sessions");
+}
+
+function toRepoRelativePath(file) {
+  const rel = relative(REPO_ROOT, file);
+  if (!rel || rel.startsWith("..")) {
+    return file;
+  }
+  return rel.replace(/\\/g, "/");
+}
+
+function resolveArtifactPath(file) {
+  return isAbsolute(file) ? file : join(REPO_ROOT, file);
+}
+
+function matchesAnyGlob(file, patterns) {
+  if (!patterns) return false;
+  const values = Array.isArray(patterns) ? patterns : [patterns];
+  return values.some((pattern) => minimatch(file, pattern));
+}
+
+function getStagedFiles() {
+  try {
+    return execSync("git diff --cached --name-only", {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    })
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function getStagedRealCodeFiles() {
+  const config = loadConfig();
+  const stagedFiles = getStagedFiles();
+  const realCodeGlobs = config.globs.realCode || [];
+  const exemptGlobs = config.globs.exempt || [];
+
+  return stagedFiles.filter(
+    (file) =>
+      matchesAnyGlob(file, realCodeGlobs) && !matchesAnyGlob(file, exemptGlobs),
+  );
+}
+
+function listMarkdownFiles(dir, files = []) {
+  if (!existsSync(dir)) return files;
+  const entries = readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      listMarkdownFiles(fullPath, files);
+    } else if (entry.isFile() && entry.name.endsWith(".md")) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+function getSessionFiles() {
+  const sessionsDir = getSessionsDir();
+  if (!existsSync(sessionsDir)) return [];
+
+  return listMarkdownFiles(sessionsDir)
+    .map((file) => toRepoRelativePath(file))
+    .sort()
+    .reverse();
+}
+
+function formatYamlValue(value) {
+  return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function serializeFrontmatter(data) {
+  const lines = ["---"];
+  for (const [key, value] of Object.entries(data)) {
+    if (Array.isArray(value)) {
+      lines.push(`${key}:`);
+      for (const item of value) {
+        lines.push(`  - ${formatYamlValue(item)}`);
+      }
+      continue;
+    }
+    lines.push(`${key}: ${formatYamlValue(value)}`);
+  }
+  lines.push("---");
+  return lines.join("\n");
+}
+
+function writeMarkdownWithFrontmatter(targetPath, data, body) {
+  const normalizedBody = body.replace(/^\n+/, "");
+  writeFileSync(
+    targetPath,
+    `${serializeFrontmatter(data)}\n\n${normalizedBody}`.trimEnd() + "\n",
+  );
+}
+
+function replaceTemplateList(template, key, values) {
+  const listValues = values.length > 0 ? values : ["NONE"];
+  const replacement = `${key}:\n${listValues
+    .map((value) => `  - ${formatYamlValue(value)}`)
+    .join("\n")}`;
+  return template.replace(
+    new RegExp(`${key}:\\n(?:\\s+- .*\\n?)+`),
+    `${replacement}\n`,
+  );
+}
+
+function formatSessionSlug(sessionFile) {
+  const baseName = basename(sessionFile, ".md");
+  return baseName.replace(/^\d{4}-\d{2}-\d{2}-\d{4}-/, "");
+}
+
+function formatSessionChoices(sessionFiles) {
+  return sessionFiles
+    .map((file) => `  - ${file} (slug: ${formatSessionSlug(file)})`)
+    .join("\n");
+}
+
+function getCurrentDateSessionFiles(sessionFiles) {
+  const datePrefix = `${getCurrentDate()}-`;
+  return sessionFiles.filter((file) => basename(file).startsWith(datePrefix));
+}
+
+function resolveSessionRefs(sessionFiles, sessionSlug = null) {
+  if (sessionSlug) {
+    const matches = sessionFiles.filter(
+      (file) => formatSessionSlug(file) === sessionSlug,
+    );
+
+    if (matches.length === 1) {
+      return matches;
+    }
+
+    if (matches.length > 1) {
+      throw new Error(
+        `Multiple sessions matched --session-slug ${sessionSlug}.\n\n${formatSessionChoices(
+          matches,
+        )}\n\nPick a more specific slug.`,
+      );
+    }
+
+    if (sessionFiles.length === 0) {
+      throw new Error(
+        `No session matched --session-slug ${sessionSlug}. No session artifacts exist yet.`,
+      );
+    }
+
+    throw new Error(
+      `No session matched --session-slug ${sessionSlug}.\n\nAvailable sessions:\n${formatSessionChoices(
+        sessionFiles,
+      )}`,
+    );
+  }
+
+  const currentDateSessionFiles = getCurrentDateSessionFiles(sessionFiles);
+  if (currentDateSessionFiles.length === 1) {
+    return currentDateSessionFiles;
+  }
+  if (currentDateSessionFiles.length > 1) {
+    throw new Error(
+      `Multiple session files exist for ${getCurrentDate()}. Re-run with --session-slug <session-slug> so the new history entry links to the correct task.\n\nToday's sessions:\n${formatSessionChoices(
+        currentDateSessionFiles,
+      )}`,
+    );
+  }
+
+  return ["NONE"];
+}
+
+function linkHistoryToSession(sessionFile, historyFile) {
+  const targetPath = resolveArtifactPath(sessionFile);
+  if (!existsSync(targetPath)) return;
+
+  const content = readFileSync(targetPath, "utf-8");
+  const { data, body } = parseFrontmatter(content);
+  if (!data) return;
+
+  const relatedHistory = normalizeList(data.related_history).filter(
+    (value) => value !== "NONE",
+  );
+  if (!relatedHistory.includes(historyFile)) {
+    relatedHistory.push(historyFile);
+  }
+
+  writeMarkdownWithFrontmatter(
+    targetPath,
+    {
+      ...data,
+      related_history: relatedHistory.length > 0 ? relatedHistory : ["NONE"],
+    },
+    body,
+  );
+}
+
+function getHistoryEntryTemplatePath(type) {
   if (type === "meta") {
     return join(HARNESS_ROOT, "framework", "templates", "history-meta.md");
   }
@@ -589,7 +906,34 @@ function getTemplatePathForType(type) {
   return join(HARNESS_ROOT, "framework", "templates", "history-decision.md");
 }
 
-function cmdNewEntry(slug, type) {
+function renderHistoryEntryTemplate({
+  slug,
+  type,
+  date = getCurrentDate(),
+  relatedEntries = ["NONE"],
+  affectedFiles = ["NONE"],
+  sessionRefs = ["NONE"],
+}) {
+  const templatePath = getHistoryEntryTemplatePath(type);
+  if (!existsSync(templatePath)) {
+    throw new Error(`Template not found: ${templatePath}`);
+  }
+
+  let template = readFileSync(templatePath, "utf-8");
+  template = template.replace(/{{date}}/g, date);
+  template = template.replace(/{{slug}}/g, slug);
+  template = template.replace(/{{type}}/g, type);
+  template = replaceTemplateList(template, "related_entries", relatedEntries);
+  template = replaceTemplateList(template, "affected_files", affectedFiles);
+  template = replaceTemplateList(template, "session_refs", sessionRefs);
+  return template;
+}
+
+function getSessionTemplatePath() {
+  return join(HARNESS_ROOT, "framework", "templates", "session.md");
+}
+
+function cmdNewEntry(slug, type, sessionSlug = null) {
   if (!type || !HISTORY_TYPES.has(type)) {
     logError(
       `Invalid or missing type. Allowed: ${Array.from(HISTORY_TYPES).join(", ")}`,
@@ -601,7 +945,70 @@ function cmdNewEntry(slug, type) {
   const filename = `${date}-${slug}.md`;
   const targetDir = getHistoryDir();
   const targetPath = join(targetDir, filename);
-  const templatePath = getTemplatePathForType(type);
+
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
+
+  if (existsSync(targetPath)) {
+    logError(`File already exists: ${targetPath}`);
+    process.exit(1);
+  }
+
+  try {
+    const sessionFiles = getSessionFiles();
+    const sessionRefs = resolveSessionRefs(sessionFiles, sessionSlug);
+    const stagedRealCodeFiles = getStagedRealCodeFiles();
+
+    const template = renderHistoryEntryTemplate({
+      slug,
+      type,
+      date,
+      relatedEntries: ["NONE"],
+      affectedFiles:
+        stagedRealCodeFiles.length > 0 ? stagedRealCodeFiles : ["NONE"],
+      sessionRefs,
+    });
+
+    writeFileSync(targetPath, template);
+
+    if (sessionRefs.length === 1 && sessionRefs[0] !== "NONE") {
+      linkHistoryToSession(
+        sessionRefs[0],
+        join(".harness", "context", "history", filename),
+      );
+    }
+
+    logSuccess(`Created: ${targetPath}`);
+    if (sessionRefs.length === 1 && sessionRefs[0] === "NONE") {
+      logWarning(
+        'No session linked. Run `npm run harness:new:session -- --slug "task-name"` if this change needs commit-time session coverage.',
+      );
+    }
+    log(
+      "\nDon't forget to fill in the required v3 sections, affected_files, and validation details.",
+    );
+  } catch (error) {
+    logError(error?.message || String(error));
+    process.exit(1);
+  }
+}
+
+function cmdNewMeta(slug, sessionSlug = null) {
+  cmdNewEntry(slug, "meta", sessionSlug);
+}
+
+function cmdNewSession(slug) {
+  if (!slug) {
+    logError("Usage: harness new:session --slug <slug>");
+    process.exit(1);
+  }
+
+  const date = getCurrentDate();
+  const filename = `${date}-${getCurrentTimeCompact()}-${slug}.md`;
+  const targetDir = getSessionsDir();
+  const targetPath = join(targetDir, filename);
+  const templatePath = getSessionTemplatePath();
 
   if (!existsSync(targetDir)) {
     mkdirSync(targetDir, { recursive: true });
@@ -619,30 +1026,12 @@ function cmdNewEntry(slug, type) {
 
   let template = readFileSync(templatePath, "utf-8");
   template = template.replace(/{{date}}/g, date);
+  template = template.replace(/{{started_at}}/g, getCurrentTimestamp());
   template = template.replace(/{{slug}}/g, slug);
-  template = template.replace(/{{type}}/g, type);
 
   writeFileSync(targetPath, template);
   logSuccess(`Created: ${targetPath}`);
-  log("\nDon't forget to fill in Summary and Context sections");
-}
-
-function cmdNewMeta(slug) {
-  cmdNewEntry(slug, "meta");
-}
-
-function listMarkdownFiles(dir, files = []) {
-  if (!existsSync(dir)) return files;
-  const entries = readdirSync(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      listMarkdownFiles(fullPath, files);
-    } else if (entry.isFile() && entry.name.endsWith(".md")) {
-      files.push(fullPath);
-    }
-  }
-  return files;
+  log("\nUpdate the session as the task evolves; there is no close step.");
 }
 
 function extractLegacySection(content, heading) {
@@ -673,8 +1062,6 @@ function parseLegacyTags(sectionText) {
 }
 
 function buildFrontmatter({ date, type, schema, searchTerms, related, tags }) {
-  const formatYamlValue = (value) =>
-    `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
   const lines = [
     "---",
     `date: ${date}`,
@@ -751,7 +1138,7 @@ function cmdMigrateHistory() {
   }
 
   for (const [baseName, file] of targets.entries()) {
-    const relative = file.replace(contextRoot + "/", "");
+    const relative = file.replace(`${contextRoot}/`, "");
     let type = null;
     if (relative.startsWith("learned/")) {
       type = "fix";
@@ -786,8 +1173,7 @@ function cmdMigrateHistory() {
       tags: tags.length > 0 ? tags : ["#history"],
     });
 
-    const updatedContent = updateLegacyLinks(content);
-    const migratedContent = `${frontmatter}\n\n${updatedContent}`;
+    const migratedContent = `${frontmatter}\n\n${updateLegacyLinks(content)}`;
     const targetPath = join(historyDir, baseName);
     writeFileSync(targetPath, migratedContent);
     rmSync(file);
@@ -797,135 +1183,212 @@ function cmdMigrateHistory() {
   logSuccess("History migration complete");
 }
 
-// ============================================================================
-// Main
-// ============================================================================
+function main() {
+  const args = process.argv.slice(2);
+  const command = args[0];
 
-const args = process.argv.slice(2);
-const command = args[0];
+  let slug = null;
+  let type = null;
+  let sessionSlug = null;
+  let geminiModel = null;
+  let codexModel = null;
+  let codexReasoning = null;
+  let copilotModel = null;
+  let copilotReasoning = null;
+  let parallelAgentReviews = false;
+  let providerOverride = null;
+  let stagedOnly = false;
 
-// Parse additional flags
-let slug = null;
-let type = null;
-let SHOW_TIMING = false;
-let geminiModel = null;
-let codexModel = null;
-let codexReasoning = null;
-let providerOverride = null;
-for (let i = 1; i < args.length; i++) {
-  if (args[i] === "--slug" && args[i + 1]) {
-    slug = args[i + 1];
-    i++;
-  }
-  if (args[i] === "--type" && args[i + 1]) {
-    type = args[i + 1];
-    i++;
-  }
-  if (args[i] === "--timing") {
-    SHOW_TIMING = true;
-  }
-  if (args[i] === "--gemini-model" && args[i + 1]) {
-    geminiModel = args[i + 1];
-    i++;
-  }
-  if (args[i] === "--codex-model" && args[i + 1]) {
-    codexModel = args[i + 1];
-    i++;
-  }
-  if (args[i] === "--codex-reasoning" && args[i + 1]) {
-    codexReasoning = args[i + 1];
-    i++;
-  }
-  if (args[i] === "--provider" && args[i + 1]) {
-    providerOverride = args[i + 1];
-    i++;
-  }
-  if (args[i] === "--codex") {
-    providerOverride = "codex";
-  }
-}
-
-if (geminiModel) {
-  process.env.HARNESS_GEMINI_MODEL = geminiModel;
-}
-if (codexModel) {
-  process.env.HARNESS_CODEX_MODEL = codexModel;
-}
-if (codexReasoning) {
-  process.env.HARNESS_CODEX_REASONING = codexReasoning;
-}
-if (providerOverride) {
-  process.env.HARNESS_PROVIDER = providerOverride;
-}
-
-switch (command) {
-  case "prep":
-    cmdPrep();
-    break;
-
-  case "iterate":
-    cmdIterate();
-    break;
-
-  case "post":
-    cmdPost().catch((err) => {
-      logError(`Post failed: ${err.message}`);
-      process.exit(1);
-    });
-    break;
-
-  case "ci":
-    cmdCi();
-    break;
-
-  case "new:entry":
-    if (!slug || !type) {
-      logError("Usage: harness new:entry --slug <slug> --type <type>");
-      process.exit(1);
+  for (let i = 1; i < args.length; i++) {
+    if (args[i] === "--slug" && args[i + 1]) {
+      slug = args[i + 1];
+      i++;
+      continue;
     }
-    cmdNewEntry(slug, type);
-    break;
-
-  case "new:meta":
-    if (!slug) {
-      logError("Usage: harness new:meta --slug <slug>");
-      process.exit(1);
+    if (args[i] === "--type" && args[i + 1]) {
+      type = args[i + 1];
+      i++;
+      continue;
     }
-    cmdNewMeta(slug);
-    break;
+    if (args[i] === "--session-slug" && args[i + 1]) {
+      sessionSlug = args[i + 1];
+      i++;
+      continue;
+    }
+    if (args[i] === "--timing") {
+      SHOW_TIMING = true;
+      continue;
+    }
+    if (args[i] === "--gemini-model" && args[i + 1]) {
+      geminiModel = args[i + 1];
+      i++;
+      continue;
+    }
+    if (args[i] === "--codex-model" && args[i + 1]) {
+      codexModel = args[i + 1];
+      i++;
+      continue;
+    }
+    if (args[i] === "--codex-reasoning" && args[i + 1]) {
+      codexReasoning = args[i + 1];
+      i++;
+      continue;
+    }
+    if (args[i] === "--copilot-model" && args[i + 1]) {
+      copilotModel = args[i + 1];
+      i++;
+      continue;
+    }
+    if (args[i] === "--copilot-reasoning" && args[i + 1]) {
+      copilotReasoning = args[i + 1];
+      i++;
+      continue;
+    }
+    if (args[i] === "--provider" && args[i + 1]) {
+      providerOverride = args[i + 1];
+      i++;
+      continue;
+    }
+    if (args[i] === "--codex") {
+      providerOverride = "codex";
+      continue;
+    }
+    if (args[i] === "--copilot") {
+      providerOverride = "copilot";
+      continue;
+    }
+    if (args[i] === "--parallel-agent-reviews") {
+      parallelAgentReviews = true;
+      continue;
+    }
+    if (args[i] === "--staged") {
+      stagedOnly = true;
+    }
+  }
 
-  case "migrate:history":
-    cmdMigrateHistory();
-    break;
+  if (geminiModel) process.env.HARNESS_GEMINI_MODEL = geminiModel;
+  if (codexModel) process.env.HARNESS_CODEX_MODEL = codexModel;
+  if (codexReasoning) process.env.HARNESS_CODEX_REASONING = codexReasoning;
+  if (copilotModel) process.env.HARNESS_COPILOT_MODEL = copilotModel;
+  if (copilotReasoning) {
+    process.env.HARNESS_COPILOT_REASONING = copilotReasoning;
+  }
+  if (parallelAgentReviews) {
+    process.env.HARNESS_PARALLEL_AGENT_REVIEWS = "1";
+  }
+  if (providerOverride) process.env.HARNESS_PROVIDER = providerOverride;
 
-  default:
-    log("Harness CLI");
-    log("");
-    log("Usage: harness <command> [options]");
-    log("");
-    log("Commands:");
-    log("  prep              Print MUST block from Harness.md");
-    log("  iterate           Format + lint fix (changed files)");
-    log("  post              Medium verification (tests + policy)");
-    log(
-      "  ci                Full CI gate (lint + typecheck + tripwire + agents)",
-    );
-    log("  new:entry         Create a history entry (requires --type)");
-    log("  new:meta          Create a harness meta entry");
-    log("  migrate:history   Move legacy entries into history");
-    log("");
-    log("Options:");
-    log(
-      "  --verbose, -v     Print full output (default: quiet, prints only on failure)",
-    );
-    log("  --slug <slug>     Slug for new entries (required for new:*)");
-    log("  --type <type>     Entry type (required for new:entry)");
-    log("  --gemini-model <model>  Gemini model override for agent steps");
-    log("  --codex                Use Codex CLI for agent steps");
-    log("  --codex-model <model>  Codex model override for agent steps");
-    log(
-      "  --codex-reasoning <level>  Codex reasoning override for agent steps",
-    );
-    log("  --provider <name>       Provider override for agent steps");
-    process.exit(1);
+  switch (command) {
+    case "prep":
+      cmdPrep();
+      break;
+    case "iterate":
+      cmdIterate();
+      break;
+    case "post":
+      cmdPost({ stagedOnly }).catch((error) => {
+        logError(`Post failed: ${error.message}`);
+        process.exit(1);
+      });
+      break;
+    case "ci":
+      cmdCi().catch((error) => {
+        logError(`CI failed: ${error.message}`);
+        process.exit(1);
+      });
+      break;
+    case "new:entry":
+      if (!slug || !type) {
+        logError("Usage: harness new:entry --slug <slug> --type <type>");
+        process.exit(1);
+      }
+      cmdNewEntry(slug, type, sessionSlug);
+      break;
+    case "new:meta":
+      if (!slug) {
+        logError("Usage: harness new:meta --slug <slug>");
+        process.exit(1);
+      }
+      cmdNewMeta(slug, sessionSlug);
+      break;
+    case "new:session":
+      if (!slug) {
+        logError("Usage: harness new:session --slug <slug>");
+        process.exit(1);
+      }
+      cmdNewSession(slug);
+      break;
+    case "migrate:history":
+      cmdMigrateHistory();
+      break;
+    default:
+      log("Harness CLI");
+      log("");
+      log("Usage: harness <command> [options]");
+      log("");
+      log("Commands:");
+      log("  prep              Print MUST block from Harness.md");
+      log("  iterate           Format + lint fix (changed files)");
+      log("  post              Medium verification (tests + policy)");
+      log(
+        "  ci                Full CI gate (lint + typecheck + tripwire + agents)",
+      );
+      log("  new:entry         Create a history entry (requires --type)");
+      log("  new:meta          Create a harness meta entry");
+      log("  new:session       Create a task session entry");
+      log("  migrate:history   Move legacy entries into history");
+      log("");
+      log("Options:");
+      log(
+        "  --verbose, -v     Print full output (default: quiet, prints only on failure)",
+      );
+      log("  --slug <slug>     Slug for new entries (required for new:*)");
+      log(
+        "  --session-slug <slug>  Explicit session slug to link when multiple candidate sessions exist",
+      );
+      log("  --type <type>     Entry type (required for new:entry)");
+      log(
+        "  --staged          Run staged-only commit policy verification for post",
+      );
+      log(
+        "  --parallel-agent-reviews    Run CI agent review steps in parallel",
+      );
+      log(
+        "  --gemini-model <model>      Gemini model override for agent steps",
+      );
+      log("  --codex                      Use Codex CLI for agent steps");
+      log(
+        "  --codex-model <model>        Codex model override for agent steps",
+      );
+      log(
+        "  --codex-reasoning <level>   Codex reasoning override for agent steps",
+      );
+      log(
+        "  --copilot                    Use GitHub Copilot CLI for agent steps",
+      );
+      log(
+        "  --copilot-model <model>     GitHub Copilot model override for agent steps",
+      );
+      log(
+        "  --copilot-reasoning <level> GitHub Copilot reasoning override for agent steps",
+      );
+      log("  --provider <name>            Provider override for agent steps");
+      process.exit(1);
+  }
 }
+
+const invokedPath = process.argv[1] ? resolve(process.argv[1]) : null;
+const isDirectExecution =
+  invokedPath !== null && import.meta.url === pathToFileURL(invokedPath).href;
+
+if (isDirectExecution) {
+  main();
+}
+
+export {
+  filterRelevantChangedFiles,
+  formatSessionChoices,
+  renderHistoryEntryTemplate,
+  resolveSessionRefs,
+  runCiStage,
+};

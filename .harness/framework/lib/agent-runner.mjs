@@ -8,6 +8,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, dirname, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadHarnessConfig } from "./harness-config.mjs";
 import { getProvider } from "../providers/index.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -48,6 +49,88 @@ function normalizeDiagnosticValue(value) {
   }
 }
 
+function buildProviderConfig(providerName, providerConfig, config) {
+  const mergedProviderConfig = {
+    ...providerConfig,
+    workspaceRoot: REPO_ROOT,
+  };
+
+  if (providerName === "gemini") {
+    if (process.env.HARNESS_GEMINI_MODEL && !mergedProviderConfig.model) {
+      mergedProviderConfig.model = process.env.HARNESS_GEMINI_MODEL;
+    }
+    if (process.env.HARNESS_GEMINI_HOME && !mergedProviderConfig.homeDir) {
+      mergedProviderConfig.homeDir = process.env.HARNESS_GEMINI_HOME;
+    }
+    if (config.agents?.gemini_model && !mergedProviderConfig.model) {
+      mergedProviderConfig.model = config.agents.gemini_model;
+    }
+    if (config.agents?.gemini_home && !mergedProviderConfig.homeDir) {
+      mergedProviderConfig.homeDir = config.agents.gemini_home;
+    }
+    if (config.agents?.gemini_home_seed === false) {
+      mergedProviderConfig.seedHome = false;
+    }
+  }
+
+  if (providerName === "codex") {
+    if (process.env.HARNESS_CODEX_MODEL && !mergedProviderConfig.model) {
+      mergedProviderConfig.model = process.env.HARNESS_CODEX_MODEL;
+    }
+    if (process.env.HARNESS_CODEX_REASONING) {
+      mergedProviderConfig.reasoningEffort =
+        process.env.HARNESS_CODEX_REASONING;
+    }
+    if (config.agents?.codex_model && !mergedProviderConfig.model) {
+      mergedProviderConfig.model = config.agents.codex_model;
+    }
+    if (config.agents?.codex_reasoning) {
+      mergedProviderConfig.reasoningEffort = config.agents.codex_reasoning;
+    }
+  }
+
+  if (providerName === "copilot") {
+    if (process.env.HARNESS_COPILOT_MODEL && !mergedProviderConfig.model) {
+      mergedProviderConfig.model = process.env.HARNESS_COPILOT_MODEL;
+    }
+    if (process.env.HARNESS_COPILOT_REASONING) {
+      mergedProviderConfig.reasoningEffort =
+        process.env.HARNESS_COPILOT_REASONING;
+    }
+    if (
+      process.env.HARNESS_COPILOT_CONFIG_DIR &&
+      !mergedProviderConfig.configDir
+    ) {
+      mergedProviderConfig.configDir = process.env.HARNESS_COPILOT_CONFIG_DIR;
+    }
+    if (config.agents?.copilot_model && !mergedProviderConfig.model) {
+      mergedProviderConfig.model = config.agents.copilot_model;
+    }
+    if (config.agents?.copilot_reasoning) {
+      mergedProviderConfig.reasoningEffort = config.agents.copilot_reasoning;
+    }
+    if (config.agents?.copilot_config_dir && !mergedProviderConfig.configDir) {
+      mergedProviderConfig.configDir = config.agents.copilot_config_dir;
+    }
+  }
+
+  return mergedProviderConfig;
+}
+
+function resolveProviderSequence({ providerOverride, config }) {
+  if (providerOverride) {
+    return [providerOverride];
+  }
+
+  if (process.env.HARNESS_PROVIDER) {
+    return [process.env.HARNESS_PROVIDER];
+  }
+
+  const primaryProvider = config.agents?.provider || "http";
+  const fallbackProvider = config.agents?.fallback_provider;
+  return [...new Set([primaryProvider, fallbackProvider].filter(Boolean))];
+}
+
 export function recordAgentFailure({ name, provider, error, rateLimited }) {
   try {
     const overrideDir = process.env.HARNESS_DIAGNOSTICS_DIR;
@@ -76,52 +159,27 @@ export function recordAgentFailure({ name, provider, error, rateLimited }) {
  * Load harness config
  */
 function loadConfig() {
-  const configPath = join(HARNESS_ROOT, "config.yml");
-  if (!existsSync(configPath)) {
-    return { agents: { provider: "http" } };
-  }
-
-  const content = readFileSync(configPath, "utf-8");
-  const lines = content.split("\n");
-  const agents = {};
-  let inAgents = false;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-
-    if (!line.startsWith(" ") && trimmed === "agents:") {
-      inAgents = true;
-      continue;
-    }
-    if (!line.startsWith(" ") && trimmed.endsWith(":")) {
-      inAgents = false;
-      continue;
-    }
-
-    if (inAgents) {
-      const kvMatch = trimmed.match(/^(\w+):\s*(.+)$/);
-      if (kvMatch) {
-        const key = kvMatch[1];
-        let value = kvMatch[2].replace(/^["']|["']$/g, "");
-        if (value === "true") value = true;
-        if (value === "false") value = false;
-        agents[key] = value;
-      }
-    }
-  }
-
+  const config = loadHarnessConfig({
+    harnessRoot: HARNESS_ROOT,
+    requireBaseConfig: false,
+  });
   return {
+    ...config,
     agents: {
-      provider: agents.provider || "http",
-      gemini_home: agents.gemini_home || null,
-      gemini_model: agents.gemini_model || null,
-      codex_model: agents.codex_model || null,
-      codex_reasoning: agents.codex_reasoning || null,
+      provider: config.agents?.provider || "http",
+      fallback_provider: config.agents?.fallback_provider || null,
+      gemini_home: config.agents?.gemini_home || null,
+      gemini_model: config.agents?.gemini_model || null,
+      codex_model: config.agents?.codex_model || null,
+      codex_reasoning: config.agents?.codex_reasoning || null,
+      copilot_model: config.agents?.copilot_model || null,
+      copilot_reasoning: config.agents?.copilot_reasoning || null,
+      copilot_config_dir: config.agents?.copilot_config_dir || null,
       gemini_home_seed:
-        typeof agents.gemini_home_seed === "boolean"
-          ? agents.gemini_home_seed
+        typeof config.agents?.gemini_home_seed === "boolean"
+          ? config.agents.gemini_home_seed
           : undefined,
+      parallel_agent_reviews: config.agents?.parallel_agent_reviews,
     },
   };
 }
@@ -150,129 +208,132 @@ export async function runAgent({
   providerConfig = {},
   providerOverride,
 }) {
-  // Get provider
   const config = loadConfig();
-  const providerName =
-    providerOverride ||
-    process.env.HARNESS_PROVIDER ||
-    config.agents?.provider ||
-    "http";
+  const providerSequence = resolveProviderSequence({
+    providerOverride,
+    config,
+  });
+  let lastRateLimitedResult = null;
 
-  const provider = getProvider(providerName);
-
-  logInfo(`Using provider: ${provider.name}`);
-
-  // Invoke provider
-  const startTime = Date.now();
-  const mergedProviderConfig = {
-    ...providerConfig,
-    workspaceRoot: REPO_ROOT,
-  };
-  if (process.env.HARNESS_GEMINI_MODEL && !mergedProviderConfig.model) {
-    mergedProviderConfig.model = process.env.HARNESS_GEMINI_MODEL;
-  }
-  if (process.env.HARNESS_GEMINI_HOME && !mergedProviderConfig.homeDir) {
-    mergedProviderConfig.homeDir = process.env.HARNESS_GEMINI_HOME;
-  }
-  if (config.agents?.gemini_model && !mergedProviderConfig.model) {
-    mergedProviderConfig.model = config.agents.gemini_model;
-  }
-  if (config.agents?.gemini_home && !mergedProviderConfig.homeDir) {
-    mergedProviderConfig.homeDir = config.agents.gemini_home;
-  }
-  if (config.agents?.gemini_home_seed === false) {
-    mergedProviderConfig.seedHome = false;
-  }
-  if (provider.name === "codex") {
-    if (process.env.HARNESS_CODEX_MODEL && !mergedProviderConfig.model) {
-      mergedProviderConfig.model = process.env.HARNESS_CODEX_MODEL;
-    }
-    if (process.env.HARNESS_CODEX_REASONING) {
-      mergedProviderConfig.reasoningEffort =
-        process.env.HARNESS_CODEX_REASONING;
-    }
-    if (config.agents?.codex_model && !mergedProviderConfig.model) {
-      mergedProviderConfig.model = config.agents.codex_model;
-    }
-    if (config.agents?.codex_reasoning) {
-      mergedProviderConfig.reasoningEffort = config.agents.codex_reasoning;
-    }
-  }
-
-  let result;
-  try {
-    result = await provider.invoke({
-      prompt,
-      files,
-      outputFile,
-      config: mergedProviderConfig,
-    });
-  } catch (error) {
-    recordAgentFailure({
-      name,
-      provider: provider.name,
-      error,
-      rateLimited: false,
-    });
-    logWarning("Agent execution failed.");
-    logError(
-      `Error: ${normalizeDiagnosticValue(error) || "Provider threw error"}`,
+  for (const [index, providerName] of providerSequence.entries()) {
+    const provider = getProvider(providerName);
+    const nextProviderName = providerSequence[index + 1];
+    const mergedProviderConfig = buildProviderConfig(
+      provider.name,
+      providerConfig,
+      config,
     );
-    return {
-      success: false,
-      rateLimited: false,
-      result: null,
-      error: normalizeDiagnosticValue(error),
-    };
-  }
-  const duration = Date.now() - startTime;
-  logInfo(`Execution time: ${duration}ms`);
 
-  // Handle result
-  if (result.rateLimited) {
-    logWarning("Provider unavailable (rate limit/network).");
-    if (result.error) logError(result.error);
-    recordAgentFailure({
-      name,
-      provider: provider.name,
-      error: result.error || "Provider unavailable",
-      rateLimited: true,
-    });
-    return {
-      success: false,
-      rateLimited: true,
-      result: null,
-      error: result.error,
-    };
-  }
+    logInfo(
+      `Using provider: ${provider.name}${index > 0 ? " (fallback)" : ""}`,
+    );
 
-  if (!result.success) {
-    logWarning("Agent did not produce expected output.");
-    if (result.error) logError(`Error: ${result.error}`);
-    if (result.stderr) {
-      logInfo("--- STDERR ---");
-      console.log(result.stderr);
-      logInfo("--------------");
+    let result;
+    try {
+      const startTime = Date.now();
+      result = await provider.invoke({
+        prompt,
+        files,
+        outputFile,
+        config: mergedProviderConfig,
+      });
+      const duration = Date.now() - startTime;
+      logInfo(`Execution time: ${duration}ms`);
+    } catch (error) {
+      recordAgentFailure({
+        name,
+        provider: provider.name,
+        error,
+        rateLimited: false,
+      });
+      if (nextProviderName) {
+        logWarning(
+          `Provider ${provider.name} failed before producing output. Falling back to provider: ${nextProviderName}`,
+        );
+        continue;
+      }
+      logWarning("Agent execution failed.");
+      logError(
+        `Error: ${normalizeDiagnosticValue(error) || "Provider threw error"}`,
+      );
+      return {
+        success: false,
+        rateLimited: false,
+        result: null,
+        sandboxDir: null,
+        error: normalizeDiagnosticValue(error),
+      };
     }
-    recordAgentFailure({
-      name,
-      provider: provider.name,
-      error: result.error || "Agent did not produce expected output",
-      rateLimited: false,
-    });
+
+    if (result.rateLimited) {
+      lastRateLimitedResult = result;
+      recordAgentFailure({
+        name,
+        provider: provider.name,
+        error: result.error || "Provider unavailable",
+        rateLimited: true,
+      });
+      if (nextProviderName) {
+        logWarning(
+          `Provider ${provider.name} unavailable (rate limit/network). Falling back to provider: ${nextProviderName}`,
+        );
+        continue;
+      }
+      logWarning("Provider unavailable (rate limit/network).");
+      if (result.error) logError(result.error);
+      return {
+        success: false,
+        rateLimited: true,
+        result: null,
+        sandboxDir: result.sandboxDir || null,
+        error: result.error,
+      };
+    }
+
+    if (!result.success) {
+      recordAgentFailure({
+        name,
+        provider: provider.name,
+        error: result.error || "Agent did not produce expected output",
+        rateLimited: false,
+      });
+      if (nextProviderName) {
+        logWarning(
+          `Provider ${provider.name} did not produce expected output. Falling back to provider: ${nextProviderName}`,
+        );
+        continue;
+      }
+      logWarning("Agent did not produce expected output.");
+      if (result.error) logError(`Error: ${result.error}`);
+      if (result.stderr) {
+        logInfo("--- STDERR ---");
+        console.log(result.stderr);
+        logInfo("--------------");
+      }
+      return {
+        success: false,
+        rateLimited: false,
+        result: null,
+        sandboxDir: result.sandboxDir || null,
+        error: result.error,
+      };
+    }
+
     return {
-      success: false,
+      success: true,
       rateLimited: false,
-      result: null,
-      error: result.error,
+      result: result.result,
+      sandboxDir: result.sandboxDir || null,
+      error: null,
     };
   }
 
   return {
-    success: true,
-    rateLimited: false,
-    result: result.result,
-    error: null,
+    success: false,
+    rateLimited: true,
+    result: null,
+    sandboxDir: lastRateLimitedResult?.sandboxDir || null,
+    error: lastRateLimitedResult?.error || "Provider unavailable",
   };
 }
 

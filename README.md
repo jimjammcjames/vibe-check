@@ -1,108 +1,88 @@
 # vibe-check
 
-# vibe-check
+`vibe-check` is the canonical portable harness repo: a repo-agnostic `.harness/`
+payload plus tests, setup docs, and skills that make AI-assisted development
+compound instead of drift.
 
-vibe-check is a repo-agnostic agent harness: a portable folder + scripts that enforce compound engineering in any codebase.
+The core idea is unchanged:
 
-The goal is simple:
+**Let agents be imperfect. Make the repo enforce the artifacts.**
 
-**Let agents be imperfect. Make the repo enforce the outcomes.**
+What changed in this refresh is that the canonical repo now matches the newer
+lineages in practice, not just in intent.
 
-So you can “vibe code” while the harness hard-gates the stuff that makes the codebase safer and more self-improving over time.
+## Current harness loop
 
-## What “compound engineering” means here
+Run these in order:
 
-This harness is built around a compounding loop that forces **reflective engineering**, not just bug-fixing:
+1. `npm run harness:prep`
+2. `npm run harness:iterate`
+3. `npm run harness:post`
+4. `npm run harness:post -- --staged`
+5. `npm run harness:ci`
 
-1. **Look up prior context** (start with grep/search; retrieval can evolve later).
-2. **If something similar exists** → reuse the established approach.
-3. **If it’s a bug** → STOP. Don't just fix it. The harness forces you to ask:
+Use these context commands while working:
 
-   > _"Why did we run into this in the first place? Why wasn't it caught sooner?"_
+- `npm run harness:new:session -- --slug "task-name"`
+- `npm run harness:new:entry -- --slug "change-slug" --type fix|decision`
+- `npm run harness:new:meta -- --slug "harness-change-slug"`
 
-   You capture a **Fix Entry** that identifies the _gap in visibility_, and you provide the test that closes that gap forever.
+Session files are append-only task notes. There is no close command. If you
+have more than one same-day task session, pass `--session-slug` when creating
+the history or meta entry.
 
-4. **If it’s a new feature / approach** → capture a small **decision entry** explaining the rationale.
-5. **CI enforces** that the right proof exists before merge.
+## What the canonical repo now includes
 
-The point is: **we don’t trust the agent’s intentions; we verify the artifacts.** The memory system isn't just a history log—it is a **constantly evolving set of guardrails** that prevents regression classes, not just individual bugs.
+- History entries with v3 frontmatter: `related_entries`, `affected_files`,
+  `session_refs`
+- Session artifacts for user intent, corrections, workflow repetition, and
+  codification candidates
+- Staged commit-intent validation via `npm run harness:post -- --staged`
+- Multi-provider agent runtime with fallback provider support
+- GitHub Copilot CLI provider support alongside Gemini and Codex
+- Gitignored `.harness/config.local.yml` for local-only agent overrides
+- Optional parallel local agent reviews for the outer loop
+
+## Ordered adoption plan
+
+The cross-repo comparison turned into this canonical adoption order:
+
+1. Commit-intent + session artifacts
+   Reason: this was the most common structural evolution across the active
+   repos, and it fixes the biggest current gap: commits losing the user/task
+   context that produced them.
+2. Provider resilience + local overrides
+   Reason: the active repos converged on multi-provider operation because a
+   single provider becomes a bottleneck in real use.
+3. Canonical docs that match reality
+   Reason: a stale canonical doc teaches the wrong workflow to every downstream
+   repo.
+4. Faster outer-loop ergonomics
+   Reason: optional parallel agent reviews reduce local CI pain without
+   weakening the gate.
+5. Repo-specific governance layers
+   Reason: `life.exe` and `mooo` add useful ideas, but their broker/runtime
+   models are not drop-in portable and should stay as a later design pass.
+
+The first four are now represented in this repo.
 
 ## Repo layout
 
-- **`.harness/`** – the harness “drop-in” payload (config + scripts live here). [GitHub]
-- **`harness-tests/`** – tests that validate the harness itself (so you can iterate on the harness with confidence). [GitHub]
-- **`.github/workflows/`** – CI wiring (runs the harness gates in automation). [GitHub]
-- **`AGENTS.md`** – “pointer doc” for coding agents (what to read, what commands to run, what the workflow is). [GitHub]
-- **`package.json`, `tsconfig.json`, `eslint.config.js`** – harness tooling. [GitHub]
+- `.harness/` - canonical harness payload
+- `harness-tests/` - tests for the portable harness itself
+- `workflows/skills/` - portable review and workflow skills
+- `.github/workflows/` - CI wiring examples
+- `AGENTS.md` - terminal-first entry point for coding agents
 
-## How it’s intended to be used
+## What still belongs in later phases
 
-### 1) In this repo (developing the harness)
+These showed up in sibling repos but are not yet portable enough to make part
+of the canonical harness by default:
 
-- Run the harness’s own test suite (`harness-tests/`) to ensure changes don’t break portability. [GitHub]
-- Keep everything repo-agnostic: no assumptions about frameworks, no hard-coded paths outside the harness root.
+- `life.exe` feature/monitor policy catalogs
+- `life.exe` brokered git / host-box coordination
+- `mooo` remote runtime sync and upmerge PR automation
+- Live runtime validation systems tied to a specific deploy surface
 
-### 2) In another repo (consuming the harness)
-
-- Copy/paste `.harness/` into the target repo.
-- Add minimal wiring:
-  - **pre-commit hook** → points to harness pre-commit entry
-  - **CI workflow** → runs harness CI entry
-  - (optional) a tiny root **`AGENTS.md`** pointer so agents reliably find the entry point
-
-That’s it. Everything else should flow from deterministic “pointers”:
-
-- pre-commit failures
-- CI failures
-- explicit “prep” command output
-
-## The “pointers” philosophy (why this works without tool wrappers)
-
-You can’t reliably wrap Cursor/Claude/Codex/etc. across stacks.
-
-So instead:
-
-- you rely on **deterministic friction points** (pre-commit + CI) to force agents to see the harness entrypoint,
-- and you keep the harness interface **terminal-first**: agents run commands, read the output, and iterate.
-
-## Expected commands (fill in once you lock names)
-
-This README intentionally stays neutral on exact script names until you finalize them in `package.json`. [GitHub]
-
-Typical shape is:
-
-- `npm run harness:prep` – prints the MUST workflow block + points to deeper docs
-- `npm run harness:iterate` – “mid-iteration” gate (lint/format + fast checks)
-- `npm run harness:ci` – full CI gate (includes compounding audit)
-- `npm run harness:new:entry` – create a new history entry (`--type fix|decision|incident|...`)
-- `npm run harness:new:meta` – create a harness meta entry (type `meta` + `#harness-meta`)
-- `npm test` (or similar) – runs `harness-tests/` to validate the harness itself [GitHub]
-
-## What gets enforced (eventually / by design)
-
-The enforcement stack is meant to live in `.harness` and be driven by config:
-
-- **Local mid-iteration**: fast lint/format + sanity checks
-- **Pre-commit**: prevent obviously broken changes from landing
-- **CI**: hard gate everything, including “compound engineering” rules
-
-Examples of compounding rules you can gate:
-
-- “Meaningful code change must include a history entry”
-- “Fix/incident entry implies a test delta” (Did you actually close the gap you found?)
-- “All history entries must be coherent and tagged”
-
-(Exact policy is up to your harness config and how strict you want v1 to be.)
-
-## Non-goals (by design)
-
-- Not a wrapper around a specific agent tool.
-- Not a replacement for code review.
-- Not trying to deterministically force agent reasoning _during_ work — only to enforce the artifacts by merge time.
-
-## Roadmap ideas
-
-- Better context lookup than grep (vector index / structured tagging)
-- Optional “anti-gaming” reviewer pass (cheap model locally, stronger model in CI)
-- Adapter packs per ecosystem (RN/Expo, Next.js, Go, Python, etc.)
-- First-class dashboards for harness gates + failures
+Those are better treated as optional adapter layers built on top of the
+canonical harness rather than baked into it.

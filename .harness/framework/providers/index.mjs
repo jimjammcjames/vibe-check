@@ -6,11 +6,13 @@
  */
 
 import { codexProvider } from "./codex.mjs";
+import { copilotProvider } from "./copilot.mjs";
 import { geminiProvider } from "./gemini.mjs";
 import { httpApiProvider } from "./http-api.mjs";
 
 const providers = {
   codex: codexProvider,
+  copilot: copilotProvider,
   gemini: geminiProvider,
   http: httpApiProvider,
 };

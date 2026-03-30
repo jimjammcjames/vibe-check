@@ -11,7 +11,9 @@ import {
   matchesAnyGlob,
   checkRuleA,
   checkRuleB,
+  checkStagedContextRule,
   validateEntryContent,
+  validateSessionContent,
 } from "../../.harness/framework/scripts/policy-audit.mjs";
 
 const config = loadConfig();
@@ -425,6 +427,185 @@ Gap Closure: Added test: \`harness-tests/tests/session-refresh.test.mjs\`
         isNewEntry: true,
       });
       assert.ok(!issues.some((i) => i.code === "CLASS_PREVENTION_MISSING"));
+    });
+  });
+
+  describe("Rule S: session entry validation", () => {
+    it("passes for a complete session entry", () => {
+      const content = `---
+date: 2026-01-02
+started_at: 2026-01-02T10:00:00.000Z
+tags:
+  - "#harness"
+related_history:
+  - "NONE"
+skills_used:
+  - "NONE"
+---
+
+# Session
+
+## Summary
+
+Investigating the canonical harness refresh while keeping notes about the
+workflow decisions and corrections that happened along the way.
+
+## User Intent
+
+Bring the stale canonical harness up to parity with the patterns that proved
+useful in the sibling repos.
+
+## Timeline
+
+- [seq-01] user: asked for the canonical repo to absorb the common evolutions.
+- [seq-02] assistant: inspected the repo and planned the first ports.
+
+## Corrections & Thrash
+
+- user_correction: none
+- agent_correction: none
+- process_issue: none
+- thrash: none
+
+## Workflow Repetition
+
+- repeated_workflow: none
+- custom_script: none
+
+## Codify Candidates
+
+- candidate: target=skill; capture the cross-repo harness comparison workflow
+
+## Outcome
+
+Ported the first high-leverage set of harness evolutions into the canonical repo.
+`;
+      const issues = validateSessionContent({
+        file: ".harness/context/sessions/example.md",
+        content,
+        requireFilledBullets: true,
+      });
+      assert.strictEqual(issues.length, 0);
+    });
+
+    it("fails when started_at is missing", () => {
+      const content = `---
+date: 2026-01-02
+tags:
+  - "#harness"
+related_history:
+  - "NONE"
+skills_used:
+  - "NONE"
+---
+
+# Session
+
+## Summary
+
+Missing started_at should fail.
+
+## User Intent
+
+Intent.
+
+## Timeline
+
+- [seq-01] user: asked for a fix.
+
+## Corrections & Thrash
+
+- user_correction: none
+- agent_correction: none
+- process_issue: none
+- thrash: none
+
+## Workflow Repetition
+
+- repeated_workflow: none
+- custom_script: none
+
+## Codify Candidates
+
+- candidate: target=skill; note
+
+## Outcome
+
+Outcome.
+`;
+      const issues = validateSessionContent({
+        file: ".harness/context/sessions/example.md",
+        content,
+      });
+      assert.ok(issues.some((i) => i.code === "SESSION_STARTED_AT_MISSING"));
+    });
+  });
+
+  describe("Rule D: staged context coverage", () => {
+    it("fails when staged real code has no staged session", () => {
+      const historyEntries = [
+        {
+          file: ".harness/context/history/2026-01-02-example.md",
+          content: `---
+date: 2026-01-02
+type: decision
+status: active
+schema: v3
+search_terms:
+  - "example"
+related_entries:
+  - "NONE"
+affected_files:
+  - "src/index.ts"
+session_refs:
+  - "NONE"
+tags:
+  - "#harness"
+---
+
+# Example
+
+## Summary
+
+This summary is long enough to satisfy the minimum word count in the validator.
+
+## Request / Intent
+
+Capture the intent for the staged canonical harness change.
+
+## Context
+
+This context is long enough to satisfy the validator and explains the reason
+for the staged code change.
+
+## Decision
+
+Adopt the newer harness structure.
+
+## Rationale
+
+It provides better commit provenance and clearer operator workflow.
+
+## Consequences
+
+The repo now expects staged session coverage for staged real code.
+
+## Validation
+
+Reviewed with targeted harness tests.
+`,
+        },
+      ];
+
+      const result = checkStagedContextRule({
+        diffFiles: ["src/index.ts"],
+        config,
+        historyEntries,
+        sessionEntries: [],
+      });
+
+      assert.strictEqual(result.passed, false);
+      assert.match(result.message, /requires a staged session update/);
     });
   });
 });

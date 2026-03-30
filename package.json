@@ -10,9 +10,12 @@
     "harness:iterate": "node .harness/framework/cli/harness.mjs iterate",
     "harness:post": "node .harness/framework/cli/harness.mjs post",
     "harness:ci": "node .harness/framework/cli/harness.mjs ci",
+    "harness:ci:codex": "node .harness/framework/cli/harness.mjs ci --codex",
+    "harness:ci:copilot": "node .harness/framework/cli/harness.mjs ci --copilot",
     "harness:simulate": "bash harness-tests/simulation/run.sh",
     "harness:new:entry": "node .harness/framework/cli/harness.mjs new:entry",
     "harness:new:meta": "node .harness/framework/cli/harness.mjs new:meta",
+    "harness:new:session": "node .harness/framework/cli/harness.mjs new:session",
     "harness:migrate:history": "node .harness/framework/cli/harness.mjs migrate:history",
     "mcp-gen": "node workflows/bin/mcp-gen",
     "test:e2e": "node --import tsx --test harness-tests/tests/mcp-gen-e2e.test.mjs"
