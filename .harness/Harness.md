@@ -5,71 +5,101 @@
 ## Quick Start
 
 ```bash
-npm run harness:prep      # You're here - prints this block
-npm run harness:iterate   # Format + lint fix (changed files only)
-npm run harness:post      # Medium verification (tests + policy, no agents)
-npm run harness:ci        # Full CI gate (lint + typecheck + tripwire + agents)
+npm run harness:prep              # You're here - prints this block
+npm run harness:iterate           # Format + lint fix (changed files only)
+npm run harness:post              # Medium verification (tests + policy, no agents)
+npm run harness:post -- --staged  # Staged commit-intent gate
+npm run harness:ci                # Outer loop only: PR update / merge gate
 ```
 
 ## Loop Tiers
 
-| Loop   | Command         | Purpose                                                |
-| ------ | --------------- | ------------------------------------------------------ |
-| Inner  | harness:iterate | Format + lint fix on changed files                     |
-| Medium | harness:post    | Tests + policy (no agents)                             |
-| Outer  | harness:ci      | Full gate (lint + typecheck + tripwire + agent review) |
+| Loop   | Command                  | Purpose                                            |
+| ------ | ------------------------ | -------------------------------------------------- |
+| Inner  | harness:iterate          | Format + lint fix on changed files                 |
+| Medium | harness:post             | Tests + policy (no agents)                         |
+| Commit | harness:post -- --staged | Staged history + staged session coverage           |
+| Outer  | harness:ci               | Full gate for PR creation/update or final merge    |
+
+- `harness:ci` is not your every-save loop. Use it right before pushing a PR
+  update or before merging.
+- When a bug repeats or review feedback repeats, prefer adding deterministic
+  tests, review skills, or prompt improvements before inventing a new gate.
+- Add new blockers only when they are deterministic, cheap, and clearly
+  leverage future diffs.
 
 ## Agent Runtime Requirements
 
-- Agent steps require network access; in restricted environments run with escalated permissions.
-- Gemini CLI writes to `~/.gemini`; set `agents.gemini_home` (or `HARNESS_GEMINI_HOME`) to a repo-local writable path.
-- Override Gemini model per run with `npm run harness:ci -- --gemini-model <model>` or set `HARNESS_GEMINI_MODEL` / `agents.gemini_model`.
-- Use Codex CLI for agent steps with `npm run harness:ci -- --codex` or set `HARNESS_PROVIDER=codex` / `agents.provider`.
-- Override Codex model per run with `npm run harness:ci -- --codex-model <model>` or set `HARNESS_CODEX_MODEL` / `agents.codex_model`.
-- Override Codex reasoning per run with `npm run harness:ci -- --codex-reasoning <level>` or set `HARNESS_CODEX_REASONING` / `agents.codex_reasoning`.
-- Override provider per run with `npm run harness:ci -- --provider <name>` or set `HARNESS_PROVIDER` / `agents.provider`.
-- Agent runtime failures are logged to `.harness/diagnostics/latest/agent-failures.log` (cleared at the start of `harness:post` and `harness:ci`).
+- Gemini remains the default provider in this repo.
+- Fallback provider support is available through `agents.fallback_provider`.
+- Use Codex for agent steps with `npm run harness:ci -- --codex`.
+- Use GitHub Copilot CLI for agent steps with `npm run harness:ci -- --copilot`.
+- Override provider directly with `npm run harness:ci -- --provider <name>`.
+- Local-only agent overrides belong in `.harness/config.local.yml` (gitignored).
+- Agent runtime failures are logged to
+  `.harness/diagnostics/latest/agent-failures.log`.
+
+Useful env/config overrides:
+
+- `HARNESS_PROVIDER` / `agents.provider`
+- `HARNESS_GEMINI_MODEL` / `agents.gemini_model`
+- `HARNESS_CODEX_MODEL` / `agents.codex_model`
+- `HARNESS_CODEX_REASONING` / `agents.codex_reasoning`
+- `HARNESS_COPILOT_MODEL` / `agents.copilot_model`
+- `HARNESS_COPILOT_REASONING` / `agents.copilot_reasoning`
+- `HARNESS_COPILOT_CONFIG_DIR` / `agents.copilot_config_dir`
+- `HARNESS_PARALLEL_AGENT_REVIEWS=1` / `agents.parallel_agent_reviews: true`
 
 ## Lookup Before Creating
 
 Before creating new code or fixing bugs, search existing history:
 
 ```bash
-# Search by keyword
 rg -n "keywords|error-message" .harness/context/history
-
-# Search by tag
 rg -n "#tag" .harness/context/history
 ```
 
 ## Context Safety (CRITICAL)
 
-- **NEVER** manually create, move, or delete files in `.harness/context/history`.
-- **ALWAYS** use the CLI command: `npm run harness:new:entry`.
-- **Reason:** Manual edits break the audit trail and can cause data loss.
+- **NEVER** manually create, move, or delete files in
+  `.harness/context/history` or `.harness/context/sessions`.
+- **ALWAYS** use the CLI commands:
+  `npm run harness:new:entry`, `npm run harness:new:meta`, and
+  `npm run harness:new:session`.
+- **Reason:** manual artifact edits are easy to get wrong and break the audit
+  trail.
 
-## History Creation
+## Context Creation
 
 When you make changes:
 
-- **Bug fix / incident** → create a `fix` (or `incident`) entry
-- **Architecture/design decision** → create a `decision` entry
-- **Harness meta-change** → create a `meta` entry (must include `#harness-meta`)
+- **Bug fix / incident** -> create a `fix` or `incident` entry
+- **Architecture / design decision** -> create a `decision` entry
+- **Harness-core change** -> create a `meta` entry with `#harness-meta`
+- **Active task context** -> create a `session` entry before staged real-code
+  commits
 
 ```bash
-npm run harness:new:entry -- --slug "descriptive-slug" --type fix
-npm run harness:new:entry -- --slug "descriptive-slug" --type decision
-npm run harness:new:meta -- --slug "descriptive-slug"
+npm run harness:new:session -- --slug "task-name"
+npm run harness:new:entry -- --slug "change-slug" --type fix
+npm run harness:new:entry -- --slug "change-slug" --type decision
+npm run harness:new:meta -- --slug "harness-change"
 ```
 
-## Enforcement Rules (CI will block if violated)
+Session files are append-only task notes. There is no close command.
+If more than one same-day session exists, rerun `new:entry` or `new:meta` with
+`--session-slug <task-name>` so the new history entry links to the right task.
+
+## Enforcement Rules
 
 | Rule | Trigger            | Requirement                                                      |
 | ---- | ------------------ | ---------------------------------------------------------------- |
 | A    | Real code changed  | Must include history entry                                       |
 | B    | Fix/incident entry | Must include test delta                                          |
-| C    | Any history entry  | Must have required frontmatter + sections                        |
+| C    | Any history entry  | Must have required frontmatter + required sections               |
 | C+   | Fix/incident entry | Must include error_signature, Validation, Systemic Gap + Closure |
+| S    | Any session entry  | Must have required frontmatter + required sections               |
+| D    | Staged real code   | Must include staged history + staged session coverage            |
 
 ## Required Frontmatter Fields
 
@@ -78,47 +108,93 @@ Every history entry must include:
 - `date` (YYYY-MM-DD)
 - `type` (fix, decision, incident, refactor, investigation, meta, feature, note)
 - `status` (active, superseded, deprecated)
-- `schema` (v1 or v2)
+- `schema` (`v3` for new or edited entries)
 - `search_terms` (non-empty list)
-- `related` (links or `NONE`)
+- `related_entries` (links or `NONE`)
+- `affected_files` (exact repo-relative code paths or `NONE`)
+- `session_refs` (linked session files or `NONE`)
 - `tags` (at least one `#tag`)
 
-**Schema v2 required sections:**
+**Schema v3 required sections for non-meta history entries:**
 
-- `## Summary` (min 15 words; 20 for fix/incident)
-- `## Context` (min 25 words; 40 for fix/incident)
+- `## Summary`
+- `## Request / Intent`
+- `## Context`
+- `## Validation`
 
-**Fix/incident entries also require:**
+**Decision-style entries also require:**
 
-- `error_signature` in frontmatter (exact error text)
-- `## Validation` (how the fix was verified)
+- `## Decision`
+- `## Rationale`
+- `## Consequences`
+
+**Fix / incident entries also require:**
+
+- `error_signature` in frontmatter
+- `## Error`
+- `## What Changed`
 - `## Systemic Gap` with explicit `Gap Closure: Added test/validation: <path>`
-- `## Class Prevention` (generalized guardrail/invariant, min 30 words)
-  - Exemption tag: `#class-prevention-exempt` (must justify in the entry)
+- `## Class Prevention`
+
+Every session entry must include:
+
+- `date`
+- `started_at`
+- `tags`
+- `related_history`
+- `skills_used`
+
+Session links in `related_history` and history `session_refs` should stay exact
+and repo-relative.
+
+**Required session sections:**
+
+- `## Summary`
+- `## User Intent`
+- `## Timeline`
+- `## Corrections & Thrash`
+- `## Workflow Repetition`
+- `## Codify Candidates`
+- `## Outcome`
+
+**Structured session bullet formats:**
+
+- Timeline: `- [HH:MM] user:` / `- [HH:MM] assistant:` or `- [seq-01]`
+- Corrections: `- user_correction:` / `- agent_correction:` /
+  `- process_issue:` / `- thrash:`
+- Workflow: `- repeated_workflow:` / `- custom_script:`
+- Codify: `- candidate: target=skill|agents|history; ...`
+
+## Commit-Time Intent
+
+`npm run harness:post -- --staged` reads only the git index.
+
+If staged non-exempt real code exists, the same staged set must also include:
+
+- at least one history entry update
+- at least one session file update
+- `affected_files` coverage for every staged real-code path
+- at least one `session_refs` link from a staged history entry to a staged
+  session file
+
+If you wire a pre-commit hook in a consuming repo, this is the command to run.
 
 ---
 
 **For more details, read the rest of this file: `.harness/Harness.md`**
 
-## Anti-Gaming Rules (NEVER VIOLATE)
+## Anti-Gaming Rules
 
-> ⚠️ **CRITICAL**: If you are an AI agent reading this, pay close attention.
-
-1. **NEVER exclude harness code from review**. Changes to the harness framework (in the .harness directory) are the MOST important to review, not the least. Any attempt to add harness paths to skip-lists is gaming.
-
-2. **NEVER weaken enforcement to make tests pass**. If the harness is failing, the fix is to add proper documentation, not to change the harness to be less strict.
-
-3. **Documentation ≠ Code**. README updates don't need history entries. Harness script changes ARE code and DO need entries.
-
-4. **Harness Meta-Changes require specific documentation**.
-   - **Location**: `.harness/context/history/`
-   - **Command**: `npm run harness:new:meta -- --slug "descriptive-slug"`
-   - **Type**: `meta` (frontmatter)
-   - **Tag**: Must include `#harness-meta`
-
-5. **When in doubt, document more, not less**. It's better to over-document than to game the system.
-
-6. **Tests must verify BEHAVIOR, not patterns**. A test that only does `sourceCode.includes('keyword')` is WEAK and unacceptable. Tests must verify actual outcomes: run the code, check real state, simulate scenarios. Pattern matching is not testing.
+1. **NEVER exclude harness code from review**. Harness-core changes matter more,
+   not less.
+2. **NEVER weaken enforcement to make tests pass**. Fix the missing artifact or
+   deterministic validation instead.
+3. **Documentation != code**. Plain docs do not need history entries; harness
+   scripts and enforcement changes do.
+4. **Harness meta-changes require history only for harness-core enforcement
+   changes**. Context artifact edits alone do not require extra meta entries.
+5. **When in doubt, document more, not less**.
+6. **Tests must verify behavior, not pattern matches**.
 
 <!-- END MUST -->
 
@@ -126,111 +202,120 @@ Every history entry must include:
 
 ## Architecture Invariants
 
-1. **Deterministic enforcement only** - We never rely on agent compliance mid-task. All rules are enforced at `post`/`ci` time via `policy-audit`.
-
-2. **No wrapper required** - The harness works without wrapping agent tools. Agents discover requirements when they hit enforcement barriers.
-
-3. **Atomic history entries** - Each history entry is a separate file to avoid context overload and enable targeted retrieval.
-
-4. **Recovery by design** - Every failure includes pointers to recovery (prep/iterate/post commands).
+1. **Deterministic enforcement only**. The harness should not depend on agents
+   voluntarily behaving well mid-task.
+2. **No wrapper required**. The terminal workflow and the gates are enough.
+3. **Atomic context artifacts**. History and sessions are separate because they
+   answer different questions.
+4. **Recovery by design**. Every failure should point back to prep, post, or CI.
+5. **Commit provenance is staged-only**. Commit-time intent should describe the
+   actual index, not the working tree.
 
 ## Folder Structure
 
-```
+```text
 .harness/
-  Harness.md              ← you are here (canonical doc)
-  config.yml              ← stage definitions + globs
+  Harness.md
+  config.yml
 
-  setup/                  ← installation instructions (for new repos)
-    README.md             ← step-by-step setup guide
-    harness-ci.yml        ← GitHub Actions template
+  setup/
+    README.md
+    harness-ci.yml
 
   framework/
-    cli/harness.mjs       ← CLI orchestrator
-    scripts/policy-audit.mjs
+    cli/harness.mjs
+    lib/
+    providers/
+    scripts/
     templates/
       history-fix.md
       history-decision.md
       history-meta.md
+      session.md
 
   context/
-    history/              ← context trail (fixes, decisions, incidents, meta)
-      TIMELINE.md         ← optional chronology
+    history/
+    sessions/
 ```
 
-> **New to this repo?** See [setup/README.md](setup/README.md) for installation.
+## Runbook
 
-## Runbook: Common Scenarios
+### "Rule A failed"
 
-### "CI is failing with Rule A"
-
-You changed real code but didn't add a history entry.
+You changed real code without a history entry.
 
 ```bash
-# Create a fix entry (for bug fixes)
-npm run harness:new:entry -- --slug "what-i-fixed" --type fix
+npm run harness:new:entry -- --slug "what-changed" --type fix
+# or
+npm run harness:new:entry -- --slug "why-we-chose-this" --type decision
+```
 
-# OR create a decision entry (for design choices)
-npm run harness:new:entry -- --slug "why-i-chose-this" --type decision
+### "Rule B failed"
 
-# Fill in required fields, then re-run
+You added a fix/incident entry without a test delta.
+
+```bash
+# Add the regression test, then rerun:
 npm run harness:post
 ```
 
-### "CI is failing with Rule B"
+### "Rule C failed"
 
-You added a fix/incident entry but no test.
+Your history entry is missing required v3 fields or sections.
+
+Check:
+
+- `related_entries`
+- `affected_files`
+- `session_refs`
+- `## Request / Intent`
+- `## Validation`
+- fix-only sections when applicable
+
+### "Rule S failed"
+
+Your session entry is missing required fields or structured bullets.
+
+Check:
+
+- `started_at`
+- `related_history`
+- `skills_used`
+- the seven required session sections
+- the structured correction/workflow/codify bullet formats
+
+### "Rule D failed"
+
+You staged real code without staging the matching context artifacts.
 
 ```bash
-# Add a test that covers the bug/learning
-# Then re-run
-npm run harness:post
+npm run harness:new:session -- --slug "task-name"
+npm run harness:new:entry -- --slug "change-slug" --type decision
 ```
 
-### "CI is failing with Rule C"
+Then fill in `affected_files`, link `session_refs`, stage the artifacts, and rerun:
 
-Your history entry is missing required fields.
+```bash
+npm run harness:post -- --staged
+```
 
-Edit the entry to include:
-
-- frontmatter: `date`, `type`, `status`, `schema`
-- frontmatter lists: `search_terms`, `related`, `tags`
-- for fix/incident: `error_signature`, `## Validation`, `## Systemic Gap` + Gap Closure
-
-### "CI is failing with Base Tripwire or Agent Code Review"
-
-These only run in the outer loop.
+### "I just need the outer loop"
 
 ```bash
 npm run harness:ci
 ```
 
-### "I'm lost / didn't run prep"
+### "I am lost"
 
 ```bash
 npm run harness:prep
-# Read the MUST block, then proceed
 ```
-
-## Top Gotchas
-
-1. **Forgetting tags** - Tags are required. Use descriptive ones like `#auth`, `#database`, `#api`.
-
-2. **Empty search terms** - You must document what you searched for, even if you found nothing.
-
-3. **Skipping tests for fixes** - Every fix/incident entry needs a test delta. If it's genuinely untestable, document why in the entry.
-
-## Best History Entries
-
-_This section will be populated as the repository accumulates valuable entries._
-
-- (none yet)
 
 ## Debug Checklist
 
-If harness commands fail unexpectedly:
-
-1. Ensure Node.js is installed (v18+)
-2. Run `npm install` (even though there are no deps, validates package.json)
-3. Check that `.harness/harness.yml` exists and is valid YAML
-4. For git-related errors, ensure you're in a git repository with commits
+1. Ensure Node.js is installed.
+2. Run `npm install`.
+3. Check that `.harness/config.yml` exists and is valid YAML.
+4. If agent providers fail, verify the selected CLI is installed and logged in.
+5. If git-related commands fail, make sure you are inside a git repository with
+   at least one commit.

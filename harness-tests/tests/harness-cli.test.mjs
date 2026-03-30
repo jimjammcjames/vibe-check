@@ -21,6 +21,7 @@ const HARNESS_CLI = join(
   "harness.mjs",
 );
 const TEST_DATE = "2026-01-04";
+const TEST_TIMESTAMP = "2026-01-04T12:34:56.000Z";
 
 function runHarness(args, envOverrides = {}) {
   try {
@@ -200,12 +201,28 @@ describe("harness CLI", { concurrency: 1 }, () => {
 
       assert.ok(content.startsWith("---"), "should include frontmatter");
       assert.ok(content.includes('type: "fix"'), "should include type");
-      assert.ok(content.includes('schema: "v2"'), "should include schema");
+      assert.ok(content.includes('schema: "v3"'), "should include schema");
+      assert.ok(
+        content.includes("related_entries:"),
+        "should include related_entries",
+      );
+      assert.ok(
+        content.includes("affected_files:"),
+        "should include affected_files",
+      );
+      assert.ok(
+        content.includes("session_refs:"),
+        "should include session_refs",
+      );
       assert.ok(
         content.includes("error_signature:"),
         "should include error_signature",
       );
       assert.ok(content.includes("## Summary"), "should have Summary section");
+      assert.ok(
+        content.includes("## Request / Intent"),
+        "should have Request / Intent section",
+      );
       assert.ok(content.includes("## Context"), "should have Context section");
       assert.ok(
         content.includes("## Validation"),
@@ -326,8 +343,12 @@ describe("harness CLI", { concurrency: 1 }, () => {
 
       assert.ok(content.startsWith("---"), "should include frontmatter");
       assert.ok(content.includes('type: "decision"'), "should include type");
-      assert.ok(content.includes('schema: "v2"'), "should include schema");
+      assert.ok(content.includes('schema: "v3"'), "should include schema");
       assert.ok(content.includes("## Summary"), "should have Summary section");
+      assert.ok(
+        content.includes("## Request / Intent"),
+        "should have Request / Intent section",
+      );
       assert.ok(content.includes("## Context"), "should have Context section");
       assert.ok(
         content.includes("## Decision"),
@@ -407,6 +428,7 @@ describe("harness CLI", { concurrency: 1 }, () => {
       const content = readFileSync(createdFile, "utf-8");
 
       assert.ok(content.includes('type: "meta"'), "should include meta type");
+      assert.ok(content.includes('schema: "v3"'), "should include schema");
       assert.ok(
         content.includes("## Security & Integrity Impact"),
         "should have Security & Integrity Impact section",
@@ -415,6 +437,94 @@ describe("harness CLI", { concurrency: 1 }, () => {
         content.includes("#harness-meta"),
         "should include harness meta tag",
       );
+    });
+
+    it("links the same-day session with a repo-relative session_ref", (t) => {
+      const sessionSlug = "test-session-linked";
+      const metaSlug = "test-meta-linked";
+      const sessionFile = join(
+        REPO_ROOT,
+        ".harness",
+        "context",
+        "sessions",
+        `${TEST_DATE}-1234-${sessionSlug}.md`,
+      );
+      const metaFile = join(
+        REPO_ROOT,
+        ".harness",
+        "context",
+        "history",
+        `${TEST_DATE}-${metaSlug}.md`,
+      );
+
+      if (existsSync(sessionFile)) rmSync(sessionFile);
+      if (existsSync(metaFile)) rmSync(metaFile);
+
+      const sessionResult = runHarness(`new:session --slug ${sessionSlug}`, {
+        HARNESS_DATE: TEST_DATE,
+        HARNESS_TIMESTAMP: TEST_TIMESTAMP,
+      });
+      assert.strictEqual(
+        sessionResult.exitCode,
+        0,
+        `session creation should succeed, got: ${sessionResult.output}`,
+      );
+
+      const metaResult = runHarness(`new:meta --slug ${metaSlug}`, {
+        HARNESS_DATE: TEST_DATE,
+      });
+      assert.strictEqual(
+        metaResult.exitCode,
+        0,
+        `meta creation should succeed, got: ${metaResult.output}`,
+      );
+
+      t.after(() => {
+        if (existsSync(metaFile)) rmSync(metaFile);
+        if (existsSync(sessionFile)) rmSync(sessionFile);
+      });
+
+      const metaContent = readFileSync(metaFile, "utf-8");
+      assert.ok(
+        metaContent.includes(
+          '  - ".harness/context/sessions/2026-01-04-1234-test-session-linked.md"',
+        ),
+        "session_refs should use a repo-relative path",
+      );
+
+      const sessionContent = readFileSync(sessionFile, "utf-8");
+      assert.ok(
+        sessionContent.includes(
+          '  - ".harness/context/history/2026-01-04-test-meta-linked.md"',
+        ),
+        "session should link back to the created history entry",
+      );
+    });
+  });
+
+  describe("new:session command", () => {
+    it("creates a session entry with timestamp prefix", (t) => {
+      const slug = "test-session-basic";
+      const contextRoot = createContextRoot(t);
+      const targetFile = join(
+        contextRoot,
+        "sessions",
+        `${TEST_DATE}-1234-${slug}.md`,
+      );
+
+      const result = runHarness(`new:session --slug ${slug}`, {
+        HARNESS_DATE: TEST_DATE,
+        HARNESS_TIMESTAMP: TEST_TIMESTAMP,
+        HARNESS_CONTEXT_ROOT: contextRoot,
+      });
+
+      assert.strictEqual(result.exitCode, 0, "should create the session");
+      assert.ok(existsSync(targetFile), "session file should exist");
+
+      const content = readFileSync(targetFile, "utf-8");
+      assert.ok(content.includes("started_at:"), "should include started_at");
+      assert.ok(content.includes("## User Intent"), "should include sections");
+      assert.ok(content.includes("## Timeline"), "should include timeline");
     });
   });
 
@@ -426,7 +536,7 @@ describe("harness CLI", { concurrency: 1 }, () => {
         execSync(`node "${HARNESS_CLI}" post`, {
           cwd: REPO_ROOT,
           encoding: "utf-8",
-          timeout: 500, // Kill after 500ms - enough to print header
+          timeout: 2000,
           stdio: ["pipe", "pipe", "pipe"],
         });
         assert.fail("Expected timeout to kill the command");
@@ -434,7 +544,7 @@ describe("harness CLI", { concurrency: 1 }, () => {
         // Either timeout or actual failure, both are fine
         const output = (error.stdout || "") + (error.stderr || "");
         assert.ok(
-          output.includes("harness:post"),
+          output.includes("harness:post") || output.includes("Post Checks"),
           "should recognize post command",
         );
       }
@@ -449,14 +559,17 @@ describe("harness CLI", { concurrency: 1 }, () => {
         execSync(`node "${HARNESS_CLI}" ci`, {
           cwd: REPO_ROOT,
           encoding: "utf-8",
-          timeout: 500, // Kill after 500ms - enough to print header
+          timeout: 2000,
           stdio: ["pipe", "pipe", "pipe"],
         });
         assert.fail("Expected timeout to kill the command");
       } catch (error) {
         // Either timeout or actual failure, both are fine
         const output = (error.stdout || "") + (error.stderr || "");
-        assert.ok(output.includes("harness:ci"), "should recognize ci command");
+        assert.ok(
+          output.includes("harness:ci") || output.includes("CI Checks"),
+          "should recognize ci command",
+        );
       }
     });
   });

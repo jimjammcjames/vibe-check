@@ -27,8 +27,10 @@ Merge these scripts into your existing `package.json`:
     "harness:iterate": "node .harness/framework/cli/harness.mjs iterate",
     "harness:post": "node .harness/framework/cli/harness.mjs post",
     "harness:ci": "node .harness/framework/cli/harness.mjs ci",
-    "harness:new:learned": "node .harness/framework/cli/harness.mjs new:learned",
-    "harness:new:decision": "node .harness/framework/cli/harness.mjs new:decision"
+    "harness:ci:copilot": "node .harness/framework/cli/harness.mjs ci --copilot",
+    "harness:new:entry": "node .harness/framework/cli/harness.mjs new:entry",
+    "harness:new:meta": "node .harness/framework/cli/harness.mjs new:meta",
+    "harness:new:session": "node .harness/framework/cli/harness.mjs new:session"
   }
 }
 ```
@@ -44,11 +46,14 @@ cp .harness/setup/harness-ci.yml .github/workflows/harness.yml
 
 ## 4. Customize globs (if needed)
 
-Edit `.harness/harness.yml` to match your project structure:
+Edit `.harness/config.yml` to match your project structure:
 
 - `realCode` - patterns for your source files (default: `src/**/*.ts`)
 - `exempt` - patterns to exclude from enforcement
 - `tests` - patterns for test files
+- `sessions` - session artifact locations
+
+Optional local-only overrides belong in `.harness/config.local.yml` (gitignored).
 
 ## 5. Verify setup
 
