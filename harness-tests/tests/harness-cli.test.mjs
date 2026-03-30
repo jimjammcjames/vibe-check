@@ -536,7 +536,7 @@ describe("harness CLI", { concurrency: 1 }, () => {
         execSync(`node "${HARNESS_CLI}" post`, {
           cwd: REPO_ROOT,
           encoding: "utf-8",
-          timeout: 2000,
+          timeout: 5000,
           stdio: ["pipe", "pipe", "pipe"],
         });
         assert.fail("Expected timeout to kill the command");
@@ -559,7 +559,7 @@ describe("harness CLI", { concurrency: 1 }, () => {
         execSync(`node "${HARNESS_CLI}" ci`, {
           cwd: REPO_ROOT,
           encoding: "utf-8",
-          timeout: 2000,
+          timeout: 5000,
           stdio: ["pipe", "pipe", "pipe"],
         });
         assert.fail("Expected timeout to kill the command");

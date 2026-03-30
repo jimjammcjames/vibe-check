@@ -40,7 +40,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const TEMP_ROOT = join(__dirname, ".tmp", "mcp-gen");
+const TEMP_ROOT = join(__dirname, ".tmp", "mcp-gen", String(process.pid));
 const FIXTURE_PATH = join(__dirname, "..", "fixtures", "mcp-servers.yml");
 let runCounter = 0;
 

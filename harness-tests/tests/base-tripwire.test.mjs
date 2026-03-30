@@ -135,6 +135,20 @@ function getDiffFiles() {
   return output.split("\n").filter(Boolean);
 }
 
+function getDiffTestFiles() {
+  return getDiffFiles()
+    .filter((file) => file.startsWith("harness-tests/tests/"))
+    .filter((file) => file.endsWith(".test.mjs"))
+    .sort();
+}
+
+function buildListTestsCommand(discoveredFiles) {
+  const shellArgs = discoveredFiles
+    .map((file) => `'${file.replaceAll("'", "'\"'\"'")}'`)
+    .join(" ");
+  return `printf '%s\\n' ${shellArgs}`;
+}
+
 describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
   it("cleans up stale tripwire worktrees before running", () => {
     const worktreePath = createTripwireWorktree();
@@ -189,6 +203,9 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
 
     stageFiles([testFile, entryFile]);
     const diffFiles = getDiffFiles();
+    const discoveredFiles = getDiffTestFiles().filter(
+      (file) => file !== "harness-tests/tests/nested/mismatch.test.mjs",
+    );
     assert.ok(
       diffFiles.includes("harness-tests/tests/nested/mismatch.test.mjs"),
       `expected test file in diff, got: ${diffFiles.join(", ")}`,
@@ -202,8 +219,7 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
 
     const result = runTripwire({
       HARNESS_RUN_TESTS_CMD: 'node -e "process.exit(1)"',
-      HARNESS_LIST_TESTS_CMD:
-        "printf '%s\\n' harness-tests/tests/harness-cli.test.mjs harness-tests/tests/mcp-gen.test.mjs",
+      HARNESS_LIST_TESTS_CMD: buildListTestsCommand(discoveredFiles),
       HARNESS_LIST_TESTS_PATTERN: "(.+\\.test\\.mjs)",
     });
     cleanupFiles([testFile, entryFile]);
@@ -241,10 +257,10 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
     writeFixEntry(entryFile);
 
     stageFiles([testFile, entryFile]);
+    const discoveredFiles = getDiffTestFiles();
     const result = runTripwire({
       HARNESS_RUN_TESTS_CMD: 'node -e "process.exit(1)"',
-      HARNESS_LIST_TESTS_CMD:
-        "printf '%s\\n' harness-tests/tests/baseline.test.mjs harness-tests/tests/harness-cli.test.mjs harness-tests/tests/mcp-gen.test.mjs",
+      HARNESS_LIST_TESTS_CMD: buildListTestsCommand(discoveredFiles),
       HARNESS_LIST_TESTS_PATTERN: "(.+\\.test\\.mjs)",
     });
     cleanupFiles([testFile, entryFile]);
