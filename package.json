@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --import tsx --test --test-concurrency=4 harness-tests/tests/*.test.mjs",
-    "test:local": "node --import tsx --test --test-concurrency=4 harness-tests/tests/agent-code-review.test.mjs harness-tests/tests/harness-cli.test.mjs harness-tests/tests/http-provider.test.mjs harness-tests/tests/mcp-gen.test.mjs harness-tests/tests/mcp-gen-e2e.test.mjs harness-tests/tests/minimatch.test.mjs harness-tests/tests/policy-audit.test.mjs harness-tests/tests/test-lint.test.mjs",
+    "test:local": "node --import tsx --test --test-concurrency=4 harness-tests/tests/agent-code-review.test.mjs harness-tests/tests/harness-cli.test.mjs harness-tests/tests/harness-config.test.mjs harness-tests/tests/http-provider.test.mjs harness-tests/tests/mcp-gen.test.mjs harness-tests/tests/mcp-gen-e2e.test.mjs harness-tests/tests/minimatch.test.mjs harness-tests/tests/policy-audit.test.mjs harness-tests/tests/skills.test.mjs harness-tests/tests/test-lint.test.mjs",
     "harness:prep": "node .harness/framework/cli/harness.mjs prep",
     "harness:iterate": "node .harness/framework/cli/harness.mjs iterate",
     "harness:post": "node .harness/framework/cli/harness.mjs post",

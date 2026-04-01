@@ -33,7 +33,7 @@ import {
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadHarnessConfig } from "../lib/harness-config.mjs";
 import { normalizeList, parseFrontmatter } from "../lib/history-entry.mjs";
-import { listSkillMeta } from "../lib/skills.mjs";
+import { listSkillMeta, syncAgentsSkillsOverview } from "../lib/skills.mjs";
 import { minimatch } from "../scripts/minimatch.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -388,6 +388,17 @@ function runCommandAsync(command, files = "all") {
 }
 
 function cmdPrep() {
+  try {
+    syncAgentsSkillsOverview();
+  } catch (error) {
+    const message = error?.message || String(error);
+    if (message.includes("AGENTS.md not found")) {
+      logError(message);
+      process.exit(1);
+    }
+    logWarning(`Could not sync AGENTS.md skills overview: ${message}`);
+  }
+
   const harnessDocPath = join(HARNESS_ROOT, "Harness.md");
 
   if (!existsSync(harnessDocPath)) {

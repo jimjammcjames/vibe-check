@@ -19,3 +19,9 @@ summary: One-line description of what this skill does.
 ```
 
 Then the markdown body with full instructions/checklists.
+
+Skills may also include optional supporting resources beside `SKILL.md`:
+
+- `scripts/` for deterministic helpers or repeatable automation
+- `references/` for long docs that should only be loaded when needed
+- `assets/` for templates or output resources

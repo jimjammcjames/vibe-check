@@ -196,6 +196,13 @@ If you wire a pre-commit hook in a consuming repo, this is the command to run.
 5. **When in doubt, document more, not less**.
 6. **Tests must verify behavior, not pattern matches**.
 
+## Skills Sync
+
+- `npm run harness:prep` refreshes the generated Skills Overview block in
+  `AGENTS.md`.
+- Keep long-lived agent guidance short in `AGENTS.md`; put scenario-specific
+  playbooks in `workflows/skills/*`.
+
 <!-- END MUST -->
 
 ---
