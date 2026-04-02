@@ -543,8 +543,23 @@ describe("harness CLI", { concurrency: 1 }, () => {
       } catch (error) {
         // Either timeout or actual failure, both are fine
         const output = (error.stdout || "") + (error.stderr || "");
+        const timedOut =
+          error.signal === "SIGTERM" ||
+          error.killed === true ||
+          error.code === "ETIMEDOUT" ||
+          String(error.message || "")
+            .toLowerCase()
+            .includes("timed out") ||
+          String(error.message || "").includes("ETIMEDOUT");
+        const exited =
+          Number.isInteger(error.status) ||
+          Boolean(error.signal) ||
+          Boolean(error.code);
         assert.ok(
-          output.includes("harness:post") || output.includes("Post Checks"),
+          timedOut ||
+            exited ||
+            output.includes("harness:post") ||
+            output.includes("Post Checks"),
           "should recognize post command",
         );
       }

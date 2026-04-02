@@ -33,7 +33,8 @@ import {
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadHarnessConfig } from "../lib/harness-config.mjs";
 import { normalizeList, parseFrontmatter } from "../lib/history-entry.mjs";
-import { listSkillMeta } from "../lib/skills.mjs";
+import { resolveAvailableProviderSequence } from "../lib/provider-selection.mjs";
+import { listSkillMeta, syncAgentsSkillsOverview } from "../lib/skills.mjs";
 import { minimatch } from "../scripts/minimatch.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -388,6 +389,17 @@ function runCommandAsync(command, files = "all") {
 }
 
 function cmdPrep() {
+  try {
+    syncAgentsSkillsOverview();
+  } catch (error) {
+    const message = error?.message || String(error);
+    if (message.includes("AGENTS.md not found")) {
+      logError(message);
+      process.exit(1);
+    }
+    logWarning(`Could not sync AGENTS.md skills overview: ${message}`);
+  }
+
   const harnessDocPath = join(HARNESS_ROOT, "Harness.md");
 
   if (!existsSync(harnessDocPath)) {
@@ -494,6 +506,50 @@ function isAgentCommand(command) {
     command.includes("harness-guardian") ||
     command.includes("agent-code-review")
   );
+}
+
+async function filterCiStageForProviderAvailability(stage, config) {
+  if (process.env.HARNESS_ALLOW_MISSING_AGENT_PROVIDER !== "1") {
+    return {
+      stage,
+      skippedAgentReviews: false,
+      configuredProviders: [],
+      availableProviders: [],
+      unavailableProviders: [],
+    };
+  }
+
+  const hasAgentSteps = stage.some((step) => isAgentCommand(step.command));
+  if (!hasAgentSteps) {
+    return {
+      stage,
+      skippedAgentReviews: false,
+      configuredProviders: [],
+      availableProviders: [],
+      unavailableProviders: [],
+    };
+  }
+
+  const providerStatus = await resolveAvailableProviderSequence({ config });
+  if (providerStatus.availableProviders.length > 0) {
+    return {
+      stage,
+      skippedAgentReviews: false,
+      ...providerStatus,
+    };
+  }
+
+  logWarning(
+    `Skipping agent reviews because no configured providers are available: ${providerStatus.configuredProviders.join(", ") || "none"}`,
+  );
+  logInfo(
+    "Set up a runnable provider or unset HARNESS_ALLOW_MISSING_AGENT_PROVIDER=1 to make missing agent providers blocking again.",
+  );
+  return {
+    stage: stage.filter((step) => !isAgentCommand(step.command)),
+    skippedAgentReviews: true,
+    ...providerStatus,
+  };
 }
 
 async function cmdPost({ stagedOnly = false } = {}) {
@@ -658,7 +714,11 @@ async function cmdCi() {
 
   const config = loadConfig();
   const stage = config.stages.ci || [];
-  const outcome = await runCiStage(stage, {
+  const preparedStage = await filterCiStageForProviderAvailability(
+    stage,
+    config,
+  );
+  const outcome = await runCiStage(preparedStage.stage, {
     parallelAgentReviews:
       process.env.HARNESS_PARALLEL_AGENT_REVIEWS === "1" ||
       config.agents?.parallel_agent_reviews === true,
@@ -1386,6 +1446,7 @@ if (isDirectExecution) {
 }
 
 export {
+  filterCiStageForProviderAvailability,
   filterRelevantChangedFiles,
   formatSessionChoices,
   renderHistoryEntryTemplate,

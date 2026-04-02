@@ -27,4 +27,6 @@ jobs:
         run: npm ci
 
       - name: Run harness CI
+        env:
+          HARNESS_ALLOW_MISSING_AGENT_PROVIDER: "1"
         run: npm run harness:ci

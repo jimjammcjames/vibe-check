@@ -16,19 +16,12 @@
  */
 
 import { execSync } from "node:child_process";
-import {
-  readFileSync,
-  existsSync,
-  writeFileSync,
-  mkdirSync,
-  mkdtempSync,
-  statSync,
-} from "node:fs";
+import { readFileSync, existsSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { minimatch } from "./minimatch.mjs";
 import { parseFrontmatter } from "../lib/history-entry.mjs";
-import { recordAgentFailure } from "../lib/agent-runner.mjs";
+import { recordAgentFailure, runAgent } from "../lib/agent-runner.mjs";
 import { loadSkillPrompt } from "../lib/skills.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -442,9 +435,7 @@ const sharedAdapter = {
   },
 
   async review(context) {
-    const { getProvider } = await import("../providers/index.mjs");
     // Use in-memory file map instead of disk sandbox
-    const providerName = process.env.HARNESS_PROVIDER;
     const files = {};
     try {
       files["DIFF.txt"] = context.diff || "No diff available";
@@ -491,53 +482,13 @@ const sharedAdapter = {
         providerConfig.seedHome = false;
       }
       providerConfig.workspaceRoot = REPO_ROOT;
-
-      // Get provider
-      // Check config.yml for default provider
-      let configProvider = "http";
-      if (harnessConfig.agents?.provider) {
-        configProvider = harnessConfig.agents.provider;
-      }
-
-      const provider = getProvider(providerName || configProvider);
-      log(`Invoking provider: ${provider.name}`);
-      if (provider.name === "gemini") {
-        const modelOverride =
-          process.env.HARNESS_GEMINI_MODEL ||
-          harnessConfig.agents?.gemini_model;
-        if (modelOverride) {
-          providerConfig.model = modelOverride;
-        } else {
-          delete providerConfig.model;
-        }
-      }
-      if (provider.name === "codex") {
-        const modelOverride =
-          process.env.HARNESS_CODEX_MODEL || harnessConfig.agents?.codex_model;
-        if (modelOverride) {
-          providerConfig.model = modelOverride;
-        } else {
-          delete providerConfig.model;
-        }
-        const effortOverride =
-          process.env.HARNESS_CODEX_REASONING ||
-          harnessConfig.agents?.codex_reasoning;
-        if (effortOverride) {
-          providerConfig.reasoningEffort = effortOverride;
-        } else {
-          delete providerConfig.reasoningEffort;
-        }
-      }
-
-      const startTime = Date.now();
-      const result = await provider.invoke({
-        prompt,
+      const result = await runAgent({
+        name: "agent-code-review",
         files,
+        prompt,
         outputFile: "COMPLIANCE_REVIEW.json",
-        config: providerConfig,
+        providerConfig,
       });
-      const duration = Date.now() - startTime;
-      logInfo(`Execution time: ${duration}ms`);
 
       // ALL failures return high severity - no exceptions
       if (result.rateLimited) {
@@ -545,12 +496,6 @@ const sharedAdapter = {
         logError(
           `AI review unavailable (rate limit/network). Cannot proceed.${detail}`,
         );
-        recordAgentFailure({
-          name: "agent-code-review",
-          provider: provider.name,
-          error: result.error || "Provider unavailable",
-          rateLimited: true,
-        });
         return {
           severity: "high",
           findings: [],
@@ -562,12 +507,6 @@ const sharedAdapter = {
 
       if (!result.success) {
         logError(result.error || "Provider failed");
-        recordAgentFailure({
-          name: "agent-code-review",
-          provider: provider.name,
-          error: result.error || "Provider failed",
-          rateLimited: false,
-        });
         return {
           severity: "high",
           findings: [],
@@ -577,8 +516,6 @@ const sharedAdapter = {
         };
       }
 
-      // Read the result
-      // The provider.invoke() writes the result to the output file, but also returns it as result.result
       const reviewData = result.result;
 
       if (reviewData) {
