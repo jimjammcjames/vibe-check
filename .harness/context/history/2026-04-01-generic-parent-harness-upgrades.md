@@ -17,6 +17,7 @@ affected_files:
   - "AGENTS.md"
   - "package.json"
   - "harness-tests/tests/harness-config.test.mjs"
+  - "harness-tests/tests/harness-cli.test.mjs"
   - "harness-tests/tests/skills.test.mjs"
   - "workflows/README.md"
   - "workflows/skills/add-new-skill/SKILL.md"
@@ -63,6 +64,7 @@ The changes stay inside harness-core surfaces plus repo-local workflow docs and 
 - Added `.harness/setup/AGENT-SETUP.md`
 - Extended `skills.mjs` so `harness:prep` regenerates the AGENTS skills overview block
 - Updated docs and package scripts for local overrides and Copilot CI entrypoints
+- Hardened the `harness-cli` post smoke test so CI accepts timeout-based command recognition
 - Added portable skills: `add-new-skill`, `codify-learnings`, `find-regressions`, `history-first-branch-merge`, `logging-best-practices`, `merge-main-open-pr`, `merge-pr`, `refine-code`, and `review-skill`
 - Added generic AGENTS rules for guidance updates, secret hygiene, and explicit live-validation reporting
 - Left session-history enforcement and app-specific architecture conventions out of scope for this parent pass

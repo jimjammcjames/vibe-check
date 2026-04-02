@@ -36,13 +36,14 @@ on the result, and land the work through GitHub once it was clean.
 - [seq-06] assistant: reran `harness:prep`, `harness:iterate`, `harness:post`, and `harness:ci`, then rebased the dirty branch onto the refreshed `origin/main`.
 - [seq-07] assistant: resolved stash-pop conflicts by keeping the newer upstream canonical harness model and replaying only the still-useful portability additions on top.
 - [seq-08] assistant: created this session artifact and upgraded the meta history entry to schema v3 so the staged commit-intent gate would reflect the real change set.
+- [seq-09] assistant: debugged a GitHub-only Harness CI failure, found the nested `post` smoke test was too strict about stdout, and hardened it to accept timeout-based command recognition.
 
 ## Corrections & Thrash
 
 - user_correction: [seq-03] user expanded scope from harness setup parity to also include skills, workflows, and meta-learning behavior worth abstracting.
 - agent_correction: [seq-07] preserved the newer upstream harness/session model instead of replaying older pre-rebase assumptions on top of `origin/main`.
 - process_issue: `git stash pop` after rebasing onto refreshed `origin/main` produced conflicts because upstream had changed the same harness surfaces.
-- thrash: reran the outer harness loop after the rebase because the earlier green run no longer represented the branch that would be pushed.
+- thrash: reran the outer harness loop after the rebase because the earlier green run no longer represented the branch that would be pushed, then had to debug a GitHub-only CI failure before merge.
 
 ## Workflow Repetition
 
@@ -53,6 +54,7 @@ on the result, and land the work through GitHub once it was clean.
 
 - candidate: target=skill; formalize portable repo skills whenever the same multi-step workflow appears in multiple downstream repos.
 - candidate: target=agents; keep durable handoff rules in `AGENTS.md` and let `harness:prep` regenerate the skills overview from repo-local skill metadata.
+- candidate: target=history; record CI-only guardrail follow-ups in the same harness meta entry when the issue is part of landing the same portability change.
 - candidate: target=history; record harness-core portability upgrades as meta entries with exact affected-file coverage and linked session artifacts.
 
 ## Outcome
