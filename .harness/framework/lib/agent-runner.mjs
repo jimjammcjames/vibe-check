@@ -5,11 +5,12 @@
  * Handles sandbox creation, file staging, provider invocation, and result parsing.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join, dirname, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadHarnessConfig } from "./harness-config.mjs";
 import { getProvider } from "../providers/index.mjs";
+import { resolveAvailableProviderSequence } from "./provider-selection.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -56,14 +57,15 @@ function buildProviderConfig(providerName, providerConfig, config) {
   };
 
   if (providerName === "gemini") {
-    if (process.env.HARNESS_GEMINI_MODEL && !mergedProviderConfig.model) {
+    if (process.env.HARNESS_GEMINI_MODEL) {
       mergedProviderConfig.model = process.env.HARNESS_GEMINI_MODEL;
+    } else if (config.agents?.gemini_model) {
+      mergedProviderConfig.model = config.agents.gemini_model;
+    } else {
+      delete mergedProviderConfig.model;
     }
     if (process.env.HARNESS_GEMINI_HOME && !mergedProviderConfig.homeDir) {
       mergedProviderConfig.homeDir = process.env.HARNESS_GEMINI_HOME;
-    }
-    if (config.agents?.gemini_model && !mergedProviderConfig.model) {
-      mergedProviderConfig.model = config.agents.gemini_model;
     }
     if (config.agents?.gemini_home && !mergedProviderConfig.homeDir) {
       mergedProviderConfig.homeDir = config.agents.gemini_home;
@@ -74,28 +76,38 @@ function buildProviderConfig(providerName, providerConfig, config) {
   }
 
   if (providerName === "codex") {
-    if (process.env.HARNESS_CODEX_MODEL && !mergedProviderConfig.model) {
+    if (process.env.HARNESS_CODEX_MODEL) {
       mergedProviderConfig.model = process.env.HARNESS_CODEX_MODEL;
+    } else if (config.agents?.codex_model) {
+      mergedProviderConfig.model = config.agents.codex_model;
+    } else {
+      delete mergedProviderConfig.model;
     }
     if (process.env.HARNESS_CODEX_REASONING) {
       mergedProviderConfig.reasoningEffort =
         process.env.HARNESS_CODEX_REASONING;
-    }
-    if (config.agents?.codex_model && !mergedProviderConfig.model) {
-      mergedProviderConfig.model = config.agents.codex_model;
-    }
-    if (config.agents?.codex_reasoning) {
+    } else if (config.agents?.codex_reasoning) {
       mergedProviderConfig.reasoningEffort = config.agents.codex_reasoning;
+    } else {
+      delete mergedProviderConfig.reasoningEffort;
     }
   }
 
   if (providerName === "copilot") {
-    if (process.env.HARNESS_COPILOT_MODEL && !mergedProviderConfig.model) {
+    if (process.env.HARNESS_COPILOT_MODEL) {
       mergedProviderConfig.model = process.env.HARNESS_COPILOT_MODEL;
+    } else if (config.agents?.copilot_model) {
+      mergedProviderConfig.model = config.agents.copilot_model;
+    } else {
+      delete mergedProviderConfig.model;
     }
     if (process.env.HARNESS_COPILOT_REASONING) {
       mergedProviderConfig.reasoningEffort =
         process.env.HARNESS_COPILOT_REASONING;
+    } else if (config.agents?.copilot_reasoning) {
+      mergedProviderConfig.reasoningEffort = config.agents.copilot_reasoning;
+    } else {
+      delete mergedProviderConfig.reasoningEffort;
     }
     if (
       process.env.HARNESS_COPILOT_CONFIG_DIR &&
@@ -103,32 +115,12 @@ function buildProviderConfig(providerName, providerConfig, config) {
     ) {
       mergedProviderConfig.configDir = process.env.HARNESS_COPILOT_CONFIG_DIR;
     }
-    if (config.agents?.copilot_model && !mergedProviderConfig.model) {
-      mergedProviderConfig.model = config.agents.copilot_model;
-    }
-    if (config.agents?.copilot_reasoning) {
-      mergedProviderConfig.reasoningEffort = config.agents.copilot_reasoning;
-    }
     if (config.agents?.copilot_config_dir && !mergedProviderConfig.configDir) {
       mergedProviderConfig.configDir = config.agents.copilot_config_dir;
     }
   }
 
   return mergedProviderConfig;
-}
-
-function resolveProviderSequence({ providerOverride, config }) {
-  if (providerOverride) {
-    return [providerOverride];
-  }
-
-  if (process.env.HARNESS_PROVIDER) {
-    return [process.env.HARNESS_PROVIDER];
-  }
-
-  const primaryProvider = config.agents?.provider || "http";
-  const fallbackProvider = config.agents?.fallback_provider;
-  return [...new Set([primaryProvider, fallbackProvider].filter(Boolean))];
 }
 
 export function recordAgentFailure({ name, provider, error, rateLimited }) {
@@ -209,11 +201,29 @@ export async function runAgent({
   providerOverride,
 }) {
   const config = loadConfig();
-  const providerSequence = resolveProviderSequence({
+  const providerStatus = await resolveAvailableProviderSequence({
     providerOverride,
     config,
   });
+  const providerSequence = providerStatus.availableProviders;
   let lastRateLimitedResult = null;
+
+  if (providerStatus.unavailableProviders.length > 0) {
+    logWarning(
+      `Skipping unavailable providers: ${providerStatus.unavailableProviders.join(", ")}`,
+    );
+  }
+
+  if (providerSequence.length === 0) {
+    return {
+      success: false,
+      rateLimited: false,
+      unavailable: true,
+      result: null,
+      sandboxDir: null,
+      error: `No configured providers available: ${providerStatus.configuredProviders.join(", ") || "none"}`,
+    };
+  }
 
   for (const [index, providerName] of providerSequence.entries()) {
     const provider = getProvider(providerName);

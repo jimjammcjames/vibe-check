@@ -8,6 +8,7 @@ related_history:
   - ".harness/context/history/2026-04-01-generic-parent-harness-upgrades.md"
   - ".harness/context/history/2026-04-02-harness-post-smoke-timeout-detection.md"
   - ".harness/context/history/2026-04-02-base-tripwire-shared-config-loader.md"
+  - ".harness/context/history/2026-04-02-ci-agent-provider-availability.md"
 skills_used:
   - "merge-main-open-pr"
   - "merge-pr"
@@ -45,6 +46,10 @@ on the result, and land the work through GitHub once it was clean.
 - [seq-12] assistant: fixed `base-tripwire` to use the shared harness config loader and made its integration tests deterministic after the newly activated tripwire exposed a config-loading mismatch.
 - [seq-13] assistant: after the tripwire fix passed locally, GitHub Actions still showed the nested `post` smoke test could fail with an early non-zero child exit and little stdout, so the recognition heuristic was widened again and rerun through the local harness loop.
 - [seq-14] assistant: GitHub Actions still failed on a spawn-level `post` error shape, so the smoke test was widened one final time to accept any real child-process error code as proof the `post` command was reached.
+- [seq-15] assistant: after pushing that final smoke-test tweak, GitHub Actions moved to a new failure in `harness-guardian` because the hosted runner had no runnable configured agent provider and the `codex` fallback binary was missing.
+- [seq-16] assistant: created a new fix entry, made provider selection availability-aware, added an explicit hosted-CI opt-in to skip agent-review commands only when no provider is runnable, updated the workflow/docs, and added focused provider-selection tests.
+- [seq-17] assistant: the first local rerun of the shared-runner refactor exposed a second-order bug where the generic HTTP review model leaked into Codex fallback attempts, so the provider-specific merge logic in `runAgent()` was restored.
+- [seq-18] assistant: reran the ladder, including a final local `HARNESS_ALLOW_MISSING_AGENT_PROVIDER=1 npm run harness:ci`, and got the merge candidate back to green before the last push.
 
 ## Corrections & Thrash
 
@@ -56,6 +61,8 @@ on the result, and land the work through GitHub once it was clean.
 - thrash: splitting the smoke-test issue into a proper `fix` entry activated `base-tripwire`, which surfaced a second harness bug in its config-loading path before the final merge gate could clear.
 - thrash: GitHub Actions exposed one more remote-only `post` smoke-test failure shape after the local branch was green, which required a final heuristic broadening plus another full staged outer-loop rerun.
 - thrash: the same remote-only `post` smoke test surfaced multiple distinct child-process failure shapes in sequence, so the recognition rule had to be generalized beyond timeout wording before the PR could land.
+- thrash: once the smoke-test thread was resolved, GitHub Actions surfaced a second hosted-only failure mode because the workflow assumed local agent providers would also exist on the runner, which forced another harness-core fix before merge.
+- thrash: unifying `agent-code-review` onto the shared runner briefly changed its provider-config semantics, which exposed a local-only fallback-model mismatch before the final outer loop went green again.
 
 ## Workflow Repetition
 
@@ -78,4 +85,7 @@ canonical base and has the matching history/session artifacts needed for staged
 verification, PR creation, and merge, with the `post` smoke test hardened
 against both timeout output and `ETIMEDOUT` timeout error shapes and tracked in
 its own fix entry for coherence, plus the remote-only early-exit and
-spawn-error variants captured in the same smoke-test fix thread.
+spawn-error variants captured in the same smoke-test fix thread, followed by a
+provider-availability fix so hosted CI can degrade explicitly when no agent
+provider exists on the runner and a shared-runner merge fix that preserves
+provider-specific model defaults during fallback.

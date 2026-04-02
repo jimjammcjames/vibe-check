@@ -38,6 +38,10 @@ npm run harness:ci                # Outer loop only: PR update / merge gate
 - Local-only agent overrides belong in `.harness/config.local.yml` (gitignored).
 - Agent runtime failures are logged to
   `.harness/diagnostics/latest/agent-failures.log`.
+- Hosted CI can set `HARNESS_ALLOW_MISSING_AGENT_PROVIDER=1` to skip only the
+  provider-backed agent-review commands when none of the configured providers
+  are runnable on that runner. This does not hide real provider failures once a
+  provider is actually available.
 
 Useful env/config overrides:
 
