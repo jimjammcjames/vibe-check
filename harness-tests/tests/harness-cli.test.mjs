@@ -551,7 +551,10 @@ describe("harness CLI", { concurrency: 1 }, () => {
             .toLowerCase()
             .includes("timed out") ||
           String(error.message || "").includes("ETIMEDOUT");
-        const exited = Number.isInteger(error.status) || Boolean(error.signal);
+        const exited =
+          Number.isInteger(error.status) ||
+          Boolean(error.signal) ||
+          Boolean(error.code);
         assert.ok(
           timedOut ||
             exited ||

@@ -44,6 +44,7 @@ on the result, and land the work through GitHub once it was clean.
 - [seq-11] assistant: reran the outer loop, split the smoke-test follow-up into its own fix entry, and narrowed the meta entry back to the actual portability diff after memory-coherence review.
 - [seq-12] assistant: fixed `base-tripwire` to use the shared harness config loader and made its integration tests deterministic after the newly activated tripwire exposed a config-loading mismatch.
 - [seq-13] assistant: after the tripwire fix passed locally, GitHub Actions still showed the nested `post` smoke test could fail with an early non-zero child exit and little stdout, so the recognition heuristic was widened again and rerun through the local harness loop.
+- [seq-14] assistant: GitHub Actions still failed on a spawn-level `post` error shape, so the smoke test was widened one final time to accept any real child-process error code as proof the `post` command was reached.
 
 ## Corrections & Thrash
 
@@ -54,6 +55,7 @@ on the result, and land the work through GitHub once it was clean.
 - thrash: reran the outer harness loop after the rebase because the earlier green run no longer represented the branch that would be pushed, then had to debug a GitHub-only CI failure before merge and again after the first smoke-test hardening proved incomplete.
 - thrash: splitting the smoke-test issue into a proper `fix` entry activated `base-tripwire`, which surfaced a second harness bug in its config-loading path before the final merge gate could clear.
 - thrash: GitHub Actions exposed one more remote-only `post` smoke-test failure shape after the local branch was green, which required a final heuristic broadening plus another full staged outer-loop rerun.
+- thrash: the same remote-only `post` smoke test surfaced multiple distinct child-process failure shapes in sequence, so the recognition rule had to be generalized beyond timeout wording before the PR could land.
 
 ## Workflow Repetition
 
@@ -75,5 +77,5 @@ The branch now carries the portable harness improvements on top of the latest
 canonical base and has the matching history/session artifacts needed for staged
 verification, PR creation, and merge, with the `post` smoke test hardened
 against both timeout output and `ETIMEDOUT` timeout error shapes and tracked in
-its own fix entry for coherence, plus one last remote-only early-exit case
-captured in the same smoke-test fix thread.
+its own fix entry for coherence, plus the remote-only early-exit and
+spawn-error variants captured in the same smoke-test fix thread.

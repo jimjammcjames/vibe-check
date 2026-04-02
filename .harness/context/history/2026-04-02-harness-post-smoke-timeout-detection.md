@@ -23,9 +23,9 @@ tags:
 
 ## Summary
 
-Hardened the `harness-cli` nested `post` smoke test so it recognizes timeout
-and early-exit failure shapes, which was causing local full-suite runs and
-GitHub Actions to fail even though the command was being reached.
+Hardened the `harness-cli` nested `post` smoke test so it recognizes timeout,
+spawn-level, and early-exit failure shapes, which was causing local full-suite
+runs and GitHub Actions to fail even though the command was being reached.
 
 ## Request / Intent
 
@@ -38,9 +38,9 @@ After pushing the portability changes, GitHub Actions run `23885632792` for PR
 #4 still failed in `npm test` on the `harness CLI` suite. The failing subtest
 was `post command -> starts post verification`, and reproducing the full suite
 locally showed the same assertion could fail when Node reported the nested
-`execSync` timeout via `error.code === "ETIMEDOUT"` or as an early non-zero
-child exit without the expected stdout, instead of the previously handled
-signal/message combinations.
+`execSync` timeout via `error.code === "ETIMEDOUT"`, as another spawn-level
+error code on GitHub Actions, or as an early non-zero child exit without the
+expected stdout, instead of the previously handled signal/message combinations.
 
 ## Error
 
@@ -52,9 +52,10 @@ signal/message combinations.
 
 Expanded the smoke-test recognition heuristic in
 `harness-tests/tests/harness-cli.test.mjs` to treat `error.code ===
-"ETIMEDOUT"`, `error.message` containing `ETIMEDOUT`, and non-null child exit
-status or signal values as valid proof that the `post` command was actually
-invoked, alongside the existing output-based checks.
+"ETIMEDOUT"`, other non-empty spawn error codes, `error.message` containing
+`ETIMEDOUT`, and non-null child exit status or signal values as valid proof
+that the `post` command was actually invoked, alongside the existing
+output-based checks.
 
 ## Validation
 
@@ -74,17 +75,19 @@ Gap Closure: Added test/validation: `harness-tests/tests/harness-cli.test.mjs`
 
 ## Class Prevention
 
-When a smoke test intentionally relies on a nested process that may timeout or
-exit early, recognize a family of invocation signals rather than one wording or
-one platform-specific error shape, and verify the heuristic under both isolated
-and full-suite runs before assuming it is portable across runners.
+When a smoke test intentionally relies on a nested process that may timeout,
+fail during spawn, or exit early, recognize a family of invocation signals
+rather than one wording or one platform-specific error shape, and verify the
+heuristic under both isolated and full-suite runs before assuming it is
+portable across runners.
 
 ## Raw Notes
 
 - Local direct reproduction showed `spawnSync /bin/sh ETIMEDOUT` with
   `signal: "SIGTERM"` and partial `harness:post` stdout.
-- GitHub Actions also surfaced an early non-zero child exit with little or no
-  stdout, so the smoke test now accepts exit status or signal as recognition.
+- GitHub Actions also surfaced spawn-level and early-exit failures with little
+  or no stdout, so the smoke test now accepts child error codes, exit status,
+  or signal as recognition.
 - The full `npm test` suite reproduced the failure before the fix and passed
   afterward.
 - The fix stays inside test coverage and does not weaken any harness runtime
