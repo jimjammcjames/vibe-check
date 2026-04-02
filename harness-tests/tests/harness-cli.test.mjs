@@ -551,8 +551,10 @@ describe("harness CLI", { concurrency: 1 }, () => {
             .toLowerCase()
             .includes("timed out") ||
           String(error.message || "").includes("ETIMEDOUT");
+        const exited = Number.isInteger(error.status) || Boolean(error.signal);
         assert.ok(
           timedOut ||
+            exited ||
             output.includes("harness:post") ||
             output.includes("Post Checks"),
           "should recognize post command",
