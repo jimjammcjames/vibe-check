@@ -152,6 +152,27 @@ function buildListTestsCommand(discoveredFiles) {
 describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
   it("cleans up stale tripwire worktrees before running", () => {
     const worktreePath = createTripwireWorktree();
+    const testFile = join(
+      REPO_ROOT,
+      "harness-tests",
+      "tests",
+      "cleanup-baseline.test.mjs",
+    );
+    const entryFile = join(
+      REPO_ROOT,
+      ".harness",
+      "context",
+      "history",
+      "2099-01-01-tripwire-cleanup-test.md",
+    );
+
+    writeFileSync(
+      testFile,
+      `import test from "node:test"; test("cleanup baseline", () => {});`,
+    );
+    writeFixEntry(entryFile);
+    stageFiles([testFile, entryFile]);
+    const discoveredFiles = getDiffTestFiles();
 
     try {
       const before = listWorktrees();
@@ -160,7 +181,12 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
         "expected temp tripwire worktree to exist",
       );
 
-      const result = runTripwire({ HARNESS_QUIET: "1" });
+      const result = runTripwire({
+        HARNESS_QUIET: "1",
+        HARNESS_RUN_TESTS_CMD: 'node -e "process.exit(1)"',
+        HARNESS_LIST_TESTS_CMD: buildListTestsCommand(discoveredFiles),
+        HARNESS_LIST_TESTS_PATTERN: "(.+\\.test\\.mjs)",
+      });
       assert.strictEqual(
         result.exitCode,
         0,
@@ -177,6 +203,7 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
         "expected tripwire worktree directory to be removed",
       );
     } finally {
+      cleanupFiles([testFile, entryFile]);
       if (existsSync(worktreePath)) {
         removeWorktree(worktreePath);
       }
@@ -268,6 +295,44 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
     assert.ok(
       !result.output.includes("Test discovery mismatch detected"),
       `should not report discovery mismatch when test is discovered, got: ${result.output}`,
+    );
+  });
+
+  it("uses configured discovery command when env override is absent", () => {
+    const testFile = join(
+      REPO_ROOT,
+      "harness-tests",
+      "tests",
+      "config-discovery.test.mjs",
+    );
+    const entryFile = join(
+      REPO_ROOT,
+      ".harness",
+      "context",
+      "history",
+      "2099-01-01-tripwire-config-discovery-test.md",
+    );
+
+    writeFileSync(
+      testFile,
+      `import test from "node:test"; test("config discovery", () => {});`,
+    );
+    writeFixEntry(entryFile);
+
+    stageFiles([testFile, entryFile]);
+    const result = runTripwire({
+      HARNESS_RUN_TESTS_CMD: 'node -e "process.exit(1)"',
+    });
+    cleanupFiles([testFile, entryFile]);
+
+    assert.strictEqual(
+      result.exitCode,
+      0,
+      `tripwire should pass with config-backed discovery, got: ${result.output}`,
+    );
+    assert.ok(
+      !result.output.includes("Test discovery mismatch detected"),
+      `configured discovery should find the staged test file, got: ${result.output}`,
     );
   });
 });

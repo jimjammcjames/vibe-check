@@ -546,9 +546,11 @@ describe("harness CLI", { concurrency: 1 }, () => {
         const timedOut =
           error.signal === "SIGTERM" ||
           error.killed === true ||
+          error.code === "ETIMEDOUT" ||
           String(error.message || "")
             .toLowerCase()
-            .includes("timed out");
+            .includes("timed out") ||
+          String(error.message || "").includes("ETIMEDOUT");
         assert.ok(
           timedOut ||
             output.includes("harness:post") ||

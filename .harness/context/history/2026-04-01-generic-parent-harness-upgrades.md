@@ -4,11 +4,11 @@ type: "meta"
 status: "active"
 schema: "v3"
 search_terms:
-  - "harness config local overrides"
+  - "portable repo workflow skills"
   - "skills overview sync"
-  - "copilot provider fallback"
+  - "generic parent harness docs"
 related_entries:
-  - "NONE"
+  - ".harness/context/history/2026-04-02-harness-post-smoke-timeout-detection.md"
 affected_files:
   - ".harness/Harness.md"
   - ".harness/framework/cli/harness.mjs"
@@ -17,7 +17,6 @@ affected_files:
   - "AGENTS.md"
   - "package.json"
   - "harness-tests/tests/harness-config.test.mjs"
-  - "harness-tests/tests/harness-cli.test.mjs"
   - "harness-tests/tests/skills.test.mjs"
   - "workflows/README.md"
   - "workflows/skills/add-new-skill/SKILL.md"
@@ -39,32 +38,49 @@ tags:
 
 ## Summary
 
-Upgraded the generic parent harness with portable config loading, AGENTS skill overview generation, broader agent provider support, and a first set of portable repo skills so downstream repos can inherit stronger workflow primitives without inheriting app-specific architecture rules.
+Upgraded the generic parent harness with generated `AGENTS.md` skill overview
+sync, tighter setup guidance, and a first set of portable repo-local workflow
+skills so downstream repos can inherit stronger workflow primitives without
+inheriting app-specific architecture rules.
 
 ## Context
 
-`moves` and `moves-algorithm` had evolved the installed harness beyond this parent in a few clearly reusable ways. The parent still used ad hoc YAML parsing, lacked gitignored local agent overrides, did not refresh `AGENTS.md` from repo skills, only exposed Codex and Gemini in the shared provider registry, and was missing several generic repo-local skills that downstream repos were already using to codify learnings and branch workflows.
+`moves` and `moves-algorithm` had evolved the installed harness beyond this
+parent in a few clearly reusable ways. The parent did not refresh `AGENTS.md`
+from repo-local skill metadata, its durable setup guidance lagged behind the
+downstream repos, and it was missing several generic workflow skills that were
+already helping downstream repos codify learnings and standardize PR work.
 
 ## Technical Decision
 
-Port only the general-purpose harness improvements into the parent: a shared YAML config loader with local override support, generated skills-overview syncing during `harness:prep`, Copilot provider registration plus fallback-provider support, tighter setup docs, direct tests for the new behavior, and a curated set of portable workflow skills covering skill creation, codification, regression audits, branch conflict replay, logging guidance, code refinement, PR prep, and PR merge. Deliberately skip downstream product architecture rules and repo-specific skills.
+Port only the general-purpose harness improvements that were still missing from
+the parent diff: generated skills-overview syncing during `harness:prep`,
+tighter setup and `AGENTS.md` guidance, direct tests for the new behavior, and
+a curated set of portable workflow skills covering skill creation,
+codification, regression audits, branch conflict replay, logging guidance, code
+refinement, PR prep, and PR merge. Deliberately skip downstream product
+architecture rules and repo-specific skills.
 
 ## Security & Integrity Impact
 
-Local agent overrides now live in `.harness/config.local.yml`, which is gitignored so machine-specific credentials and runtime paths stay out of source control. The generated skills overview reduces instruction drift between `workflows/skills/` and `AGENTS.md`, and the added provider fallback keeps review enforcement available without weakening any harness checks.
+The generated skills overview reduces instruction drift between
+`workflows/skills/` and `AGENTS.md`, while the added repo guidance makes secret
+hygiene and durable workflow updates explicit in tracked docs rather than chat
+history. No new secret-bearing runtime surface was added in this final diff.
 
 ## Conformance & Enforcement
 
-The changes stay inside harness-core surfaces plus repo-local workflow docs and are recorded as a `meta` entry with `#harness-meta`. Added harness tests cover config-local override behavior and AGENTS skills-overview generation to keep the new parent behavior from regressing.
+The changes stay inside harness-core surfaces plus repo-local workflow docs and
+are recorded as a `meta` entry with `#harness-meta`. Added harness tests cover
+skills-overview generation so the new parent behavior does not regress, and the
+portable skills move recurring workflow knowledge into tracked repo assets.
 
 ## Raw Notes
 
-- Added `.harness/framework/lib/harness-config.mjs`
-- Added `.harness/framework/providers/copilot.mjs`
 - Added `.harness/setup/AGENT-SETUP.md`
 - Extended `skills.mjs` so `harness:prep` regenerates the AGENTS skills overview block
-- Updated docs and package scripts for local overrides and Copilot CI entrypoints
-- Hardened the `harness-cli` post smoke test so CI accepts timeout-based command recognition
+- Updated docs and package scripts for the portable workflow/skills experience
 - Added portable skills: `add-new-skill`, `codify-learnings`, `find-regressions`, `history-first-branch-merge`, `logging-best-practices`, `merge-main-open-pr`, `merge-pr`, `refine-code`, and `review-skill`
 - Added generic AGENTS rules for guidance updates, secret hygiene, and explicit live-validation reporting
+- Split the later Harness CI smoke-test fix into `.harness/context/history/2026-04-02-harness-post-smoke-timeout-detection.md`
 - Left session-history enforcement and app-specific architecture conventions out of scope for this parent pass

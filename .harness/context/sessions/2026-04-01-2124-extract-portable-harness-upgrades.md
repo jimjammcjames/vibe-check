@@ -6,10 +6,13 @@ tags:
   - "#workflow"
 related_history:
   - ".harness/context/history/2026-04-01-generic-parent-harness-upgrades.md"
+  - ".harness/context/history/2026-04-02-harness-post-smoke-timeout-detection.md"
+  - ".harness/context/history/2026-04-02-base-tripwire-shared-config-loader.md"
 skills_used:
   - "merge-main-open-pr"
   - "merge-pr"
   - "git-sync-dirty-branch"
+  - "github:gh-fix-ci"
 ---
 
 # extract-portable-harness-upgrades
@@ -37,13 +40,18 @@ on the result, and land the work through GitHub once it was clean.
 - [seq-07] assistant: resolved stash-pop conflicts by keeping the newer upstream canonical harness model and replaying only the still-useful portability additions on top.
 - [seq-08] assistant: created this session artifact and upgraded the meta history entry to schema v3 so the staged commit-intent gate would reflect the real change set.
 - [seq-09] assistant: debugged a GitHub-only Harness CI failure, found the nested `post` smoke test was too strict about stdout, and hardened it to accept timeout-based command recognition.
+- [seq-10] assistant: reproduced the remaining failure under the full `npm test` suite, confirmed timeout errors could surface as `ETIMEDOUT`, and widened the smoke-test heuristic before repushing.
+- [seq-11] assistant: reran the outer loop, split the smoke-test follow-up into its own fix entry, and narrowed the meta entry back to the actual portability diff after memory-coherence review.
+- [seq-12] assistant: fixed `base-tripwire` to use the shared harness config loader and made its integration tests deterministic after the newly activated tripwire exposed a config-loading mismatch.
 
 ## Corrections & Thrash
 
 - user_correction: [seq-03] user expanded scope from harness setup parity to also include skills, workflows, and meta-learning behavior worth abstracting.
 - agent_correction: [seq-07] preserved the newer upstream harness/session model instead of replaying older pre-rebase assumptions on top of `origin/main`.
+- agent_correction: [seq-10] widened the `post` smoke-test heuristic after confirming the first fix still missed `ETIMEDOUT` timeout errors during the full suite.
 - process_issue: `git stash pop` after rebasing onto refreshed `origin/main` produced conflicts because upstream had changed the same harness surfaces.
-- thrash: reran the outer harness loop after the rebase because the earlier green run no longer represented the branch that would be pushed, then had to debug a GitHub-only CI failure before merge.
+- thrash: reran the outer harness loop after the rebase because the earlier green run no longer represented the branch that would be pushed, then had to debug a GitHub-only CI failure before merge and again after the first smoke-test hardening proved incomplete.
+- thrash: splitting the smoke-test issue into a proper `fix` entry activated `base-tripwire`, which surfaced a second harness bug in its config-loading path before the final merge gate could clear.
 
 ## Workflow Repetition
 
@@ -55,10 +63,14 @@ on the result, and land the work through GitHub once it was clean.
 - candidate: target=skill; formalize portable repo skills whenever the same multi-step workflow appears in multiple downstream repos.
 - candidate: target=agents; keep durable handoff rules in `AGENTS.md` and let `harness:prep` regenerate the skills overview from repo-local skill metadata.
 - candidate: target=history; record CI-only guardrail follow-ups in the same harness meta entry when the issue is part of landing the same portability change.
+- candidate: target=history; if a later CI-only fix becomes its own behavioral change, promote it to a separate fix entry instead of stretching the original meta entry.
+- candidate: target=agents; keep harness scripts on the shared config loader so config behavior cannot drift between CLI, reviewers, and CI checks.
 - candidate: target=history; record harness-core portability upgrades as meta entries with exact affected-file coverage and linked session artifacts.
 
 ## Outcome
 
 The branch now carries the portable harness improvements on top of the latest
 canonical base and has the matching history/session artifacts needed for staged
-verification, PR creation, and merge.
+verification, PR creation, and merge, with the `post` smoke test hardened
+against both timeout output and `ETIMEDOUT` timeout error shapes and tracked in
+its own fix entry for coherence.

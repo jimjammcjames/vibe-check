@@ -34,6 +34,7 @@ import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { minimatch } from "./minimatch.mjs";
+import { loadHarnessConfig } from "../lib/harness-config.mjs";
 import { parseFrontmatter, STRICT_TYPES } from "../lib/history-entry.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -83,88 +84,7 @@ function getEnvOverride(name) {
 }
 
 function loadConfig() {
-  const configPath = join(HARNESS_ROOT, "config.yml");
-  if (!existsSync(configPath)) {
-    throw new Error(`Config not found: ${configPath}`);
-  }
-  const content = readFileSync(configPath, "utf-8");
-  return parseSimpleYaml(content);
-}
-
-function parseSimpleYaml(content) {
-  const config = { globs: {}, reviewers: {} };
-  let currentSection = null;
-  let currentGlob = null;
-  let currentReviewer = null;
-
-  const lines = content.split("\n");
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-
-    if (trimmed === "globs:") {
-      currentSection = "globs";
-      currentReviewer = null;
-      continue;
-    }
-    if (trimmed === "reviewers:") {
-      currentSection = "reviewers";
-      currentGlob = null;
-      continue;
-    }
-    if (trimmed === "stages:") {
-      currentSection = "stages";
-      continue;
-    }
-
-    if (currentSection === "globs") {
-      const globKeyMatch = trimmed.match(/^(\w+):(.*)$/);
-      if (globKeyMatch) {
-        const key = globKeyMatch[1];
-        const value = globKeyMatch[2].trim();
-        if (value && value !== "") {
-          config.globs[key] = value.replace(/^["']|["']$/g, "");
-        } else {
-          currentGlob = key;
-          config.globs[key] = [];
-        }
-        continue;
-      }
-
-      if (currentGlob && trimmed.startsWith("-")) {
-        const pattern = trimmed
-          .slice(1)
-          .trim()
-          .replace(/^["']|["']$/g, "");
-        config.globs[currentGlob].push(pattern);
-      }
-    }
-
-    if (currentSection === "reviewers") {
-      // Check for reviewer name (e.g., "base_tripwire:")
-      const reviewerMatch = trimmed.match(/^(\w+):$/);
-      if (reviewerMatch) {
-        currentReviewer = reviewerMatch[1];
-        config.reviewers[currentReviewer] = {};
-        continue;
-      }
-
-      // Check for key-value within a reviewer
-      if (currentReviewer) {
-        const kvMatch = trimmed.match(/^(\w+):\s*(.+)$/);
-        if (kvMatch) {
-          const key = kvMatch[1];
-          let value = kvMatch[2].replace(/^["']|["']$/g, "");
-          // Parse booleans
-          if (value === "true") value = true;
-          if (value === "false") value = false;
-          config.reviewers[currentReviewer][key] = value;
-        }
-      }
-    }
-  }
-
-  return config;
+  return loadHarnessConfig({ harnessRoot: HARNESS_ROOT });
 }
 
 function getDiffFiles(baseRef = "origin/main") {
