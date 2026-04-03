@@ -467,6 +467,15 @@ function validateEntryContent({
       });
     }
 
+    const guidanceImpact = extractMarkdownSection(body, "Guidance Impact");
+    if (!guidanceImpact) {
+      issues.push({
+        code: "GUIDANCE_IMPACT_MISSING",
+        message: 'Missing "## Guidance Impact" section',
+        fix: "State what durable docs/skills/policies changed, or explicitly say none.",
+      });
+    }
+
     if (!isMeta) {
       const requestIntent = extractMarkdownSection(body, "Request / Intent");
       if (!requestIntent) {
@@ -826,6 +835,7 @@ function validateSessionContent({
     "Corrections & Thrash",
     "Workflow Repetition",
     "Codify Candidates",
+    "Guidance Impact",
     "Outcome",
   ];
 

@@ -24,6 +24,17 @@ Run this after a task when any of these happened:
 - The root cause was not obvious from existing docs.
 - A repeatable workflow emerged during the work.
 - A durable repo rule changed but is still only implicit in chat.
+- A long-lived automation, runtime, or operator-facing surface became part of
+  the repo contract.
+
+## Quality Bar
+
+Codify only when the learning is:
+
+- Reusable: future work would benefit from finding it quickly.
+- Non-obvious: it required discovery, not just rereading a README.
+- Specific: the trigger and remedy can be stated concretely.
+- Verified: the solution actually worked, not just sounded plausible.
 
 ## Workflow
 
@@ -46,6 +57,9 @@ rg -n "keyword|error text" .harness/context/history workflows/skills AGENTS.md
 - Put short always-true rules in `AGENTS.md`.
 - Put conditional playbooks in `workflows/skills/*`.
 - Put incidents, decisions, and change rationale in `.harness/context/history/*`.
+- If the learning is about a long-lived runtime, automation, or operator
+  surface, use `durable-surface-contracts` to record its boundary, validation,
+  and monitoring story in the abstract.
 
 4. Prefer updating an existing artifact over creating a duplicate.
 
@@ -58,7 +72,33 @@ rg -n "keyword|error text" .harness/context/history workflows/skills AGENTS.md
 - Prefer commands, checks, and decision rules over narrative.
 - Keep sensitive information out of the artifact.
 
-6. Report both results and leftovers.
+6. Use the session artifact as raw material.
+
+- Pull candidate items from `## Corrections & Thrash`,
+  `## Workflow Repetition`, `## Codify Candidates`, and `## Guidance Impact`.
+- Prefer codifying the highest-leverage 1-3 learnings rather than spraying low
+  value updates everywhere.
+
+7. Report both results and leftovers.
 
 - State what was codified.
-- State any remaining frictions that still need code or tooling changes.
+- State any remaining frictions that still need code, tooling, or validation
+  changes.
+
+## Session-End Self-Check
+
+Before wrapping a substantial task, ask:
+
+- Did we spend meaningful time discovering something?
+- Did the work expose a repeated workflow or recurring failure mode?
+- Did durable guidance move with the implementation?
+
+If yes to any, run this skill before handoff.
+
+## Anti-Patterns
+
+- Over-extracting one-off trivia into a new skill.
+- Writing vague summaries that future search will never find.
+- Recording a guidance change in chat but not in tracked repo artifacts.
+- Claiming a durable surface exists without also documenting how it is
+  validated or monitored.

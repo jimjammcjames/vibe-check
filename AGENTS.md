@@ -9,16 +9,24 @@
 - Before starting a new task, run `npm run harness:prep` and continue with the
   request.
 - Before changing code, check `workflows/skills/` and
-  `.harness/context/history/` for relevant guidance.
+  `.harness/context/history/` plus `.harness/context/sessions/` for relevant
+  guidance.
 - Never use `--no-verify`; fix verification failures instead of bypassing them.
 - Keep durable rules in tracked repo docs rather than leaving them only in chat
   history.
 - If a change alters durable workflow, policy, or standing guidance, update the
-  relevant repo docs in the same change.
+  relevant repo docs in the same change and record the guidance impact in the
+  matching history/session artifacts.
+- Keep the active session artifact updated as the task evolves; do not wait
+  until the very end to capture corrections, repeated workflow, or codify
+  candidates.
 - Before committing or pushing, verify the staged content does not include
   secrets, credentials, or tokens.
 - Prefer live end-to-end validation when feasible; if it is not feasible, say
   explicitly what was validated instead.
+- Do not treat a one-off manual smoke test as durable monitoring coverage; if a
+  long-lived workflow needs monitoring, record the real health signal or note
+  the gap explicitly.
 
 ## Canonical Loop
 
@@ -55,16 +63,17 @@ See also: [`workflows/mcp/`](workflows/mcp/) for MCP server manifests and
 
 - `add-new-skill`: Create a new portable repo skill with the right frontmatter, folder layout, and only the supporting resources it genuinely needs. USE WHEN: Defining a reusable workflow for a repeated engineering task. | Converting an ad hoc process into a repo-local skill. | Use when the user says or implies: | "Create a new skill for this." | "Turn this into a reusable workflow." | "We keep doing this; standardize it."
 - `codify-learnings`: Turn non-obvious session learnings into durable repo artifacts such as AGENTS rules, skills, and harness history entries. USE WHEN: Capturing durable guidance after debugging, incident work, or process thrash. | Converting chat-only learnings into repo artifacts. | Use when the user says or implies: | "Codify our learnings." | "Save this as a skill." | "Make sure we do not repeat this mistake."
+- `durable-surface-contracts`: Record the boundary, validation path, and monitoring contract for long-lived runtime or automation surfaces so durable capabilities never ship as implicit behavior. USE WHEN: Adding a scheduled job, daemon, watcher, bridge, runtime, or durable CLI entrypoint. | Promoting a previously ad hoc/manual workflow into a standing system capability. | Capturing the abstract equivalent of a feature-catalog row without depending on a repo-specific schema. | Use when the user says or implies: | "Make this a durable feature." | "Add a background service or automation." | "Document how this surface is validated and monitored."
 - `find-regressions`: Audit recent git history for code or config that changed more than once, then classify the churn and its history coverage. USE WHEN: Auditing a recent window for repeated-touch code or config. | Checking whether later commits were corrective, restorative, or effectively removals. | Finding weak or missing harness history coverage for changed-again work.
 - `history-first-branch-merge`: Resolve large stale-branch rebases or merges by reconstructing base intent and branch intent from harness history before editing conflicts. USE WHEN: Rebasing or merging a stale branch with a large conflict set. | Sorting true branch intent from snapshots, carryover changes, or obsolete intermediate work. | Deciding what should survive from current base versus the branch.
 - `logging-best-practices`: Apply structured logging, correlation IDs, level discipline, and secret-safe log design before adding or revising production logging. USE WHEN: Designing or cleaning up production logging. | Adding observability around failures, retries, or external service calls. | Deciding what should and should not be logged.
 - `merge-main-open-pr`: Refresh a branch against the latest base, run harness verification, then create or update a GitHub pull request without skipping review state or merge-safety checks. USE WHEN: Opening a PR for the current branch. | Updating an existing PR after more work. | Syncing a stale branch with current base before PR work.
 - `merge-pr`: Merge an existing GitHub pull request by checking unresolved review feedback, rerunning harness CI on the final candidate, and merging only the reviewed head commit. USE WHEN: Merging a PR after review. | Resolving GitHub review feedback and then landing the PR. | Avoiding merges that silently skip unresolved inline comments or stale CI state.
 - `refine-code`: Clean up recent code changes for clarity and consistency while preserving exact behavior and staying inside the intended diff. USE WHEN: Removing AI slop without changing behavior. | Tightening a fresh diff before review or handoff. | Aligning new code with local conventions.
-- `review-code`: Meta-level code reviewer enforcing the 3-step chain (bandaid, meta-analysis, close gap). USE WHEN: Review the skill before executing related work.
-- `review-harness-guardian`: Reviews harness framework changes for gaming attempts (bypass, weaken, hide). USE WHEN: Review the skill before executing related work.
-- `review-memory-coherence`: Validates history entry coherence (type correctness, topic unity, linking). USE WHEN: Review the skill before executing related work.
-- `review-skill`: Run a lightweight final-quality pass by codifying learnings, refining recent code, and checking memory coherence when context artifacts changed. USE WHEN: Final cleanup after implementation. | Capturing durable learnings before the session ends. | Reviewing history coherence when context artifacts changed.
-- `review-undocumented`: Detects undocumented code changes by comparing diff against history entries. USE WHEN: Review the skill before executing related work.
+- `review-code`: Meta-level code reviewer enforcing the 3-step chain (bandaid, meta-analysis, close gap). USE WHEN: Reviewing code diffs for policy compliance, evidence quality, and regression-prevention completeness. | Auditing fix and incident changes for systemic gap closure and class-prevention follow-through. | Use when the user says or implies: | "Run harness review on this diff." | "Check this fix for systemic gap closure." | "Verify this change meets harness policy."
+- `review-harness-guardian`: Reviews harness framework changes for gaming attempts (bypass, weaken, hide). USE WHEN: Reviewing harness-core enforcement changes in `.harness/framework/**`, `.harness/config.yml`, `.harness/Harness.md`, hooks, or `harness-tests/` for anti-gaming integrity. | Validating harness refactors to ensure safeguards are preserved or strengthened. | Use when the user says or implies: | "Review these .harness changes." | "Check for gaming or weakened enforcement." | "Validate this harness refactor is safe."
+- `review-memory-coherence`: Validates history entry coherence (type correctness, topic unity, linking). USE WHEN: Validating history-entry coherence for type correctness and topic scope before merge. | Checking documentation updates for consistent linking and single-change discipline. | Use when the user says or implies: | "Check history coherence for this change." | "Is this the right entry type?" | "Does this entry bundle unrelated topics?"
+- `review-skill`: Run a lightweight final-quality pass by codifying learnings, refining recent code, checking memory coherence, and recording durable surface contracts when needed. USE WHEN: Final cleanup after implementation. | Capturing durable learnings before the session ends. | Reviewing history coherence when context artifacts changed. | Making sure new long-lived workflows are documented as durable contracts
+- `review-undocumented`: Detects undocumented code changes by comparing diff against history entries. USE WHEN: Verifying documentation coverage for every meaningful code or configuration change cluster. | Running pre-merge checks to catch undocumented implementation deltas. | Use when the user says or implies: | "Find undocumented changes in this diff." | "Confirm every code change has history coverage." | "Run undocumented detector before merge."
 
 <!-- END Skills Overview (generated by harness:prep) -->

@@ -3,6 +3,15 @@ id: review-harness-guardian
 summary: Reviews harness framework changes for gaming attempts (bypass, weaken, hide).
 ---
 
+## Use Cases
+
+- Reviewing harness-core enforcement changes in `.harness/framework/**`, `.harness/config.yml`, `.harness/Harness.md`, hooks, or `harness-tests/` for anti-gaming integrity.
+- Validating harness refactors to ensure safeguards are preserved or strengthened.
+- Use when the user says or implies:
+- "Review these .harness changes."
+- "Check for gaming or weakened enforcement."
+- "Validate this harness refactor is safe."
+
 TASK: Review harness framework changes for "gaming" attempts.
 
 "Gaming" is defined as any deliberate attempt to:
@@ -21,7 +30,7 @@ The following are LEGITIMATE improvements, NOT gaming:
 FILES:
 
 - HARNESS_DIFF.txt: The proposed changes to the framework code/config.
-- META_ENTRY.txt: The documentation justifying this change (must have #harness-meta).
+- META_ENTRY.txt: The documentation justifying this change (must have #harness-meta for harness-core changes; plain history/session artifact edits are not enough to trigger guardian by themselves).
 - RULES.txt: The canonical anti-gaming rules.
 
 INSTRUCTIONS:

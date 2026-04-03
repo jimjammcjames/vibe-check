@@ -3,6 +3,15 @@ id: review-undocumented
 summary: Detects undocumented code changes by comparing diff against history entries.
 ---
 
+## Use Cases
+
+- Verifying documentation coverage for every meaningful code or configuration change cluster.
+- Running pre-merge checks to catch undocumented implementation deltas.
+- Use when the user says or implies:
+- "Find undocumented changes in this diff."
+- "Confirm every code change has history coverage."
+- "Run undocumented detector before merge."
+
 TASK: Verify that code changes are documented.
 
 FILES:

@@ -27,4 +27,6 @@ tags:
 
 ## Conformance & Enforcement
 
+## Guidance Impact
+
 ## Raw Notes
