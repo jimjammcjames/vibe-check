@@ -61,6 +61,13 @@ that change harness-facing policy or enforcement tests. After adding it, rerun
 the normal repo gates so the branch proves the guardian, policy audit, and CI
 stack all accept the final candidate without special-casing.
 
+## Guidance Impact
+
+This entry does not introduce a new governance rule by itself; it records the
+already-enforced repo expectation that branches touching harness-facing docs or
+tests carry explicit `#harness-meta` provenance. The durable guidance impact is
+therefore documentary and audit-oriented rather than a new operator workflow.
+
 ## Raw Notes
 
 - The failing guardian message during `harness:ci` explicitly called for a

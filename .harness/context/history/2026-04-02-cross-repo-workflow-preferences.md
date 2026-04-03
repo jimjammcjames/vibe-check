@@ -77,6 +77,13 @@ Agents now have a clearer split between repo-generic harness rules, repo-local
 skills, and user-specific defaults. Repo-specific workflows should still live in
 their own skills or docs rather than being dumped wholesale into this section.
 
+## Guidance Impact
+
+This decision changes always-on repo guidance in `AGENTS.md` by introducing the
+durable `User Preferences` section and establishing it as the cumulative home
+for James-specific workflow and communication defaults that should travel across
+repos.
+
 ## Validation
 
 - `npm run harness:prep`

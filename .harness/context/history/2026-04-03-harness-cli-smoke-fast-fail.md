@@ -74,6 +74,13 @@ tests interacted with recursive verification.
 - Kept the smoke tests' purpose intact: they still verify that the CLI
   recognizes `post` and `ci` and emits the expected startup output.
 
+## Guidance Impact
+
+No standing operator docs or skills changed directly in this fix. The durable
+workflow impact is carried in the linked history/session artifacts: recursive
+harness CLI smoke tests should fail fast and clean up their own synthetic
+fixtures instead of depending on timeout-killed nested verification.
+
 ## Validation
 
 - `npm run test:local`

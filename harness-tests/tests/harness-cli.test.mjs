@@ -81,6 +81,15 @@ function cleanupSmokeFixtures() {
   }
 }
 
+function assertSmokeFixturesClean() {
+  for (const file of SMOKE_FIXTURE_RELATIVE_FILES) {
+    assert.ok(
+      !existsSync(join(REPO_ROOT, file)),
+      `smoke fixture should be cleaned up: ${file}`,
+    );
+  }
+}
+
 function runHarnessSmoke(command, envOverrides = {}) {
   cleanupSmokeFixtures();
 
@@ -629,6 +638,7 @@ describe("harness CLI", { concurrency: 1 }, () => {
           result.output.includes("Post Checks"),
         "should recognize post command",
       );
+      assertSmokeFixturesClean();
     });
   });
 
@@ -650,6 +660,7 @@ describe("harness CLI", { concurrency: 1 }, () => {
           result.output.includes("CI Checks"),
         "should recognize ci command",
       );
+      assertSmokeFixturesClean();
     });
   });
 
