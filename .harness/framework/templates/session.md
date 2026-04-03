@@ -36,4 +36,9 @@ skills_used:
 
 - candidate: target=skill; description=
 
+## Guidance Impact
+
+- none yet. Record any durable doc/skill/policy updates made in the same
+  change, or say none.
+
 ## Outcome

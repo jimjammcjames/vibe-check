@@ -18,6 +18,16 @@ describe("skills overview helpers", () => {
     assert.ok(Array.isArray(skills[0].useCases));
   });
 
+  it("requires every skill to publish at least one use case", () => {
+    const skills = listSkillMeta();
+    const missing = skills.filter((skill) => skill.useCases.length === 0);
+    assert.deepStrictEqual(
+      missing.map((skill) => skill.id),
+      [],
+      "every skill should include a Use Cases/When to Use section",
+    );
+  });
+
   it("renders a replaceable AGENTS block", () => {
     const block = renderSkillsOverviewBlock([
       {

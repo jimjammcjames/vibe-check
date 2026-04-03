@@ -56,11 +56,11 @@ Useful env/config overrides:
 
 ## Lookup Before Creating
 
-Before creating new code or fixing bugs, search existing history:
+Before creating new code or fixing bugs, search existing history and sessions:
 
 ```bash
-rg -n "keywords|error-message" .harness/context/history
-rg -n "#tag" .harness/context/history
+rg -n "keywords|error-message" .harness/context/history .harness/context/sessions
+rg -n "#tag" .harness/context/history .harness/context/sessions
 ```
 
 ## Context Safety (CRITICAL)
@@ -93,6 +93,8 @@ npm run harness:new:meta -- --slug "harness-change"
 Session files are append-only task notes. There is no close command.
 If more than one same-day session exists, rerun `new:entry` or `new:meta` with
 `--session-slug <task-name>` so the new history entry links to the right task.
+Keep the active session updated during the task, especially when corrections,
+repeated workflow, or codify candidates appear.
 
 ## Enforcement Rules
 
@@ -125,6 +127,11 @@ Every history entry must include:
 - `## Request / Intent`
 - `## Context`
 - `## Validation`
+
+**All v3 history entries also require:**
+
+- `## Guidance Impact` (state which durable docs/skills/policies changed, or
+  explicitly say none)
 
 **Decision-style entries also require:**
 
@@ -159,6 +166,7 @@ and repo-relative.
 - `## Corrections & Thrash`
 - `## Workflow Repetition`
 - `## Codify Candidates`
+- `## Guidance Impact`
 - `## Outcome`
 
 **Structured session bullet formats:**
@@ -206,6 +214,8 @@ If you wire a pre-commit hook in a consuming repo, this is the command to run.
   `AGENTS.md`.
 - Keep long-lived agent guidance short in `AGENTS.md`; put scenario-specific
   playbooks in `workflows/skills/*`.
+- Every skill should include a `## Use Cases` section so prep-time discovery
+  stays actionable and testable.
 
 <!-- END MUST -->
 

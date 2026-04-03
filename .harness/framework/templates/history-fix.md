@@ -28,6 +28,8 @@ tags:
 
 ## What Changed
 
+## Guidance Impact
+
 ## Validation
 
 ## Systemic Gap

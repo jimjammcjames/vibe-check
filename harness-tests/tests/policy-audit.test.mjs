@@ -204,6 +204,63 @@ This context provides enough background on why the decision was made, including 
       });
       assert.ok(issues.some((i) => i.code === "TAGS_EMPTY"));
     });
+
+    it("fails when a v3 entry is missing Guidance Impact", () => {
+      const content = `---
+date: 2026-01-02
+type: decision
+status: active
+schema: v3
+search_terms:
+  - "auth"
+related_entries:
+  - "NONE"
+affected_files:
+  - "src/auth.ts"
+session_refs:
+  - ".harness/context/sessions/2026-01-02-auth.md"
+tags:
+  - "#auth"
+---
+
+# Test Entry
+
+## Summary
+
+This summary explains the decision clearly and includes enough words to pass the minimum threshold.
+
+## Request / Intent
+
+Document the auth decision and its durable consequences for future changes.
+
+## Context
+
+This context provides enough background on why the decision was made, including constraints and alternatives. It also notes the system goals, the previous failures, and the metrics we care about.
+
+## Decision
+
+Use token-based auth.
+
+## Rationale
+
+Clear rationale here.
+
+## Consequences
+
+Some follow-up work is required.
+
+## Validation
+
+Reviewed in tests.
+`;
+      const issues = validateEntryContent({
+        file: "history-entry.md",
+        content,
+        diffFiles: [],
+        isNewEntry: true,
+      });
+      assert.ok(issues.some((i) => i.code === "GUIDANCE_IMPACT_MISSING"));
+    });
   });
 
   describe("Rule C: Systemic Gap enforcement (fix/incident entries)", () => {
@@ -476,6 +533,10 @@ useful in the sibling repos.
 
 - candidate: target=skill; capture the cross-repo harness comparison workflow
 
+## Guidance Impact
+
+No durable guidance changed in this session.
+
 ## Outcome
 
 Ported the first high-leverage set of harness evolutions into the canonical repo.
@@ -529,6 +590,10 @@ Intent.
 
 - candidate: target=skill; note
 
+## Guidance Impact
+
+No durable guidance changed in this session.
+
 ## Outcome
 
 Outcome.
@@ -538,6 +603,61 @@ Outcome.
         content,
       });
       assert.ok(issues.some((i) => i.code === "SESSION_STARTED_AT_MISSING"));
+    });
+
+    it("fails when Guidance Impact is missing", () => {
+      const content = `---
+date: 2026-01-02
+started_at: 2026-01-02T10:00:00.000Z
+tags:
+  - "#harness"
+related_history:
+  - "NONE"
+skills_used:
+  - "NONE"
+---
+
+# Session
+
+## Summary
+
+Session summary.
+
+## User Intent
+
+Intent.
+
+## Timeline
+
+- [seq-01] user: asked for a fix.
+
+## Corrections & Thrash
+
+- user_correction: none
+- agent_correction: none
+- process_issue: none
+- thrash: none
+
+## Workflow Repetition
+
+- repeated_workflow: none
+- custom_script: none
+
+## Codify Candidates
+
+- candidate: target=skill; note
+
+## Outcome
+
+Outcome.
+`;
+      const issues = validateSessionContent({
+        file: ".harness/context/sessions/example.md",
+        content,
+      });
+      assert.ok(
+        issues.some((i) => i.code === "SESSION_GUIDANCE_IMPACT_MISSING"),
+      );
     });
   });
 

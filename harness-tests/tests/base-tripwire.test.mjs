@@ -6,6 +6,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execSync } from "node:child_process";
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   writeFileSync,
@@ -13,7 +14,7 @@ import {
   mkdtempSync,
   realpathSync,
 } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 
@@ -43,6 +44,25 @@ function runTripwire(envOverrides = {}) {
       output: (error.stdout || "") + (error.stderr || ""),
     };
   }
+}
+
+function createIsolatedGitEnv() {
+  const tempDir = mkdtempSync(join(tmpdir(), "harness-tripwire-index-"));
+  const realIndexPath = execSync("git rev-parse --git-path index", {
+    cwd: REPO_ROOT,
+    encoding: "utf-8",
+  }).trim();
+  const tempIndexPath = join(tempDir, "index");
+  copyFileSync(realIndexPath, tempIndexPath);
+
+  return {
+    env: {
+      GIT_INDEX_FILE: tempIndexPath,
+    },
+    cleanup() {
+      rmSync(tempDir, { recursive: true, force: true });
+    },
+  };
 }
 
 function normalizePath(pathValue) {
@@ -87,18 +107,27 @@ function removeWorktree(worktreePath) {
   rmSync(worktreePath, { recursive: true, force: true });
 }
 
-function writeFixEntry(filePath) {
+function writeFixEntry(filePath, coveredFilePath) {
+  const coveredPath = relative(REPO_ROOT, coveredFilePath).replaceAll(
+    "\\",
+    "/",
+  );
   writeFileSync(
     filePath,
     `---
 date: '2099-01-01'
 type: 'fix'
 status: 'active'
-schema: 'v2'
+schema: 'v3'
 search_terms:
   - 'tripwire'
-related:
+related_entries:
   - 'NONE'
+affected_files:
+  - '${coveredPath}'
+session_refs:
+  - 'NONE'
+error_signature: 'TripwireCleanupFixtureError'
 tags:
   - '#test'
 ---
@@ -106,37 +135,89 @@ tags:
 # tripwire-test
 
 ## Summary
-Tripwire validation test entry to trigger strict entry detection.
+
+Temporary tripwire validation fixture entry used to exercise the strict
+history-detection path while keeping the synthetic change compatible with the
+current harness policy contract.
+
+## Request / Intent
+
+Create a disposable fix-shaped history entry that makes the tripwire test look
+like a realistic strict change without depending on a permanent repo artifact.
 
 ## Context
-This is a temporary entry used in harness integration tests.
+
+This entry is written only inside the base-tripwire integration test so the
+runner sees a harness-history change alongside a temporary test file. The
+fixture must remain policy-compliant because \`harness:post\` can inspect it if a
+test leaves it around long enough to show up in changed-file discovery.
+
+## Error
+
+The temporary tripwire cleanup fixture was missing the current strict-entry
+fields, which made policy audit fail when the test-created file was visible.
+
+## What Changed
+
+The test fixture now uses the current v3 fix-entry schema and includes the
+same sections and frontmatter fields real strict entries are expected to carry.
+
+## Guidance Impact
+
+None for repo guidance; this only keeps the test fixture aligned with the
+existing harness contract.
+
+## Validation
+
+Validated through the base-tripwire integration test that stages and removes
+this file while exercising the cleanup path.
+
+## Systemic Gap
+
+The test suite was generating a legacy-shaped strict entry inside the real
+history tree. Gap Closure: Added validation: ${coveredPath}
+
+## Class Prevention
+
+Temporary history fixtures that live under \`.harness/context/history/\` must
+use the current strict schema so policy-audit-compatible integration tests do
+not become false failures when changed-file discovery sees the fixture.
 `,
   );
 }
 
-function stageFiles(files) {
+function stageFiles(files, envOverrides = {}) {
   const args = files.map((file) => `"${file}"`).join(" ");
-  execSync(`git add -f ${args}`, { cwd: REPO_ROOT, stdio: "ignore" });
+  execSync(`git add -f ${args}`, {
+    cwd: REPO_ROOT,
+    stdio: "ignore",
+    env: { ...process.env, ...envOverrides },
+  });
 }
 
-function cleanupFiles(files) {
+function cleanupFiles(files, envOverrides = {}) {
   const args = files.map((file) => `"${file}"`).join(" ");
-  execSync(`git reset HEAD -- ${args}`, { cwd: REPO_ROOT, stdio: "ignore" });
+  execSync(`git reset HEAD -- ${args}`, {
+    cwd: REPO_ROOT,
+    stdio: "ignore",
+    env: { ...process.env, ...envOverrides },
+  });
   files.forEach((file) => {
     rmSync(file, { force: true });
   });
 }
 
-function getDiffFiles() {
+function getDiffFiles(envOverrides = {}) {
   const output = execSync("git diff --name-only origin/main", {
     cwd: REPO_ROOT,
     encoding: "utf-8",
+    env: { ...process.env, ...envOverrides },
   });
   return output.split("\n").filter(Boolean);
 }
 
-function getDiffTestFiles() {
-  return getDiffFiles()
+function getDiffTestFiles(envOverrides = {}) {
+  return getDiffFiles(envOverrides)
     .filter((file) => file.startsWith("harness-tests/tests/"))
     .filter((file) => file.endsWith(".test.mjs"))
     .sort();
@@ -152,6 +233,7 @@ function buildListTestsCommand(discoveredFiles) {
 describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
   it("cleans up stale tripwire worktrees before running", () => {
     const worktreePath = createTripwireWorktree();
+    const isolatedGit = createIsolatedGitEnv();
     const testFile = join(
       REPO_ROOT,
       "harness-tests",
@@ -170,9 +252,9 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
       testFile,
       `import test from "node:test"; test("cleanup baseline", () => {});`,
     );
-    writeFixEntry(entryFile);
-    stageFiles([testFile, entryFile]);
-    const discoveredFiles = getDiffTestFiles();
+    writeFixEntry(entryFile, testFile);
+    stageFiles([testFile, entryFile], isolatedGit.env);
+    const discoveredFiles = getDiffTestFiles(isolatedGit.env);
 
     try {
       const before = listWorktrees();
@@ -182,6 +264,7 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
       );
 
       const result = runTripwire({
+        ...isolatedGit.env,
         HARNESS_QUIET: "1",
         HARNESS_RUN_TESTS_CMD: 'node -e "process.exit(1)"',
         HARNESS_LIST_TESTS_CMD: buildListTestsCommand(discoveredFiles),
@@ -203,7 +286,8 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
         "expected tripwire worktree directory to be removed",
       );
     } finally {
-      cleanupFiles([testFile, entryFile]);
+      cleanupFiles([testFile, entryFile], isolatedGit.env);
+      isolatedGit.cleanup();
       if (existsSync(worktreePath)) {
         removeWorktree(worktreePath);
       }
@@ -211,6 +295,7 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
   });
 
   it("flags tests not discovered by the runner", () => {
+    const isolatedGit = createIsolatedGitEnv();
     const nestedDir = join(REPO_ROOT, "harness-tests", "tests", "nested");
     const testFile = join(nestedDir, "mismatch.test.mjs");
     const entryFile = join(
@@ -226,11 +311,11 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
       testFile,
       `import test from "node:test"; test("mismatch", () => {});`,
     );
-    writeFixEntry(entryFile);
+    writeFixEntry(entryFile, testFile);
 
-    stageFiles([testFile, entryFile]);
-    const diffFiles = getDiffFiles();
-    const discoveredFiles = getDiffTestFiles().filter(
+    stageFiles([testFile, entryFile], isolatedGit.env);
+    const diffFiles = getDiffFiles(isolatedGit.env);
+    const discoveredFiles = getDiffTestFiles(isolatedGit.env).filter(
       (file) => file !== "harness-tests/tests/nested/mismatch.test.mjs",
     );
     assert.ok(
@@ -245,11 +330,13 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
     );
 
     const result = runTripwire({
+      ...isolatedGit.env,
       HARNESS_RUN_TESTS_CMD: 'node -e "process.exit(1)"',
       HARNESS_LIST_TESTS_CMD: buildListTestsCommand(discoveredFiles),
       HARNESS_LIST_TESTS_PATTERN: "(.+\\.test\\.mjs)",
     });
-    cleanupFiles([testFile, entryFile]);
+    cleanupFiles([testFile, entryFile], isolatedGit.env);
+    isolatedGit.cleanup();
 
     assert.strictEqual(result.exitCode, 1, "tripwire should fail");
     assert.ok(
@@ -263,6 +350,7 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
   });
 
   it("does not flag when runner discovers the test", () => {
+    const isolatedGit = createIsolatedGitEnv();
     const testFile = join(
       REPO_ROOT,
       "harness-tests",
@@ -281,16 +369,18 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
       testFile,
       `import test from "node:test"; test("baseline", () => {});`,
     );
-    writeFixEntry(entryFile);
+    writeFixEntry(entryFile, testFile);
 
-    stageFiles([testFile, entryFile]);
-    const discoveredFiles = getDiffTestFiles();
+    stageFiles([testFile, entryFile], isolatedGit.env);
+    const discoveredFiles = getDiffTestFiles(isolatedGit.env);
     const result = runTripwire({
+      ...isolatedGit.env,
       HARNESS_RUN_TESTS_CMD: 'node -e "process.exit(1)"',
       HARNESS_LIST_TESTS_CMD: buildListTestsCommand(discoveredFiles),
       HARNESS_LIST_TESTS_PATTERN: "(.+\\.test\\.mjs)",
     });
-    cleanupFiles([testFile, entryFile]);
+    cleanupFiles([testFile, entryFile], isolatedGit.env);
+    isolatedGit.cleanup();
 
     assert.ok(
       !result.output.includes("Test discovery mismatch detected"),
@@ -299,6 +389,7 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
   });
 
   it("uses configured discovery command when env override is absent", () => {
+    const isolatedGit = createIsolatedGitEnv();
     const testFile = join(
       REPO_ROOT,
       "harness-tests",
@@ -317,13 +408,15 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
       testFile,
       `import test from "node:test"; test("config discovery", () => {});`,
     );
-    writeFixEntry(entryFile);
+    writeFixEntry(entryFile, testFile);
 
-    stageFiles([testFile, entryFile]);
+    stageFiles([testFile, entryFile], isolatedGit.env);
     const result = runTripwire({
+      ...isolatedGit.env,
       HARNESS_RUN_TESTS_CMD: 'node -e "process.exit(1)"',
     });
-    cleanupFiles([testFile, entryFile]);
+    cleanupFiles([testFile, entryFile], isolatedGit.env);
+    isolatedGit.cleanup();
 
     assert.strictEqual(
       result.exitCode,

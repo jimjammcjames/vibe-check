@@ -29,6 +29,8 @@ tags:
 
 ## Consequences
 
+## Guidance Impact
+
 ## Validation
 
 ## Raw Notes

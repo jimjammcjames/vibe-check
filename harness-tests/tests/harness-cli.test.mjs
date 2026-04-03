@@ -225,6 +225,10 @@ describe("harness CLI", { concurrency: 1 }, () => {
       );
       assert.ok(content.includes("## Context"), "should have Context section");
       assert.ok(
+        content.includes("## Guidance Impact"),
+        "should have Guidance Impact section",
+      );
+      assert.ok(
         content.includes("## Validation"),
         "should have Validation section",
       );
@@ -434,6 +438,10 @@ describe("harness CLI", { concurrency: 1 }, () => {
         "should have Security & Integrity Impact section",
       );
       assert.ok(
+        content.includes("## Guidance Impact"),
+        "should have Guidance Impact section",
+      );
+      assert.ok(
         content.includes("#harness-meta"),
         "should include harness meta tag",
       );
@@ -525,6 +533,10 @@ describe("harness CLI", { concurrency: 1 }, () => {
       assert.ok(content.includes("started_at:"), "should include started_at");
       assert.ok(content.includes("## User Intent"), "should include sections");
       assert.ok(content.includes("## Timeline"), "should include timeline");
+      assert.ok(
+        content.includes("## Guidance Impact"),
+        "should include guidance tracking section",
+      );
     });
   });
 
