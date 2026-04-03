@@ -28,6 +28,52 @@
   long-lived workflow needs monitoring, record the real health signal or note
   the gap explicitly.
 
+## User Preferences
+
+Cross-repo, user-specific defaults that have shown up repeatedly in sibling
+repos or in `.codex/MEMORY.md`. Keep this section short, durable, and
+cumulative; add only preferences that should follow the user across repos.
+
+### Workflow Preferences
+
+- Prefer rebasing stale unpublished branches onto a freshly fetched base branch
+  before PR or branch-sync work. Use merge-based sync only when preserving
+  published review history is intentional, and inspect the resulting payload
+  before push.
+- Detached `HEAD` or detached worktrees are fine for exploration and disposable
+  validation, but not for durable tracked edits or landing work. Before
+  committing, rebasing, pushing, merging, or opening/updating a PR, move the
+  work onto a real branch.
+- Do not casually modify local `main`. Only touch it when the user explicitly
+  authorizes it, and prefer remote-first sync plus fast-forward over doing
+  conflict resolution directly on local `main`.
+- When finishing pull, merge, or branch-sync workflows, leave the checkout with
+  no unintended tracked dirty state. If generated or runtime artifacts drift,
+  either land them intentionally or restore them before concluding.
+- Keep durable workflow rules in tracked docs, skills, or history entries
+  instead of chat-only guidance. If a change alters the operator workflow or
+  standing policy, update the relevant docs in the same diff.
+- Prefer one canonical operator entrypoint and source of truth rather than
+  parallel fallback paths. Add bridges or alternate paths only when there is an
+  active migration, a narrow scope, and an explicit removal trigger.
+- When a workflow changes, explain the operator contract plainly: what problem
+  it solves, the intended entrypoint, and why this path was chosen.
+- During rebase or replay conflicts, consult the linked history/session
+  artifacts for the conflicted work before resolving so the original user
+  intent survives the conflict cleanup.
+- Prefer live end-to-end validation of the real user-facing or operator-facing
+  path when feasible; if that is not feasible, say so explicitly and record
+  what was validated instead.
+
+### Communication Preferences
+
+- Prefer visual structure when explaining systems, boundaries, or folder
+  layouts: use ASCII diagrams and explicit tree views when helpful.
+- Lead with the top-level mental model or direct answer first, then drill into
+  mechanism and plumbing second.
+- If the user asked at a higher abstraction level, answer cleanly there before
+  diving into implementation details.
+
 ## Canonical Loop
 
 - `npm run harness:iterate`

@@ -4,8 +4,14 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { execSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, mkdtempSync } from "node:fs";
+import { execFileSync, execSync } from "node:child_process";
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  mkdtempSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +28,15 @@ const HARNESS_CLI = join(
 );
 const TEST_DATE = "2026-01-04";
 const TEST_TIMESTAMP = "2026-01-04T12:34:56.000Z";
+const SMOKE_FIXTURE_RELATIVE_FILES = [
+  ".harness/context/history/2099-01-01-tripwire-cleanup-test.md",
+  ".harness/context/history/2099-01-01-tripwire-mismatch-test.md",
+  "harness-tests/tests/cleanup-baseline.test.mjs",
+  "harness-tests/tests/nested/mismatch.test.mjs",
+];
+const SMOKE_FIXTURE_DIRS = [
+  join(REPO_ROOT, "harness-tests", "tests", "nested"),
+];
 
 function runHarness(args, envOverrides = {}) {
   try {
@@ -38,6 +53,58 @@ function runHarness(args, envOverrides = {}) {
       output: (error.stdout || "") + (error.stderr || ""),
       exitCode: error.status || 1,
     };
+  }
+}
+
+function cleanupSmokeFixtures() {
+  const quotedArgs = SMOKE_FIXTURE_RELATIVE_FILES.map(
+    (file) => `"${file}"`,
+  ).join(" ");
+
+  try {
+    execSync(`git reset HEAD -- ${quotedArgs}`, {
+      cwd: REPO_ROOT,
+      stdio: "ignore",
+    });
+  } catch {
+    // Best-effort cleanup for staged synthetic fixtures.
+  }
+
+  for (const file of SMOKE_FIXTURE_RELATIVE_FILES) {
+    rmSync(join(REPO_ROOT, file), { force: true });
+  }
+
+  for (const dir of SMOKE_FIXTURE_DIRS) {
+    if (existsSync(dir) && readdirSync(dir).length === 0) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+}
+
+function runHarnessSmoke(command, envOverrides = {}) {
+  cleanupSmokeFixtures();
+
+  try {
+    const output = execFileSync(process.execPath, [HARNESS_CLI, command], {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+      timeout: 5000,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        PATH: "",
+        ...envOverrides,
+      },
+    });
+    return { output, exitCode: 0 };
+  } catch (error) {
+    return {
+      output: (error.stdout || "") + (error.stderr || ""),
+      exitCode: error.status || 1,
+      error,
+    };
+  } finally {
+    cleanupSmokeFixtures();
   }
 }
 
@@ -547,65 +614,42 @@ describe("harness CLI", { concurrency: 1 }, () => {
   describe("post command", () => {
     it("starts post verification", (t) => {
       const contextRoot = createContextRoot(t);
-      // Note: post command runs npm test as first step, which would cause recursion.
-      // We use a short timeout to just verify the command is recognized.
-      try {
-        execSync(`node "${HARNESS_CLI}" post`, {
-          cwd: REPO_ROOT,
-          encoding: "utf-8",
-          timeout: 5000,
-          stdio: ["pipe", "pipe", "pipe"],
-          env: { ...process.env, HARNESS_CONTEXT_ROOT: contextRoot },
-        });
-        assert.fail("Expected timeout to kill the command");
-      } catch (error) {
-        // Either timeout or actual failure, both are fine
-        const output = (error.stdout || "") + (error.stderr || "");
-        const timedOut =
-          error.signal === "SIGTERM" ||
-          error.killed === true ||
-          error.code === "ETIMEDOUT" ||
-          String(error.message || "")
-            .toLowerCase()
-            .includes("timed out") ||
-          String(error.message || "").includes("ETIMEDOUT");
-        const exited =
-          Number.isInteger(error.status) ||
-          Boolean(error.signal) ||
-          Boolean(error.code);
-        assert.ok(
-          timedOut ||
-            exited ||
-            output.includes("harness:post") ||
-            output.includes("Post Checks"),
-          "should recognize post command",
-        );
-      }
+      // Hide npm from the nested env so the command proves startup without
+      // recursively launching the real post loop and leaving synthetic fixtures.
+      const result = runHarnessSmoke("post", {
+        HARNESS_CONTEXT_ROOT: contextRoot,
+      });
+      assert.notStrictEqual(
+        result.exitCode,
+        0,
+        "smoke run should fail fast once npm is unavailable",
+      );
+      assert.ok(
+        result.output.includes("harness:post") ||
+          result.output.includes("Post Checks"),
+        "should recognize post command",
+      );
     });
   });
 
   describe("ci command", () => {
     it("starts ci verification", (t) => {
       const contextRoot = createContextRoot(t);
-      // Note: ci command runs npm test, which would cause recursion.
-      // We use a short timeout to just verify the command is recognized.
-      try {
-        execSync(`node "${HARNESS_CLI}" ci`, {
-          cwd: REPO_ROOT,
-          encoding: "utf-8",
-          timeout: 5000,
-          stdio: ["pipe", "pipe", "pipe"],
-          env: { ...process.env, HARNESS_CONTEXT_ROOT: contextRoot },
-        });
-        assert.fail("Expected timeout to kill the command");
-      } catch (error) {
-        // Either timeout or actual failure, both are fine
-        const output = (error.stdout || "") + (error.stderr || "");
-        assert.ok(
-          output.includes("harness:ci") || output.includes("CI Checks"),
-          "should recognize ci command",
-        );
-      }
+      // Hide npx from the nested env so the command proves startup without
+      // recursively running the full CI stack.
+      const result = runHarnessSmoke("ci", {
+        HARNESS_CONTEXT_ROOT: contextRoot,
+      });
+      assert.notStrictEqual(
+        result.exitCode,
+        0,
+        "smoke run should fail fast once npx is unavailable",
+      );
+      assert.ok(
+        result.output.includes("harness:ci") ||
+          result.output.includes("CI Checks"),
+        "should recognize ci command",
+      );
     });
   });
 
