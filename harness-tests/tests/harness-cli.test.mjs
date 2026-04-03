@@ -537,11 +537,16 @@ describe("harness CLI", { concurrency: 1 }, () => {
         content.includes("## Guidance Impact"),
         "should include guidance tracking section",
       );
+      assert.ok(
+        content.includes("## Outcome"),
+        "should include outcome section",
+      );
     });
   });
 
   describe("post command", () => {
-    it("starts post verification", () => {
+    it("starts post verification", (t) => {
+      const contextRoot = createContextRoot(t);
       // Note: post command runs npm test as first step, which would cause recursion.
       // We use a short timeout to just verify the command is recognized.
       try {
@@ -550,6 +555,7 @@ describe("harness CLI", { concurrency: 1 }, () => {
           encoding: "utf-8",
           timeout: 5000,
           stdio: ["pipe", "pipe", "pipe"],
+          env: { ...process.env, HARNESS_CONTEXT_ROOT: contextRoot },
         });
         assert.fail("Expected timeout to kill the command");
       } catch (error) {
@@ -579,7 +585,8 @@ describe("harness CLI", { concurrency: 1 }, () => {
   });
 
   describe("ci command", () => {
-    it("starts ci verification", () => {
+    it("starts ci verification", (t) => {
+      const contextRoot = createContextRoot(t);
       // Note: ci command runs npm test, which would cause recursion.
       // We use a short timeout to just verify the command is recognized.
       try {
@@ -588,6 +595,7 @@ describe("harness CLI", { concurrency: 1 }, () => {
           encoding: "utf-8",
           timeout: 5000,
           stdio: ["pipe", "pipe", "pipe"],
+          env: { ...process.env, HARNESS_CONTEXT_ROOT: contextRoot },
         });
         assert.fail("Expected timeout to kill the command");
       } catch (error) {

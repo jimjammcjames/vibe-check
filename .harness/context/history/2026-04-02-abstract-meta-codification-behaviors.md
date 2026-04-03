@@ -11,6 +11,7 @@ related_entries:
   - ".harness/context/history/2026-04-01-generic-parent-harness-upgrades.md"
 affected_files:
   - ".harness/Harness.md"
+  - ".harness/framework/scripts/base-tripwire.mjs"
   - ".harness/framework/scripts/policy-audit.mjs"
   - ".harness/framework/templates/history-decision.md"
   - ".harness/framework/templates/history-fix.md"
@@ -111,5 +112,15 @@ abstract home for the `life.exe` feature-catalog idea.
   history tree, so the fixture itself had to be upgraded to the current v3
   contract and then moved onto an isolated temporary `GIT_INDEX_FILE` during
   dogfooding runs instead of weakening policy audit.
+- `base-tripwire.mjs` also needed to clear `GIT_INDEX_FILE` and `GIT_DIR` for
+  commands that execute inside the temporary base worktree, otherwise the
+  isolated source index leaked into patch-apply and test execution there.
+- `base-tripwire.test.mjs` also needed `try/finally` cleanup around the
+  remaining staged-fixture cases so a failing tripwire assertion does not leave
+  temporary history/test files behind in the real checkout.
+- `harness-cli.test.mjs` also needed to isolate its recursive `post`/`ci`
+  timeout probes onto a temporary `HARNESS_CONTEXT_ROOT`, because those nested
+  runs can execute `new:session` tests before being killed and otherwise leak
+  disposable session fixtures into policy-audit's untracked-file scope.
 - Kept the port generic; did not import `life.exe`'s repo-specific
   `system/features/*.yaml` schema or NanoClaw boundary rules.

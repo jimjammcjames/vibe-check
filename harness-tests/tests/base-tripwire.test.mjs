@@ -313,40 +313,43 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
     );
     writeFixEntry(entryFile, testFile);
 
-    stageFiles([testFile, entryFile], isolatedGit.env);
-    const diffFiles = getDiffFiles(isolatedGit.env);
-    const discoveredFiles = getDiffTestFiles(isolatedGit.env).filter(
-      (file) => file !== "harness-tests/tests/nested/mismatch.test.mjs",
-    );
-    assert.ok(
-      diffFiles.includes("harness-tests/tests/nested/mismatch.test.mjs"),
-      `expected test file in diff, got: ${diffFiles.join(", ")}`,
-    );
-    assert.ok(
-      diffFiles.includes(
-        ".harness/context/history/2099-01-01-tripwire-mismatch-test.md",
-      ),
-      "expected history entry in diff",
-    );
+    try {
+      stageFiles([testFile, entryFile], isolatedGit.env);
+      const diffFiles = getDiffFiles(isolatedGit.env);
+      const discoveredFiles = getDiffTestFiles(isolatedGit.env).filter(
+        (file) => file !== "harness-tests/tests/nested/mismatch.test.mjs",
+      );
+      assert.ok(
+        diffFiles.includes("harness-tests/tests/nested/mismatch.test.mjs"),
+        `expected test file in diff, got: ${diffFiles.join(", ")}`,
+      );
+      assert.ok(
+        diffFiles.includes(
+          ".harness/context/history/2099-01-01-tripwire-mismatch-test.md",
+        ),
+        "expected history entry in diff",
+      );
 
-    const result = runTripwire({
-      ...isolatedGit.env,
-      HARNESS_RUN_TESTS_CMD: 'node -e "process.exit(1)"',
-      HARNESS_LIST_TESTS_CMD: buildListTestsCommand(discoveredFiles),
-      HARNESS_LIST_TESTS_PATTERN: "(.+\\.test\\.mjs)",
-    });
-    cleanupFiles([testFile, entryFile], isolatedGit.env);
-    isolatedGit.cleanup();
+      const result = runTripwire({
+        ...isolatedGit.env,
+        HARNESS_RUN_TESTS_CMD: 'node -e "process.exit(1)"',
+        HARNESS_LIST_TESTS_CMD: buildListTestsCommand(discoveredFiles),
+        HARNESS_LIST_TESTS_PATTERN: "(.+\\.test\\.mjs)",
+      });
 
-    assert.strictEqual(result.exitCode, 1, "tripwire should fail");
-    assert.ok(
-      result.output.includes("Test discovery mismatch detected"),
-      `should report discovery mismatch, got: ${result.output}`,
-    );
-    assert.ok(
-      result.output.includes("mismatch.test.mjs"),
-      "should mention missing test file",
-    );
+      assert.strictEqual(result.exitCode, 1, "tripwire should fail");
+      assert.ok(
+        result.output.includes("Test discovery mismatch detected"),
+        `should report discovery mismatch, got: ${result.output}`,
+      );
+      assert.ok(
+        result.output.includes("mismatch.test.mjs"),
+        "should mention missing test file",
+      );
+    } finally {
+      cleanupFiles([testFile, entryFile], isolatedGit.env);
+      isolatedGit.cleanup();
+    }
   });
 
   it("does not flag when runner discovers the test", () => {
@@ -371,21 +374,24 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
     );
     writeFixEntry(entryFile, testFile);
 
-    stageFiles([testFile, entryFile], isolatedGit.env);
-    const discoveredFiles = getDiffTestFiles(isolatedGit.env);
-    const result = runTripwire({
-      ...isolatedGit.env,
-      HARNESS_RUN_TESTS_CMD: 'node -e "process.exit(1)"',
-      HARNESS_LIST_TESTS_CMD: buildListTestsCommand(discoveredFiles),
-      HARNESS_LIST_TESTS_PATTERN: "(.+\\.test\\.mjs)",
-    });
-    cleanupFiles([testFile, entryFile], isolatedGit.env);
-    isolatedGit.cleanup();
+    try {
+      stageFiles([testFile, entryFile], isolatedGit.env);
+      const discoveredFiles = getDiffTestFiles(isolatedGit.env);
+      const result = runTripwire({
+        ...isolatedGit.env,
+        HARNESS_RUN_TESTS_CMD: 'node -e "process.exit(1)"',
+        HARNESS_LIST_TESTS_CMD: buildListTestsCommand(discoveredFiles),
+        HARNESS_LIST_TESTS_PATTERN: "(.+\\.test\\.mjs)",
+      });
 
-    assert.ok(
-      !result.output.includes("Test discovery mismatch detected"),
-      `should not report discovery mismatch when test is discovered, got: ${result.output}`,
-    );
+      assert.ok(
+        !result.output.includes("Test discovery mismatch detected"),
+        `should not report discovery mismatch when test is discovered, got: ${result.output}`,
+      );
+    } finally {
+      cleanupFiles([testFile, entryFile], isolatedGit.env);
+      isolatedGit.cleanup();
+    }
   });
 
   it("uses configured discovery command when env override is absent", () => {
@@ -410,22 +416,25 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
     );
     writeFixEntry(entryFile, testFile);
 
-    stageFiles([testFile, entryFile], isolatedGit.env);
-    const result = runTripwire({
-      ...isolatedGit.env,
-      HARNESS_RUN_TESTS_CMD: 'node -e "process.exit(1)"',
-    });
-    cleanupFiles([testFile, entryFile], isolatedGit.env);
-    isolatedGit.cleanup();
+    try {
+      stageFiles([testFile, entryFile], isolatedGit.env);
+      const result = runTripwire({
+        ...isolatedGit.env,
+        HARNESS_RUN_TESTS_CMD: 'node -e "process.exit(1)"',
+      });
 
-    assert.strictEqual(
-      result.exitCode,
-      0,
-      `tripwire should pass with config-backed discovery, got: ${result.output}`,
-    );
-    assert.ok(
-      !result.output.includes("Test discovery mismatch detected"),
-      `configured discovery should find the staged test file, got: ${result.output}`,
-    );
+      assert.strictEqual(
+        result.exitCode,
+        0,
+        `tripwire should pass with config-backed discovery, got: ${result.output}`,
+      );
+      assert.ok(
+        !result.output.includes("Test discovery mismatch detected"),
+        `configured discovery should find the staged test file, got: ${result.output}`,
+      );
+    } finally {
+      cleanupFiles([testFile, entryFile], isolatedGit.env);
+      isolatedGit.cleanup();
+    }
   });
 });

@@ -76,6 +76,13 @@ function normalizeFsPath(pathValue) {
   }
 }
 
+function buildWorktreeEnv() {
+  const cleanEnv = { ...process.env };
+  delete cleanEnv.GIT_INDEX_FILE;
+  delete cleanEnv.GIT_DIR;
+  return cleanEnv;
+}
+
 function getEnvOverride(name) {
   const value = process.env[name];
   if (!value) return null;
@@ -247,17 +254,11 @@ function createWorktree(baseRef) {
   const worktreePath = mkdtempSync(join(tmpdir(), "harness-tripwire-"));
 
   try {
-    // Unset GIT_INDEX_FILE and GIT_DIR to avoid conflicts with commit hooks.
-    // During a commit, Git sets these env vars which can interfere with worktree creation.
-    const cleanEnv = { ...process.env };
-    delete cleanEnv.GIT_INDEX_FILE;
-    delete cleanEnv.GIT_DIR;
-
     execSync(`git worktree add --detach "${worktreePath}" ${baseRef}`, {
       cwd: REPO_ROOT,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
-      env: cleanEnv,
+      env: buildWorktreeEnv(),
     });
     return worktreePath;
   } catch (error) {
@@ -272,6 +273,7 @@ function cleanupWorktree(worktreePath) {
       cwd: REPO_ROOT,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
+      env: buildWorktreeEnv(),
     });
   } catch {
     // Force cleanup if git worktree remove fails
@@ -301,12 +303,15 @@ function applyPatch(worktreePath, patch) {
     return { success: true, noChanges: true };
   }
 
+  const worktreeEnv = buildWorktreeEnv();
+
   try {
     const result = spawnSync("git", ["apply", "--3way", "-"], {
       cwd: worktreePath,
       input: patch,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
+      env: worktreeEnv,
     });
 
     if (result.status !== 0) {
@@ -316,6 +321,7 @@ function applyPatch(worktreePath, patch) {
         input: patch,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
+        env: worktreeEnv,
       });
 
       if (fallback.status !== 0) {
@@ -342,6 +348,7 @@ function ensureNodeModules(worktreePath) {
         {
           cwd: worktreePath,
           stdio: ["pipe", "pipe", "pipe"],
+          env: buildWorktreeEnv(),
         },
       );
     }
@@ -362,6 +369,7 @@ function runTestsOnWorktree(worktreePath, testFiles, config) {
     encoding: "utf-8",
     stdio: ["pipe", "pipe", "pipe"],
     timeout: 300000, // 5 min timeout for tests
+    env: buildWorktreeEnv(),
   });
 
   return {
@@ -426,6 +434,7 @@ function validateTestDiscovery(worktreePath, testFiles, config) {
     cwd: worktreePath,
     encoding: "utf-8",
     stdio: ["pipe", "pipe", "pipe"],
+    env: buildWorktreeEnv(),
   });
 
   if (listResult.status !== 0) {
