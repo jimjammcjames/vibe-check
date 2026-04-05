@@ -4,14 +4,8 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { execFileSync, execSync } from "node:child_process";
-import {
-  existsSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  mkdtempSync,
-} from "node:fs";
+import { execSync, spawn } from "node:child_process";
+import { existsSync, readFileSync, rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,15 +22,6 @@ const HARNESS_CLI = join(
 );
 const TEST_DATE = "2026-01-04";
 const TEST_TIMESTAMP = "2026-01-04T12:34:56.000Z";
-const SMOKE_FIXTURE_RELATIVE_FILES = [
-  ".harness/context/history/2099-01-01-tripwire-cleanup-test.md",
-  ".harness/context/history/2099-01-01-tripwire-mismatch-test.md",
-  "harness-tests/tests/cleanup-baseline.test.mjs",
-  "harness-tests/tests/nested/mismatch.test.mjs",
-];
-const SMOKE_FIXTURE_DIRS = [
-  join(REPO_ROOT, "harness-tests", "tests", "nested"),
-];
 
 function runHarness(args, envOverrides = {}) {
   try {
@@ -56,73 +41,97 @@ function runHarness(args, envOverrides = {}) {
   }
 }
 
-function cleanupSmokeFixtures() {
-  const quotedArgs = SMOKE_FIXTURE_RELATIVE_FILES.map(
-    (file) => `"${file}"`,
-  ).join(" ");
-
-  try {
-    execSync(`git reset HEAD -- ${quotedArgs}`, {
-      cwd: REPO_ROOT,
-      stdio: "ignore",
-    });
-  } catch {
-    // Best-effort cleanup for staged synthetic fixtures.
-  }
-
-  for (const file of SMOKE_FIXTURE_RELATIVE_FILES) {
-    rmSync(join(REPO_ROOT, file), { force: true });
-  }
-
-  for (const dir of SMOKE_FIXTURE_DIRS) {
-    if (existsSync(dir) && readdirSync(dir).length === 0) {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }
-}
-
-function assertSmokeFixturesClean() {
-  for (const file of SMOKE_FIXTURE_RELATIVE_FILES) {
-    assert.ok(
-      !existsSync(join(REPO_ROOT, file)),
-      `smoke fixture should be cleaned up: ${file}`,
-    );
-  }
-}
-
-function runHarnessSmoke(command, envOverrides = {}) {
-  cleanupSmokeFixtures();
-
-  try {
-    const output = execFileSync(process.execPath, [HARNESS_CLI, command], {
-      cwd: REPO_ROOT,
-      encoding: "utf-8",
-      timeout: 5000,
-      stdio: ["pipe", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        PATH: "",
-        ...envOverrides,
-      },
-    });
-    return { output, exitCode: 0 };
-  } catch (error) {
-    return {
-      output: (error.stdout || "") + (error.stderr || ""),
-      exitCode: error.status || 1,
-      error,
-    };
-  } finally {
-    cleanupSmokeFixtures();
-  }
-}
-
 function createContextRoot(t) {
   const dir = mkdtempSync(join(tmpdir(), "harness-context-"));
   t.after(() => {
     rmSync(dir, { recursive: true, force: true });
   });
   return dir;
+}
+
+function runHarnessUntilMarkers(
+  command,
+  markers,
+  envOverrides = {},
+  timeoutMs = 15000,
+) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn("node", [HARNESS_CLI, command], {
+      cwd: REPO_ROOT,
+      env: { ...process.env, ...envOverrides },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let output = "";
+    let settled = false;
+    let expectedClose = false;
+
+    const settle = (callback) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      callback();
+    };
+
+    const resolveAfterClose = () => {
+      expectedClose = true;
+      const finish = () => settle(() => resolvePromise({ output }));
+      if (child.exitCode !== null || child.signalCode !== null) {
+        finish();
+        return;
+      }
+      child.once("close", finish);
+      child.kill("SIGTERM");
+    };
+
+    const checkMarkers = () => {
+      if (markers.every((marker) => output.includes(marker))) {
+        resolveAfterClose();
+      }
+    };
+
+    child.stdout?.on("data", (chunk) => {
+      output += chunk.toString();
+      checkMarkers();
+    });
+
+    child.stderr?.on("data", (chunk) => {
+      output += chunk.toString();
+      checkMarkers();
+    });
+
+    child.on("error", (error) => {
+      settle(() => rejectPromise(error));
+    });
+
+    child.on("close", (code, signal) => {
+      if (expectedClose) {
+        return;
+      }
+      if (!settled) {
+        settle(() =>
+          rejectPromise(
+            new Error(
+              `Process exited before markers for ${command} (code=${code}, signal=${signal}). Output:\n${output}`,
+            ),
+          ),
+        );
+      }
+    });
+
+    const timeout = setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGKILL");
+      }
+      settle(() =>
+        rejectPromise(
+          new Error(
+            `Timed out waiting for ${command} markers. Output:\n${output}`,
+          ),
+        ),
+      );
+    }, timeoutMs);
+  });
 }
 
 describe("harness CLI", { concurrency: 1 }, () => {
@@ -621,46 +630,42 @@ describe("harness CLI", { concurrency: 1 }, () => {
   });
 
   describe("post command", () => {
-    it("starts post verification", (t) => {
+    it("starts post verification", async (t) => {
       const contextRoot = createContextRoot(t);
-      // Hide npm from the nested env so the command proves startup without
-      // recursively launching the real post loop and leaving synthetic fixtures.
-      const result = runHarnessSmoke("post", {
-        HARNESS_CONTEXT_ROOT: contextRoot,
-      });
-      assert.notStrictEqual(
-        result.exitCode,
-        0,
-        "smoke run should fail fast once npm is unavailable",
+      const result = await runHarnessUntilMarkers(
+        "post",
+        ["=== harness:post ===", "▶ Post Checks ("],
+        { HARNESS_CONTEXT_ROOT: contextRoot },
+      );
+
+      assert.ok(
+        result.output.includes("=== harness:post ==="),
+        "should print the post banner",
       );
       assert.ok(
-        result.output.includes("harness:post") ||
-          result.output.includes("Post Checks"),
-        "should recognize post command",
+        result.output.includes("▶ Post Checks ("),
+        "should print the post checks section",
       );
-      assertSmokeFixturesClean();
     });
   });
 
   describe("ci command", () => {
-    it("starts ci verification", (t) => {
+    it("starts ci verification", async (t) => {
       const contextRoot = createContextRoot(t);
-      // Hide npx from the nested env so the command proves startup without
-      // recursively running the full CI stack.
-      const result = runHarnessSmoke("ci", {
-        HARNESS_CONTEXT_ROOT: contextRoot,
-      });
-      assert.notStrictEqual(
-        result.exitCode,
-        0,
-        "smoke run should fail fast once npx is unavailable",
+      const result = await runHarnessUntilMarkers(
+        "ci",
+        ["=== harness:ci ===", "▶ CI Checks ("],
+        { HARNESS_CONTEXT_ROOT: contextRoot },
+      );
+
+      assert.ok(
+        result.output.includes("=== harness:ci ==="),
+        "should print the ci banner",
       );
       assert.ok(
-        result.output.includes("harness:ci") ||
-          result.output.includes("CI Checks"),
-        "should recognize ci command",
+        result.output.includes("▶ CI Checks ("),
+        "should print the ci checks section",
       );
-      assertSmokeFixturesClean();
     });
   });
 

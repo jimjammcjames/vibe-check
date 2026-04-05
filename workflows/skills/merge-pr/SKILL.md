@@ -39,6 +39,10 @@ gh api graphql -f query='query($owner:String!, $repo:String!, $number:Int!) { re
 
 - Make the required code, test, or documentation changes.
 - If the replay becomes conflict-heavy, use `history-first-branch-merge`.
+- If merge-time work uncovers an unrelated harness/tooling blocker, either split
+  it into a dedicated follow-up fix/meta thread or record why it is inseparable
+  from the merge candidate. Do not silently fold unrelated fixes into the
+  feature PR.
 - Push the fixes and recheck the PR state.
 
 4. Run the final outer loop on the merge candidate.

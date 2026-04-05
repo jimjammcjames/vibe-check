@@ -21,6 +21,8 @@ import {
   REPO_ROOT,
   HARNESS_ROOT,
 } from "../lib/agent-runner.mjs";
+import { resolveBaseRef } from "../lib/base-ref.mjs";
+import { loadHarnessConfig } from "../lib/harness-config.mjs";
 import { parseFrontmatter } from "../lib/history-entry.mjs";
 import { loadSkillPrompt } from "../lib/skills.mjs";
 
@@ -39,7 +41,9 @@ const COHERENCE_PROMPT = loadSkillPrompt("review-memory-coherence");
 
 function getChangedHistoryEntries() {
   try {
-    const diff = execSync("git diff origin/main --name-only", {
+    const config = loadHarnessConfig({ harnessRoot: HARNESS_ROOT });
+    const baseRef = resolveBaseRef({ config, repoRoot: REPO_ROOT });
+    const diff = execSync(`git diff ${baseRef} --name-only`, {
       cwd: REPO_ROOT,
       encoding: "utf-8",
     })
@@ -133,6 +137,8 @@ function buildUntrackedDiff(untrackedFiles) {
 
 async function main() {
   log("\n\x1b[36m=== Memory Coherence Checker ===\x1b[0m\n");
+  const config = loadHarnessConfig({ harnessRoot: HARNESS_ROOT });
+  const baseRef = resolveBaseRef({ config, repoRoot: REPO_ROOT });
 
   const allEntries = getChangedHistoryEntries();
 
@@ -146,7 +152,7 @@ async function main() {
   // Get diff for context
   let diff = "";
   try {
-    diff = execSync("git diff origin/main", {
+    diff = execSync(`git diff ${baseRef}`, {
       cwd: REPO_ROOT,
       encoding: "utf-8",
     });

@@ -30,3 +30,11 @@ jobs:
         env:
           HARNESS_ALLOW_MISSING_AGENT_PROVIDER: "1"
         run: npm run harness:ci
+
+      - name: Upload harness diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-diagnostics
+          path: .harness/diagnostics/latest
+          if-no-files-found: ignore

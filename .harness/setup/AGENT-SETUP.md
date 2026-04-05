@@ -47,6 +47,7 @@ If you need machine-local agent overrides, use `.harness/config.local.yml` inste
 - Ensure `AGENTS.md` points agents to `.harness/Harness.md` and `npm run harness:prep`.
 - Copy `.harness/setup/harness-ci.yml` into `.github/workflows/` if the repo needs a dedicated workflow.
 - If hosted CI will not have a runnable agent provider CLI/API configured, keep `HARNESS_ALLOW_MISSING_AGENT_PROVIDER=1` on the workflow step so deterministic checks still run while local `harness:ci` remains the full provider-backed outer loop.
+- Upload `.harness/diagnostics/latest` as a workflow artifact so machine-readable review coverage and agent failure diagnostics survive each CI run.
 
 ## 6. Create the initial harness meta entry
 

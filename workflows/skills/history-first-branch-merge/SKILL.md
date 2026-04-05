@@ -18,8 +18,10 @@ Use this when the raw conflict text is no longer a trustworthy source of truth.
 1. Capture the sync surface first.
 
 ```bash
-BASE_REF="origin/main"
-git fetch origin main
+BASE_REF="$(node .harness/framework/scripts/print-base-ref.mjs)"
+BASE_REMOTE="${BASE_REF%%/*}"
+BASE_BRANCH="${BASE_REF#*/}"
+git fetch "$BASE_REMOTE" "$BASE_BRANCH"
 PRE_SYNC_HEAD="$(git rev-parse HEAD)"
 git status --short --branch
 git rev-list --left-right --count HEAD..."$BASE_REF"

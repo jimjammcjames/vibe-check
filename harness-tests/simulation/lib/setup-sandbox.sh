@@ -85,7 +85,6 @@ EOF
 reviewers:
   base_tripwire:
     enabled: true
-    base_ref: "origin/main"
     require_fail_on_base: true
     allow_weak_pass: true
     exempt_tag: "#basefail-exempt"

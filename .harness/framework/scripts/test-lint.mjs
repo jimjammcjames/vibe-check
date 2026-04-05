@@ -15,6 +15,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { minimatch } from "./minimatch.mjs";
+import { resolveBaseRef } from "../lib/base-ref.mjs";
+import { loadHarnessConfig } from "../lib/harness-config.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -36,58 +38,7 @@ function logSuccess(msg) {
 }
 
 function loadConfig() {
-  const configPath = join(HARNESS_ROOT, "config.yml");
-  if (!existsSync(configPath)) {
-    throw new Error(`Config not found: ${configPath}`);
-  }
-  const content = readFileSync(configPath, "utf-8");
-  return parseSimpleYaml(content);
-}
-
-function parseSimpleYaml(content) {
-  const config = { stages: {}, globs: {} };
-  let currentSection = null;
-  let currentGlob = null;
-
-  const lines = content.split("\n");
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-
-    if (trimmed === "stages:") {
-      currentSection = "stages";
-      continue;
-    }
-    if (trimmed === "globs:") {
-      currentSection = "globs";
-      continue;
-    }
-
-    if (currentSection === "globs") {
-      const globKeyMatch = trimmed.match(/^(\w+):(.*)$/);
-      if (globKeyMatch) {
-        const key = globKeyMatch[1];
-        const value = globKeyMatch[2].trim();
-        if (value && value !== "") {
-          config.globs[key] = value.replace(/^["']|["']$/g, "");
-        } else {
-          currentGlob = key;
-          config.globs[key] = [];
-        }
-        continue;
-      }
-
-      if (currentGlob && trimmed.startsWith("-")) {
-        const pattern = trimmed
-          .slice(1)
-          .trim()
-          .replace(/^["']|["']$/g, "");
-        config.globs[currentGlob].push(pattern);
-      }
-    }
-  }
-
-  return config;
+  return loadHarnessConfig({ harnessRoot: HARNESS_ROOT });
 }
 
 function matchesAnyGlob(file, patterns) {
@@ -100,33 +51,27 @@ function matchesAnyGlob(file, patterns) {
 
 function getDiffFiles() {
   try {
+    const config = loadConfig();
+    const baseRef = resolveBaseRef({ config, repoRoot: REPO_ROOT });
     let base;
     let diffFiles = [];
 
     try {
-      base = execSync("git merge-base HEAD origin/main", {
+      base = execSync(`git merge-base HEAD ${baseRef}`, {
         cwd: REPO_ROOT,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
       }).trim();
     } catch {
       try {
-        base = execSync("git merge-base HEAD main", {
+        execSync("git rev-parse HEAD~1", {
           cwd: REPO_ROOT,
           encoding: "utf-8",
           stdio: ["pipe", "pipe", "pipe"],
-        }).trim();
+        });
+        base = "HEAD~1";
       } catch {
-        try {
-          execSync("git rev-parse HEAD~1", {
-            cwd: REPO_ROOT,
-            encoding: "utf-8",
-            stdio: ["pipe", "pipe", "pipe"],
-          });
-          base = "HEAD~1";
-        } catch {
-          base = null;
-        }
+        base = null;
       }
     }
 
@@ -277,7 +222,6 @@ if (process.argv[1] === __filename) {
 
 export {
   loadConfig,
-  parseSimpleYaml,
   matchesAnyGlob,
   getDiffFiles,
   collectTestFiles,
