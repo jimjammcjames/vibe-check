@@ -21,7 +21,9 @@ import {
   REPO_ROOT,
   HARNESS_ROOT,
 } from "../lib/agent-runner.mjs";
+import { loadHarnessConfig } from "../lib/harness-config.mjs";
 import { normalizeList, parseFrontmatter } from "../lib/history-entry.mjs";
+import { minimatch } from "./minimatch.mjs";
 import { loadSkillPrompt } from "../lib/skills.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -39,6 +41,7 @@ const GUARDIAN_PROMPT = loadSkillPrompt("review-harness-guardian");
 
 async function main() {
   log("\n\x1b[36m=== Harness Guardian ===\x1b[0m\n");
+  const config = loadHarnessConfig({ harnessRoot: HARNESS_ROOT });
 
   // Get changed files against origin/main (or cached)
   let changedFiles = [];
@@ -84,8 +87,10 @@ async function main() {
   }
 
   // Filter for harness-related files
+  const harnessCoreGlobs = config.globs.harnessCore || [];
   const harnessWork = changedFiles.filter(
-    (f) => f.startsWith(".harness/") || f.startsWith("harness-tests/"),
+    (f) =>
+      matchesAnyGlob(f, harnessCoreGlobs) || f.startsWith("harness-tests/"),
   );
 
   if (harnessWork.length === 0) {
@@ -236,6 +241,12 @@ async function main() {
     logError("INTEGRITY BREACH DETECTED: ACCESS DENIED");
     process.exit(1);
   }
+}
+
+function matchesAnyGlob(file, patterns) {
+  if (!patterns) return false;
+  const values = Array.isArray(patterns) ? patterns : [patterns];
+  return values.some((pattern) => minimatch(file, pattern));
 }
 
 main().catch((err) => {
