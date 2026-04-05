@@ -30,8 +30,10 @@ git status --short --branch
 2. Re-fetch the base right before divergence checks.
 
 ```bash
-BASE_REF="origin/main"
-git fetch origin main
+BASE_REF="$(node .harness/framework/scripts/print-base-ref.mjs)"
+BASE_REMOTE="${BASE_REF%%/*}"
+BASE_BRANCH="${BASE_REF#*/}"
+git fetch "$BASE_REMOTE" "$BASE_BRANCH"
 git rev-list --left-right --count HEAD..."$BASE_REF"
 gh pr view --json number,url,state,baseRefName,headRefName
 ```

@@ -18,8 +18,9 @@ Use this after implementation when the code works but still needs polish.
 1. Identify the target diff.
 
 ```bash
-git diff --name-only origin/main...HEAD
-git diff origin/main...HEAD
+BASE_REF="$(node .harness/framework/scripts/print-base-ref.mjs)"
+git diff --name-only "$BASE_REF"...HEAD
+git diff "$BASE_REF"...HEAD
 ```
 
 2. Remove obvious AI slop.

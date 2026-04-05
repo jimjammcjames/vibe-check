@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { mkdtempSync, rmSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -20,6 +23,12 @@ const { runAgent } = await import(
 const { filterCiStageForProviderAvailability } = await import(
   join(REPO_ROOT, ".harness/framework/cli/harness.mjs")
 );
+const {
+  appendReviewCoverageSummary,
+  buildReviewCoverageResult,
+  renderReviewCoverageSummary,
+  writeReviewCoverageDiagnostics,
+} = await import(join(REPO_ROOT, ".harness/framework/cli/harness.mjs"));
 
 function registerTestProvider(name, { available }) {
   registerProvider(name, {
@@ -124,5 +133,81 @@ test("CI stage filtering drops agent reviews only when explicitly allowed and no
     } else {
       process.env.HARNESS_ALLOW_MISSING_AGENT_PROVIDER = originalFlag;
     }
+  }
+});
+
+test("review coverage diagnostics write the expected JSON shape", async () => {
+  const diagnosticsDir = mkdtempSync(join(tmpdir(), "review-coverage-"));
+  const originalDiagnosticsDir = process.env.HARNESS_DIAGNOSTICS_DIR;
+
+  process.env.HARNESS_DIAGNOSTICS_DIR = diagnosticsDir;
+  try {
+    const reviewCoverage = buildReviewCoverageResult({
+      skippedAgentReviews: true,
+      configuredProviders: ["gemini", "codex"],
+      availableProviders: [],
+      unavailableProviders: ["gemini", "codex"],
+      allowMissingAgentProvider: true,
+    });
+    const diagnosticsPath = writeReviewCoverageDiagnostics(reviewCoverage);
+    const written = JSON.parse(await readFile(diagnosticsPath, "utf-8"));
+
+    assert.deepStrictEqual(written, {
+      skipped_agent_reviews: true,
+      configured_providers: ["gemini", "codex"],
+      available_providers: [],
+      unavailable_providers: ["gemini", "codex"],
+      allow_missing_agent_provider: true,
+    });
+  } finally {
+    if (originalDiagnosticsDir === undefined) {
+      delete process.env.HARNESS_DIAGNOSTICS_DIR;
+    } else {
+      process.env.HARNESS_DIAGNOSTICS_DIR = originalDiagnosticsDir;
+    }
+    rmSync(diagnosticsDir, { recursive: true, force: true });
+  }
+});
+
+test("review coverage summary describes skipped provider-backed reviews", () => {
+  const summary = renderReviewCoverageSummary({
+    skipped_agent_reviews: true,
+    configured_providers: ["gemini", "codex"],
+    available_providers: [],
+    unavailable_providers: ["gemini", "codex"],
+    allow_missing_agent_provider: true,
+  });
+
+  assert.match(summary, /Agent Review Coverage/);
+  assert.match(summary, /skipped/i);
+  assert.match(summary, /gemini, codex/);
+});
+
+test("review coverage summary appends to GITHUB_STEP_SUMMARY when configured", async () => {
+  const summaryDir = mkdtempSync(join(tmpdir(), "review-coverage-summary-"));
+  const summaryPath = join(summaryDir, "summary.md");
+  const originalSummaryPath = process.env.GITHUB_STEP_SUMMARY;
+
+  process.env.GITHUB_STEP_SUMMARY = summaryPath;
+  try {
+    const writtenPath = appendReviewCoverageSummary({
+      skipped_agent_reviews: false,
+      configured_providers: ["gemini"],
+      available_providers: ["gemini"],
+      unavailable_providers: [],
+      allow_missing_agent_provider: true,
+    });
+    const summary = await readFile(summaryPath, "utf-8");
+
+    assert.strictEqual(writtenPath, summaryPath);
+    assert.match(summary, /Agent Review Coverage/);
+    assert.match(summary, /remained in the CI stage/i);
+  } finally {
+    if (originalSummaryPath === undefined) {
+      delete process.env.GITHUB_STEP_SUMMARY;
+    } else {
+      process.env.GITHUB_STEP_SUMMARY = originalSummaryPath;
+    }
+    rmSync(summaryDir, { recursive: true, force: true });
   }
 });

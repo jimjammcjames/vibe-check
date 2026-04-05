@@ -4,7 +4,7 @@
  * Base-Commit Tripwire
  *
  * Verifies that new/changed tests actually capture behavioral changes by
- * ensuring they FAIL on the base commit (origin/main).
+ * ensuring they FAIL on the resolved base commit.
  *
  * Algorithm:
  * 1. Check if fix/incident entry present AND test files changed
@@ -34,6 +34,7 @@ import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { minimatch } from "./minimatch.mjs";
+import { resolveBaseRef } from "../lib/base-ref.mjs";
 import { loadHarnessConfig } from "../lib/harness-config.mjs";
 import { parseFrontmatter, STRICT_TYPES } from "../lib/history-entry.mjs";
 
@@ -94,7 +95,7 @@ function loadConfig() {
   return loadHarnessConfig({ harnessRoot: HARNESS_ROOT });
 }
 
-function getDiffFiles(baseRef = "origin/main") {
+function getDiffFiles(baseRef) {
   try {
     const base = execSync(`git merge-base HEAD ${baseRef}`, {
       cwd: REPO_ROOT,
@@ -281,13 +282,13 @@ function cleanupWorktree(worktreePath) {
   }
 }
 
-function generateTestOnlyPatch(testFiles) {
+function generateTestOnlyPatch(testFiles, baseRef) {
   // Generate patch for test files only
   if (!testFiles || testFiles.length === 0) return null;
   const files = testFiles.join(" ");
 
   try {
-    const patch = execSync(`git diff origin/main -- ${files}`, {
+    const patch = execSync(`git diff ${baseRef} -- ${files}`, {
       cwd: REPO_ROOT,
       encoding: "utf-8",
       maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large diffs
@@ -568,7 +569,11 @@ async function main() {
   // Idempotent cleanup of any prior tripwire worktrees.
   cleanupStaleTripwireWorktrees();
 
-  const baseRef = tripwireConfig.base_ref || "origin/main";
+  const baseRef = resolveBaseRef({
+    config,
+    reviewerName: "base_tripwire",
+    repoRoot: REPO_ROOT,
+  });
   const exemptTag = tripwireConfig.exempt_tag || "#basefail-exempt";
   const allowWeakPass = tripwireConfig.allow_weak_pass !== false;
 
@@ -622,7 +627,7 @@ async function main() {
   try {
     // Generate and apply test-only patch
     log("\nGenerating test-only patch...");
-    const patch = generateTestOnlyPatch(testFiles, config);
+    const patch = generateTestOnlyPatch(testFiles, baseRef);
 
     if (!patch || patch.trim() === "") {
       logWarning("No patch to apply (tests may be new files)");

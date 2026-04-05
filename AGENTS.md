@@ -20,6 +20,10 @@
 - Keep the active session artifact updated as the task evolves; do not wait
   until the very end to capture corrections, repeated workflow, or codify
   candidates.
+- When immediate session linkage matters, create `new:session` before the
+  linked `new:entry` or `new:meta`. If multiple same-day sessions exist, use
+  `--session-slug` instead of creating history and session artifacts in
+  parallel.
 - Before committing or pushing, verify the staged content does not include
   secrets, credentials, or tokens.
 - Prefer live end-to-end validation when feasible; if it is not feasible, say

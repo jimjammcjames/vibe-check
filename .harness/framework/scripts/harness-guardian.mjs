@@ -21,6 +21,7 @@ import {
   REPO_ROOT,
   HARNESS_ROOT,
 } from "../lib/agent-runner.mjs";
+import { resolveBaseRef } from "../lib/base-ref.mjs";
 import { loadHarnessConfig } from "../lib/harness-config.mjs";
 import { normalizeList, parseFrontmatter } from "../lib/history-entry.mjs";
 import { minimatch } from "./minimatch.mjs";
@@ -42,11 +43,12 @@ const GUARDIAN_PROMPT = loadSkillPrompt("review-harness-guardian");
 async function main() {
   log("\n\x1b[36m=== Harness Guardian ===\x1b[0m\n");
   const config = loadHarnessConfig({ harnessRoot: HARNESS_ROOT });
+  const baseRef = resolveBaseRef({ config, repoRoot: REPO_ROOT });
 
-  // Get changed files against origin/main (or cached)
+  // Get changed files against the resolved base ref (or cached)
   let changedFiles = [];
   try {
-    changedFiles = execSync("git diff --name-only origin/main", {
+    changedFiles = execSync(`git diff --name-only ${baseRef}`, {
       cwd: REPO_ROOT,
       encoding: "utf-8",
     })
@@ -167,7 +169,7 @@ async function main() {
   if (trackedFilesToDiff.length > 0) {
     const fileArgs = trackedFilesToDiff.map((f) => `"${f}"`).join(" ");
     try {
-      harnessDiff += execSync(`git diff origin/main -- ${fileArgs}`, {
+      harnessDiff += execSync(`git diff ${baseRef} -- ${fileArgs}`, {
         cwd: REPO_ROOT,
         encoding: "utf-8",
       });

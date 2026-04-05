@@ -15,6 +15,7 @@
 
 import { exec, execSync } from "node:child_process";
 import {
+  appendFileSync,
   readFileSync,
   writeFileSync,
   existsSync,
@@ -78,6 +79,7 @@ function logWarning(msg) {
 }
 
 const DEFAULT_DIAGNOSTICS_DIR = join(HARNESS_ROOT, "diagnostics", "latest");
+const REVIEW_COVERAGE_FILENAME = "review-coverage.json";
 
 function prepareDiagnosticsForRun() {
   process.env.HARNESS_DIAGNOSTICS_DIR = DEFAULT_DIAGNOSTICS_DIR;
@@ -87,6 +89,85 @@ function prepareDiagnosticsForRun() {
   } catch {
     // Diagnostics are best-effort only.
   }
+}
+
+function getDiagnosticsDir() {
+  const override = process.env.HARNESS_DIAGNOSTICS_DIR;
+  if (!override) {
+    return DEFAULT_DIAGNOSTICS_DIR;
+  }
+  return isAbsolute(override) ? override : join(REPO_ROOT, override);
+}
+
+function buildReviewCoverageResult({
+  skippedAgentReviews = false,
+  configuredProviders = [],
+  availableProviders = [],
+  unavailableProviders = [],
+  allowMissingAgentProvider = process.env
+    .HARNESS_ALLOW_MISSING_AGENT_PROVIDER === "1",
+} = {}) {
+  return {
+    skipped_agent_reviews: Boolean(skippedAgentReviews),
+    configured_providers: configuredProviders,
+    available_providers: availableProviders,
+    unavailable_providers: unavailableProviders,
+    allow_missing_agent_provider: Boolean(allowMissingAgentProvider),
+  };
+}
+
+function writeReviewCoverageDiagnostics(reviewCoverage) {
+  const diagnosticsDir = getDiagnosticsDir();
+  mkdirSync(diagnosticsDir, { recursive: true });
+  const diagnosticsPath = join(diagnosticsDir, REVIEW_COVERAGE_FILENAME);
+  writeFileSync(
+    diagnosticsPath,
+    `${JSON.stringify(reviewCoverage, null, 2)}\n`,
+  );
+  return diagnosticsPath;
+}
+
+function renderReviewCoverageSummary(reviewCoverage) {
+  const configuredProviders =
+    reviewCoverage.configured_providers.join(", ") || "none";
+  const availableProviders =
+    reviewCoverage.available_providers.join(", ") || "none";
+  const unavailableProviders =
+    reviewCoverage.unavailable_providers.join(", ") || "none";
+
+  if (reviewCoverage.skipped_agent_reviews) {
+    return [
+      "## Agent Review Coverage",
+      "",
+      "Provider-backed agent reviews were skipped because no configured providers were runnable on this runner.",
+      "",
+      `- Configured providers: ${configuredProviders}`,
+      `- Available providers: ${availableProviders}`,
+      `- Unavailable providers: ${unavailableProviders}`,
+      `- Allow missing provider: ${reviewCoverage.allow_missing_agent_provider ? "yes" : "no"}`,
+    ].join("\n");
+  }
+
+  return [
+    "## Agent Review Coverage",
+    "",
+    "Provider-backed agent reviews remained in the CI stage.",
+    "",
+    `- Configured providers: ${configuredProviders}`,
+    `- Available providers: ${availableProviders}`,
+    `- Unavailable providers: ${unavailableProviders}`,
+    `- Allow missing provider: ${reviewCoverage.allow_missing_agent_provider ? "yes" : "no"}`,
+  ].join("\n");
+}
+
+function appendReviewCoverageSummary(reviewCoverage) {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (!summaryPath) return null;
+  appendFileSync(
+    summaryPath,
+    `\n${renderReviewCoverageSummary(reviewCoverage)}\n`,
+  );
+  return summaryPath;
 }
 
 function killOrphanedProcesses() {
@@ -509,21 +590,14 @@ function isAgentCommand(command) {
 }
 
 async function filterCiStageForProviderAvailability(stage, config) {
-  if (process.env.HARNESS_ALLOW_MISSING_AGENT_PROVIDER !== "1") {
-    return {
-      stage,
-      skippedAgentReviews: false,
-      configuredProviders: [],
-      availableProviders: [],
-      unavailableProviders: [],
-    };
-  }
-
+  const allowMissingAgentProvider =
+    process.env.HARNESS_ALLOW_MISSING_AGENT_PROVIDER === "1";
   const hasAgentSteps = stage.some((step) => isAgentCommand(step.command));
   if (!hasAgentSteps) {
     return {
       stage,
       skippedAgentReviews: false,
+      allowMissingAgentProvider,
       configuredProviders: [],
       availableProviders: [],
       unavailableProviders: [],
@@ -531,10 +605,14 @@ async function filterCiStageForProviderAvailability(stage, config) {
   }
 
   const providerStatus = await resolveAvailableProviderSequence({ config });
-  if (providerStatus.availableProviders.length > 0) {
+  if (
+    !allowMissingAgentProvider ||
+    providerStatus.availableProviders.length > 0
+  ) {
     return {
       stage,
       skippedAgentReviews: false,
+      allowMissingAgentProvider,
       ...providerStatus,
     };
   }
@@ -548,6 +626,7 @@ async function filterCiStageForProviderAvailability(stage, config) {
   return {
     stage: stage.filter((step) => !isAgentCommand(step.command)),
     skippedAgentReviews: true,
+    allowMissingAgentProvider,
     ...providerStatus,
   };
 }
@@ -718,6 +797,9 @@ async function cmdCi() {
     stage,
     config,
   );
+  const reviewCoverage = buildReviewCoverageResult(preparedStage);
+  writeReviewCoverageDiagnostics(reviewCoverage);
+  appendReviewCoverageSummary(reviewCoverage);
   const outcome = await runCiStage(preparedStage.stage, {
     parallelAgentReviews:
       process.env.HARNESS_PARALLEL_AGENT_REVIEWS === "1" ||
@@ -1446,10 +1528,14 @@ if (isDirectExecution) {
 }
 
 export {
+  appendReviewCoverageSummary,
+  buildReviewCoverageResult,
   filterCiStageForProviderAvailability,
   filterRelevantChangedFiles,
   formatSessionChoices,
+  renderReviewCoverageSummary,
   renderHistoryEntryTemplate,
   resolveSessionRefs,
   runCiStage,
+  writeReviewCoverageDiagnostics,
 };

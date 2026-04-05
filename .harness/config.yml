@@ -12,7 +12,6 @@ reviewers:
   # Deterministic: tests must fail on base commit when learned entry present
   base_tripwire:
     enabled: true
-    base_ref: "origin/main"
     require_fail_on_base: true
     allow_weak_pass: true
     exempt_tag: "#basefail-exempt"
@@ -26,7 +25,6 @@ reviewers:
     enabled: true
     adapter: "auto"
     fail_threshold: "high"
-    base_ref: "origin/main"
 
 stages:
   iterate:

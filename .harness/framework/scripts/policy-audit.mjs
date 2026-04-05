@@ -15,10 +15,8 @@ import { execSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  loadHarnessConfig,
-  parseHarnessConfigYaml,
-} from "../lib/harness-config.mjs";
+import { loadHarnessConfig } from "../lib/harness-config.mjs";
+import { resolveBaseRef } from "../lib/base-ref.mjs";
 import { minimatch } from "./minimatch.mjs";
 import {
   HISTORY_TYPES,
@@ -82,10 +80,6 @@ function loadConfig() {
   return loadHarnessConfig({ harnessRoot: HARNESS_ROOT });
 }
 
-function parseSimpleYaml(content) {
-  return parseHarnessConfigYaml(content);
-}
-
 function getDiffFiles({ stagedOnly = false } = {}) {
   if (stagedOnly) {
     try {
@@ -99,19 +93,17 @@ function getDiffFiles({ stagedOnly = false } = {}) {
   }
 
   try {
+    const config = loadConfig();
+    const baseRef = resolveBaseRef({ config, repoRoot: REPO_ROOT });
     let base;
     try {
-      base = runGit(["merge-base", "HEAD", "origin/main"]).trim();
+      base = runGit(["merge-base", "HEAD", baseRef]).trim();
     } catch {
       try {
-        base = runGit(["merge-base", "HEAD", "main"]).trim();
+        runGit(["rev-parse", "HEAD~1"]);
+        base = "HEAD~1";
       } catch {
-        try {
-          runGit(["rev-parse", "HEAD~1"]);
-          base = "HEAD~1";
-        } catch {
-          base = null;
-        }
+        base = null;
       }
     }
 
@@ -164,19 +156,17 @@ function getAddedFiles({ stagedOnly = false } = {}) {
   }
 
   try {
+    const config = loadConfig();
+    const baseRef = resolveBaseRef({ config, repoRoot: REPO_ROOT });
     let base;
     try {
-      base = runGit(["merge-base", "HEAD", "origin/main"]).trim();
+      base = runGit(["merge-base", "HEAD", baseRef]).trim();
     } catch {
       try {
-        base = runGit(["merge-base", "HEAD", "main"]).trim();
+        runGit(["rev-parse", "HEAD~1"]);
+        base = "HEAD~1";
       } catch {
-        try {
-          runGit(["rev-parse", "HEAD~1"]);
-          base = "HEAD~1";
-        } catch {
-          base = null;
-        }
+        base = null;
       }
     }
 
@@ -1270,7 +1260,6 @@ if (process.argv[1] === __filename) {
 
 export {
   loadConfig,
-  parseSimpleYaml,
   getDiffFiles,
   matchesAnyGlob,
   getAddedEntryContent,

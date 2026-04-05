@@ -20,6 +20,8 @@ import { readFileSync, existsSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { minimatch } from "./minimatch.mjs";
+import { resolveBaseRef } from "../lib/base-ref.mjs";
+import { loadHarnessConfig } from "../lib/harness-config.mjs";
 import { parseFrontmatter } from "../lib/history-entry.mjs";
 import { recordAgentFailure, runAgent } from "../lib/agent-runner.mjs";
 import { loadSkillPrompt } from "../lib/skills.mjs";
@@ -56,102 +58,7 @@ function logInfo(msg) {
 }
 
 function loadConfig() {
-  const configPath = join(HARNESS_ROOT, "config.yml");
-  if (!existsSync(configPath)) {
-    throw new Error(`Config not found: ${configPath}`);
-  }
-  const content = readFileSync(configPath, "utf-8");
-  return parseSimpleYaml(content);
-}
-
-function parseSimpleYaml(content) {
-  const config = { agents: {}, globs: {}, reviewers: {} };
-  let currentSection = null;
-  let currentGlob = null;
-  let currentReviewer = null;
-
-  const lines = content.split("\n");
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-
-    if (trimmed === "globs:") {
-      currentSection = "globs";
-      currentReviewer = null;
-      continue;
-    }
-    if (trimmed === "agents:") {
-      currentSection = "agents";
-      currentReviewer = null;
-      currentGlob = null;
-      continue;
-    }
-    if (trimmed === "reviewers:") {
-      currentSection = "reviewers";
-      currentGlob = null;
-      continue;
-    }
-    if (trimmed === "stages:") {
-      currentSection = "stages";
-      continue;
-    }
-
-    if (currentSection === "globs") {
-      const globKeyMatch = trimmed.match(/^(\w+):(.*)$/);
-      if (globKeyMatch) {
-        const key = globKeyMatch[1];
-        const value = globKeyMatch[2].trim();
-        if (value && value !== "") {
-          config.globs[key] = value.replace(/^["']|["']$/g, "");
-        } else {
-          currentGlob = key;
-          config.globs[key] = [];
-        }
-        continue;
-      }
-
-      if (currentGlob && trimmed.startsWith("-")) {
-        const pattern = trimmed
-          .slice(1)
-          .trim()
-          .replace(/^["']|["']$/g, "");
-        config.globs[currentGlob].push(pattern);
-      }
-    }
-
-    if (currentSection === "reviewers") {
-      const reviewerMatch = trimmed.match(/^(\w+):$/);
-      if (reviewerMatch) {
-        currentReviewer = reviewerMatch[1];
-        config.reviewers[currentReviewer] = {};
-        continue;
-      }
-
-      if (currentReviewer) {
-        const kvMatch = trimmed.match(/^(\w+):\s*(.+)$/);
-        if (kvMatch) {
-          const key = kvMatch[1];
-          let value = kvMatch[2].replace(/^["']|["']$/g, "");
-          if (value === "true") value = true;
-          if (value === "false") value = false;
-          config.reviewers[currentReviewer][key] = value;
-        }
-      }
-    }
-
-    if (currentSection === "agents") {
-      const kvMatch = trimmed.match(/^(\w+):\s*(.+)$/);
-      if (kvMatch) {
-        const key = kvMatch[1];
-        let value = kvMatch[2].replace(/^["']|["']$/g, "");
-        if (value === "true") value = true;
-        if (value === "false") value = false;
-        config.agents[key] = value;
-      }
-    }
-  }
-
-  return config;
+  return loadHarnessConfig({ harnessRoot: HARNESS_ROOT });
 }
 
 function getUntrackedFiles() {
@@ -205,7 +112,7 @@ function buildUntrackedDiff(untrackedFiles) {
   return diff;
 }
 
-function getDiff(baseRef = "origin/main") {
+function getDiff(baseRef) {
   try {
     // Get diff from base ref to HEAD (committed changes)
     let diff = "";
@@ -252,7 +159,7 @@ function getDiff(baseRef = "origin/main") {
   }
 }
 
-function getDiffFiles(baseRef = "origin/main") {
+function getDiffFiles(baseRef) {
   try {
     let diffFiles = [];
     const base = execSync(`git merge-base HEAD ${baseRef}`, {
@@ -606,7 +513,11 @@ async function main() {
     process.exit(0);
   }
 
-  const baseRef = reviewerConfig.base_ref || "origin/main";
+  const baseRef = resolveBaseRef({
+    config,
+    reviewerName: "code_reviewer",
+    repoRoot: REPO_ROOT,
+  });
   const failThreshold = reviewerConfig.fail_threshold || "high";
   const configuredAdapter = reviewerConfig.adapter || "auto";
 

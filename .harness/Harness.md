@@ -38,6 +38,8 @@ npm run harness:ci                # Outer loop only: PR update / merge gate
 - Local-only agent overrides belong in `.harness/config.local.yml` (gitignored).
 - Agent runtime failures are logged to
   `.harness/diagnostics/latest/agent-failures.log`.
+- CI review coverage is logged to
+  `.harness/diagnostics/latest/review-coverage.json`.
 - Hosted CI can set `HARNESS_ALLOW_MISSING_AGENT_PROVIDER=1` to skip only the
   provider-backed agent-review commands when none of the configured providers
   are runnable on that runner. This does not hide real provider failures once a
@@ -95,6 +97,8 @@ If more than one same-day session exists, rerun `new:entry` or `new:meta` with
 `--session-slug <task-name>` so the new history entry links to the right task.
 Keep the active session updated during the task, especially when corrections,
 repeated workflow, or codify candidates appear.
+When immediate linkage matters, create the session before the linked history
+entry; do not launch session creation and linked history creation in parallel.
 
 ## Enforcement Rules
 
