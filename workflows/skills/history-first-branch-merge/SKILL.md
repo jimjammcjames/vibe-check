@@ -21,6 +21,7 @@ Use this when the raw conflict text is no longer a trustworthy source of truth.
 BASE_REF="$(node .harness/framework/scripts/print-base-ref.mjs)"
 BASE_REMOTE="${BASE_REF%%/*}"
 BASE_BRANCH="${BASE_REF#*/}"
+node .harness/framework/scripts/require-named-branch.mjs --purpose "rebasing or merging a tracked branch" --recovery-command "git checkout -b <branch-name>"
 git fetch "$BASE_REMOTE" "$BASE_BRANCH"
 PRE_SYNC_HEAD="$(git rev-parse HEAD)"
 git status --short --branch

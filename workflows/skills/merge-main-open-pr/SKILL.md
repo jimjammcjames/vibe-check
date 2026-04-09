@@ -19,12 +19,11 @@ Use this when the user wants a branch prepared for GitHub review, not when they 
 
 ```bash
 gh auth status
-git branch --show-current
+node .harness/framework/scripts/require-named-branch.mjs --purpose "opening or updating a PR" --recovery-command "git checkout -b <branch-name>"
 git status --short --branch
 ```
 
 - Stop if GitHub CLI is unauthenticated.
-- Stop if the checkout is detached.
 - Finish any in-progress merge/rebase/cherry-pick before starting a fresh pass.
 
 2. Re-fetch the base right before divergence checks.

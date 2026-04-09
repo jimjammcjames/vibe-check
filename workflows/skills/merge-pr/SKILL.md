@@ -19,6 +19,7 @@ Use this when the user wants an already-open pull request landed.
 
 ```bash
 gh auth status
+node .harness/framework/scripts/require-named-branch.mjs --purpose "replaying merge fixes on a PR branch" --recovery-command "git checkout -b <branch-name>"
 git status --short --branch
 gh pr view --json number,url,state,headRefName,baseRefName,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup
 ```

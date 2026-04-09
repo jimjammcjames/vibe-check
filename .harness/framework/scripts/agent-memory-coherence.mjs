@@ -10,7 +10,7 @@
 
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   runAgent,
@@ -131,6 +131,54 @@ function buildUntrackedDiff(untrackedFiles) {
   return diff;
 }
 
+function normalizePathList(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value === "NONE" ? [] : [value];
+  }
+  return [];
+}
+
+export function buildSessionContentsForEntries(
+  entryFiles,
+  { repoRoot = REPO_ROOT } = {},
+) {
+  const sessionRefs = new Set();
+
+  for (const entry of entryFiles) {
+    const fullPath = join(repoRoot, entry);
+    if (!existsSync(fullPath)) continue;
+
+    const content = readFileSync(fullPath, "utf-8");
+    const { data } = parseFrontmatter(content);
+    const refs = normalizePathList(data?.session_refs);
+    for (const ref of refs) {
+      sessionRefs.add(ref);
+    }
+  }
+
+  if (sessionRefs.size === 0) {
+    return "No linked session artifacts declared.";
+  }
+
+  let sessionContents = "";
+  for (const sessionRef of sessionRefs) {
+    const fullPath = join(repoRoot, sessionRef);
+    if (!existsSync(fullPath)) {
+      sessionContents += `\n### ${sessionRef}\n[MISSING SESSION ARTIFACT]\n`;
+      continue;
+    }
+
+    const content = readFileSync(fullPath, "utf-8");
+    sessionContents += `\n### ${sessionRef}\n${content}\n`;
+  }
+
+  return sessionContents.trim() || "No linked session artifacts declared.";
+}
+
 // ============================================================================
 // Main
 // ============================================================================
@@ -184,6 +232,8 @@ async function main() {
     }
   }
 
+  const sessionContents = buildSessionContentsForEntries(allEntries);
+
   log("Analyzing entry coherence...\n");
 
   // Use the shared agent runner
@@ -192,6 +242,7 @@ async function main() {
     files: {
       "DIFF.txt": diff || "No diff available",
       "ENTRIES.txt": entryContents,
+      "SESSIONS.txt": sessionContents,
     },
     prompt: COHERENCE_PROMPT,
     outputFile: "COHERENCE.json",
@@ -234,7 +285,9 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  logError(`Coherence checker error: ${err.message}`);
-  process.exit(1);
-});
+if (process.argv[1] && resolve(process.argv[1]) === __filename) {
+  main().catch((err) => {
+    logError(`Coherence checker error: ${err.message}`);
+    process.exit(1);
+  });
+}
