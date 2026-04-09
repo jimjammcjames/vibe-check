@@ -20,15 +20,15 @@ const { resolveAvailableProviderSequence, resolveConfiguredProviderSequence } =
 const { runAgent } = await import(
   join(REPO_ROOT, ".harness/framework/lib/agent-runner.mjs")
 );
-const { filterCiStageForProviderAvailability } = await import(
-  join(REPO_ROOT, ".harness/framework/cli/harness.mjs")
-);
 const {
   appendReviewCoverageSummary,
   buildReviewCoverageResult,
   renderReviewCoverageSummary,
   writeReviewCoverageDiagnostics,
-} = await import(join(REPO_ROOT, ".harness/framework/cli/harness.mjs"));
+} = await import(join(REPO_ROOT, ".harness/framework/lib/review-coverage.mjs"));
+const { filterCiStageForProviderAvailability } = await import(
+  join(REPO_ROOT, ".harness/framework/cli/harness.mjs")
+);
 
 function registerTestProvider(name, { available }) {
   registerProvider(name, {
@@ -149,7 +149,10 @@ test("review coverage diagnostics write the expected JSON shape", async () => {
       unavailableProviders: ["gemini", "codex"],
       allowMissingAgentProvider: true,
     });
-    const diagnosticsPath = writeReviewCoverageDiagnostics(reviewCoverage);
+    const diagnosticsPath = writeReviewCoverageDiagnostics(
+      REPO_ROOT,
+      reviewCoverage,
+    );
     const written = JSON.parse(await readFile(diagnosticsPath, "utf-8"));
 
     assert.deepStrictEqual(written, {

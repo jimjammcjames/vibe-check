@@ -6,6 +6,7 @@
 
 - `.harness/` and `workflows/` are already copied in.
 - `package.json` exists and has a repo-appropriate `test` script.
+- `.nvmrc` and `package.json#engines` describe the repo runtime contract.
 - Node.js and npm are available.
 - Git is initialized.
 
@@ -22,15 +23,21 @@ Preserve existing scripts and ensure these exist:
 
 ```json
 {
+  "harness:bootstrap": "node .harness/framework/scripts/bootstrap-preflight.mjs",
   "harness:prep": "node .harness/framework/cli/harness.mjs prep",
   "harness:iterate": "node .harness/framework/cli/harness.mjs iterate",
   "harness:post": "node .harness/framework/cli/harness.mjs post",
   "harness:ci": "node .harness/framework/cli/harness.mjs ci",
+  "harness:require-branch": "node .harness/framework/scripts/require-named-branch.mjs",
   "harness:new:entry": "node .harness/framework/cli/harness.mjs new:entry",
   "harness:new:meta": "node .harness/framework/cli/harness.mjs new:meta",
   "mcp-gen": "node workflows/bin/mcp-gen"
 }
 ```
+
+`harness:prep`, `harness:post`, and `harness:ci` already run bootstrap
+preflight inside the CLI. Keep `harness:bootstrap` as the standalone diagnostic
+surface; do not wrap the canonical scripts around it again.
 
 ## 4. Adapt config to the repo
 

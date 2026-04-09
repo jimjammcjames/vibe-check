@@ -5,13 +5,15 @@
   "type": "module",
   "scripts": {
     "test": "node --import tsx --test --test-concurrency=4 harness-tests/tests/*.test.mjs",
-    "test:local": "node --import tsx --test --test-concurrency=4 harness-tests/tests/agent-code-review.test.mjs harness-tests/tests/harness-cli.test.mjs harness-tests/tests/harness-config.test.mjs harness-tests/tests/http-provider.test.mjs harness-tests/tests/mcp-gen.test.mjs harness-tests/tests/mcp-gen-e2e.test.mjs harness-tests/tests/minimatch.test.mjs harness-tests/tests/policy-audit.test.mjs harness-tests/tests/skills.test.mjs harness-tests/tests/test-lint.test.mjs",
+    "test:local": "node --import tsx --test --test-concurrency=4 harness-tests/tests/agent-code-review.test.mjs harness-tests/tests/agent-memory-coherence.test.mjs harness-tests/tests/bootstrap-preflight.test.mjs harness-tests/tests/git-state.test.mjs harness-tests/tests/harness-cli.test.mjs harness-tests/tests/harness-config.test.mjs harness-tests/tests/http-provider.test.mjs harness-tests/tests/mcp-gen.test.mjs harness-tests/tests/mcp-gen-e2e.test.mjs harness-tests/tests/minimatch.test.mjs harness-tests/tests/policy-audit.test.mjs harness-tests/tests/skills.test.mjs harness-tests/tests/test-lint.test.mjs",
+    "harness:bootstrap": "node .harness/framework/scripts/bootstrap-preflight.mjs",
     "harness:prep": "node .harness/framework/cli/harness.mjs prep",
     "harness:iterate": "node .harness/framework/cli/harness.mjs iterate",
     "harness:post": "node .harness/framework/cli/harness.mjs post",
     "harness:ci": "node .harness/framework/cli/harness.mjs ci",
     "harness:ci:codex": "node .harness/framework/cli/harness.mjs ci --codex",
     "harness:ci:copilot": "node .harness/framework/cli/harness.mjs ci --copilot",
+    "harness:require-branch": "node .harness/framework/scripts/require-named-branch.mjs",
     "harness:simulate": "bash harness-tests/simulation/run.sh",
     "harness:new:entry": "node .harness/framework/cli/harness.mjs new:entry",
     "harness:new:meta": "node .harness/framework/cli/harness.mjs new:meta",
@@ -27,6 +29,10 @@
     "development"
   ],
   "license": "MIT",
+  "engines": {
+    "node": ">=20 <21",
+    "npm": ">=10 <11"
+  },
   "dependencies": {
     "@eslint/js": "^9.39.2",
     "eslint": "^9.39.2",

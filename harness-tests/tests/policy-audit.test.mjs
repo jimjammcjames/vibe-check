@@ -7,6 +7,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import {
+  checkHarnessMetaRule,
   loadConfig,
   matchesAnyGlob,
   checkRuleA,
@@ -115,11 +116,15 @@ describe("policy-audit logic", () => {
 date: 2026-01-02
 type: decision
 status: active
-schema: v2
+schema: v3
 search_terms:
   - "auth"
-related:
+related_entries:
   - "NONE"
+affected_files:
+  - "src/auth.ts"
+session_refs:
+  - ".harness/context/sessions/2026-01-02-auth.md"
 tags:
   - "#auth"
 ---
@@ -129,6 +134,10 @@ tags:
 ## Summary
 
 This summary explains the decision clearly and includes enough words to pass the minimum threshold.
+
+## Request / Intent
+
+Document the auth decision and its durable consequences for future changes.
 
 ## Context
 
@@ -145,6 +154,10 @@ Clear rationale here.
 ## Consequences
 
 Some follow-up work is required.
+
+## Guidance Impact
+
+Documented the auth decision in the durable repo guidance.
 
 ## Validation
 
@@ -178,11 +191,15 @@ Missing frontmatter should fail.`;
 date: 2026-01-02
 type: decision
 status: active
-schema: v2
+schema: v3
 search_terms:
   - "auth"
-related:
+related_entries:
   - "NONE"
+affected_files:
+  - "src/auth.ts"
+session_refs:
+  - ".harness/context/sessions/2026-01-02-auth.md"
 tags:
   - ""
 ---
@@ -487,6 +504,72 @@ Gap Closure: Added test: \`harness-tests/tests/session-refresh.test.mjs\`
     });
   });
 
+  describe("Rule M: harness-core changes require #harness-meta", () => {
+    it("fails when harness-core files change without a harness meta entry", () => {
+      const result = checkHarnessMetaRule(
+        ["AGENTS.md", "workflows/skills/merge-pr/SKILL.md"],
+        config,
+        [],
+      );
+
+      assert.equal(result.passed, false);
+      assert.match(result.message, /#harness-meta/);
+    });
+
+    it("passes when a harness meta entry is present", () => {
+      const result = checkHarnessMetaRule(["AGENTS.md"], config, [
+        {
+          file: ".harness/context/history/2026-04-09-example.md",
+          content: `---
+date: 2026-04-09
+type: meta
+status: active
+schema: v3
+search_terms:
+  - "example"
+related_entries:
+  - "NONE"
+affected_files:
+  - "AGENTS.md"
+session_refs:
+  - ".harness/context/sessions/2026-04-09-example.md"
+tags:
+  - "#harness-meta"
+---
+
+# example
+
+## Summary
+
+Enough detail for the meta entry summary to be valid here.
+
+## Context
+
+Enough context for the audit helper.
+
+## Technical Decision
+
+Use the harness meta entry.
+
+## Security & Integrity Impact
+
+This is audit coverage.
+
+## Conformance & Enforcement
+
+This is audit coverage.
+
+## Guidance Impact
+
+none
+`,
+        },
+      ]);
+
+      assert.equal(result.passed, true);
+    });
+  });
+
   describe("Rule S: session entry validation", () => {
     it("passes for a complete session entry", () => {
       const content = `---
@@ -657,6 +740,76 @@ Outcome.
       });
       assert.ok(
         issues.some((i) => i.code === "SESSION_GUIDANCE_IMPACT_MISSING"),
+      );
+    });
+
+    it("fails strict session validation when placeholder bullets are still blank", () => {
+      const content = `---
+date: 2026-01-02
+started_at: 2026-01-02T10:00:00.000Z
+tags:
+  - "#harness"
+related_history:
+  - "NONE"
+skills_used:
+  - "NONE"
+---
+
+# Session
+
+## Summary
+
+Investigating the canonical harness refresh while keeping notes about the
+workflow decisions and corrections that happened along the way.
+
+## User Intent
+
+Bring the stale canonical harness up to parity with the patterns that proved
+useful in the sibling repos.
+
+## Timeline
+
+- [seq-01] user:
+
+## Corrections & Thrash
+
+- user_correction: none
+- agent_correction: none
+- process_issue: none
+- thrash: none
+
+## Workflow Repetition
+
+- repeated_workflow:
+- custom_script: none
+
+## Codify Candidates
+
+- candidate: target=skill; description=
+
+## Guidance Impact
+
+- none
+
+## Outcome
+
+Captured the session.
+`;
+
+      const issues = validateSessionContent({
+        file: "session.md",
+        content,
+        requireFilledBullets: true,
+      });
+
+      assert.ok(
+        issues.some((issue) => issue.code === "SESSION_TIMELINE_FORMAT"),
+      );
+      assert.ok(
+        issues.some((issue) => issue.code === "SESSION_WORKFLOW_FORMAT"),
+      );
+      assert.ok(
+        issues.some((issue) => issue.code === "SESSION_CANDIDATE_PLACEHOLDER"),
       );
     });
   });

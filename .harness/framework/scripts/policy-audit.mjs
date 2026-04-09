@@ -902,6 +902,13 @@ function validateSessionContent({
         fix: "Use bullets like `- candidate: target=skill; stabilize the repeated workflow`.",
       });
     }
+    if (candidateLines.some((line) => /description=\s*$/.test(line))) {
+      issues.push({
+        code: "SESSION_CANDIDATE_PLACEHOLDER",
+        message: "Codify Candidates bullets must not leave description= blank",
+        fix: "Replace placeholder candidate bullets with a concrete description or delete them until you have one.",
+      });
+    }
   }
 
   return issues;
@@ -945,6 +952,46 @@ Fix: create a history entry:
     passed: true,
     message: "Real code changes accompanied by history entries",
     historyFiles,
+  };
+}
+
+function checkHarnessMetaRule(diffFiles, config, historyEntries) {
+  const harnessCoreGlobs = config.globs.harnessCore || [];
+  const harnessWork = diffFiles.filter(
+    (file) =>
+      matchesAnyGlob(file, harnessCoreGlobs) ||
+      file.startsWith("harness-tests/"),
+  );
+
+  if (harnessWork.length === 0) {
+    return { passed: true, message: "No harness-core changes detected" };
+  }
+
+  const hasHarnessMetaEntry = (historyEntries || []).some((entry) => {
+    const { data } = parseFrontmatter(entry.content);
+    const tags = normalizeList(data?.tags);
+    return (
+      ["meta", "fix", "incident"].includes(data?.type) &&
+      tags.some((tag) => tag.includes("#harness-meta"))
+    );
+  });
+
+  if (hasHarnessMetaEntry) {
+    return {
+      passed: true,
+      message: "Harness-core changes carry #harness-meta provenance",
+    };
+  }
+
+  return {
+    passed: false,
+    message: `Harness-core changes require a #harness-meta history entry.
+
+Changed harness-core files:
+${harnessWork.map((file) => `  - ${file}`).join("\n")}
+
+Fix: create a harness meta entry:
+  npm run harness:new:meta -- --slug "your-change"`,
   };
 }
 
@@ -1204,8 +1251,17 @@ function main() {
     failed = true;
   }
 
+  const ruleMeta = checkHarnessMetaRule(diffFiles, config, historyEntries);
+  if (ruleMeta.passed) {
+    logSuccess(`Rule M: ${ruleMeta.message}`);
+  } else {
+    logError("Rule M: FAILED");
+    log(ruleMeta.message);
+    failed = true;
+  }
+
   const ruleC = checkRuleC(historyEntries, diffFiles, addedFiles, {
-    requireV3: STAGED_ONLY,
+    requireV3: true,
     requireGapFileInDiff: STAGED_ONLY,
   });
   if (ruleC.passed) {
@@ -1217,7 +1273,7 @@ function main() {
   }
 
   const ruleS = checkSessionRule(sessionEntries, {
-    requireFilledBullets: STAGED_ONLY,
+    requireFilledBullets: true,
   });
   if (ruleS.passed) {
     logSuccess(`Rule S: ${ruleS.message}`);
@@ -1259,6 +1315,7 @@ if (process.argv[1] === __filename) {
 }
 
 export {
+  checkHarnessMetaRule,
   loadConfig,
   getDiffFiles,
   matchesAnyGlob,

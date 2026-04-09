@@ -23,17 +23,23 @@ Merge these scripts into your existing `package.json`:
 ```json
 {
   "scripts": {
+    "harness:bootstrap": "node .harness/framework/scripts/bootstrap-preflight.mjs",
     "harness:prep": "node .harness/framework/cli/harness.mjs prep",
     "harness:iterate": "node .harness/framework/cli/harness.mjs iterate",
     "harness:post": "node .harness/framework/cli/harness.mjs post",
     "harness:ci": "node .harness/framework/cli/harness.mjs ci",
     "harness:ci:copilot": "node .harness/framework/cli/harness.mjs ci --copilot",
+    "harness:require-branch": "node .harness/framework/scripts/require-named-branch.mjs",
     "harness:new:entry": "node .harness/framework/cli/harness.mjs new:entry",
     "harness:new:meta": "node .harness/framework/cli/harness.mjs new:meta",
     "harness:new:session": "node .harness/framework/cli/harness.mjs new:session"
   }
 }
 ```
+
+`harness:prep`, `harness:post`, and `harness:ci` already execute the shared
+bootstrap preflight inside the CLI. Use `harness:bootstrap` only when you want
+to probe setup directly; do not wrap the canonical scripts around it again.
 
 ## 3. Add CI workflow (optional)
 

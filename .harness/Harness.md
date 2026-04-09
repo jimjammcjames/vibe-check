@@ -12,6 +12,10 @@ npm run harness:post -- --staged  # Staged commit-intent gate
 npm run harness:ci                # Outer loop only: PR update / merge gate
 ```
 
+- `harness:prep`, `harness:post`, and `harness:ci` now run a shared bootstrap
+  preflight first. Fix runtime or dependency drift there before debugging later
+  harness stages.
+
 ## Loop Tiers
 
 | Loop   | Command                  | Purpose                                         |
@@ -27,6 +31,9 @@ npm run harness:ci                # Outer loop only: PR update / merge gate
   tests, review skills, or prompt improvements before inventing a new gate.
 - Add new blockers only when they are deterministic, cheap, and clearly
   leverage future diffs.
+- When a rule is firing late or in multiple places, prefer moving the existing
+  invariant earlier or centralizing one shared helper over adding another
+  reactive branch.
 
 ## Agent Runtime Requirements
 
@@ -102,14 +109,15 @@ entry; do not launch session creation and linked history creation in parallel.
 
 ## Enforcement Rules
 
-| Rule | Trigger            | Requirement                                                      |
-| ---- | ------------------ | ---------------------------------------------------------------- |
-| A    | Real code changed  | Must include history entry                                       |
-| B    | Fix/incident entry | Must include test delta                                          |
-| C    | Any history entry  | Must have required frontmatter + required sections               |
-| C+   | Fix/incident entry | Must include error_signature, Validation, Systemic Gap + Closure |
-| S    | Any session entry  | Must have required frontmatter + required sections               |
-| D    | Staged real code   | Must include staged history + staged session coverage            |
+| Rule | Trigger             | Requirement                                                                      |
+| ---- | ------------------- | -------------------------------------------------------------------------------- |
+| A    | Real code changed   | Must include history entry                                                       |
+| M    | Harness-core change | Must include a `#harness-meta` history entry                                     |
+| B    | Fix/incident entry  | Must include test delta                                                          |
+| C    | Any history entry   | Must have required frontmatter + required sections                               |
+| C+   | Fix/incident entry  | Must include error_signature, Validation, Systemic Gap + Closure                 |
+| S    | Any session entry   | Must have required frontmatter + required sections and filled structured bullets |
+| D    | Staged real code    | Must include staged history + staged session coverage                            |
 
 ## Required Frontmatter Fields
 
@@ -338,9 +346,10 @@ npm run harness:prep
 
 ## Debug Checklist
 
-1. Ensure Node.js is installed.
-2. Run `npm install`.
-3. Check that `.harness/config.yml` exists and is valid YAML.
-4. If agent providers fail, verify the selected CLI is installed and logged in.
-5. If git-related commands fail, make sure you are inside a git repository with
+1. Run `npm run harness:prep` and follow its bootstrap preflight output first.
+2. If local deps are missing, run `npm ci` (or `npm install` if there is no lockfile).
+3. If the runtime is wrong, use `.nvmrc` and switch to the repo's Node version.
+4. Check that `.harness/config.yml` exists and is valid YAML.
+5. If agent providers fail, verify the selected CLI is installed and logged in.
+6. If git-related commands fail, make sure you are inside a git repository with
    at least one commit.

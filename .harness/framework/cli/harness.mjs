@@ -15,7 +15,6 @@
 
 import { exec, execSync } from "node:child_process";
 import {
-  appendFileSync,
   readFileSync,
   writeFileSync,
   existsSync,
@@ -33,8 +32,18 @@ import {
 } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadHarnessConfig } from "../lib/harness-config.mjs";
+import {
+  analyzeBootstrapPreflight,
+  formatBootstrapPreflight,
+} from "../lib/bootstrap-preflight.mjs";
 import { normalizeList, parseFrontmatter } from "../lib/history-entry.mjs";
 import { resolveAvailableProviderSequence } from "../lib/provider-selection.mjs";
+import {
+  appendReviewCoverageSummary,
+  buildReviewCoverageResult,
+  writeReviewCoverageDiagnostics,
+  renderReviewCoverageSummary,
+} from "../lib/review-coverage.mjs";
 import { listSkillMeta, syncAgentsSkillsOverview } from "../lib/skills.mjs";
 import { minimatch } from "../scripts/minimatch.mjs";
 
@@ -79,7 +88,6 @@ function logWarning(msg) {
 }
 
 const DEFAULT_DIAGNOSTICS_DIR = join(HARNESS_ROOT, "diagnostics", "latest");
-const REVIEW_COVERAGE_FILENAME = "review-coverage.json";
 
 function prepareDiagnosticsForRun() {
   process.env.HARNESS_DIAGNOSTICS_DIR = DEFAULT_DIAGNOSTICS_DIR;
@@ -89,85 +97,6 @@ function prepareDiagnosticsForRun() {
   } catch {
     // Diagnostics are best-effort only.
   }
-}
-
-function getDiagnosticsDir() {
-  const override = process.env.HARNESS_DIAGNOSTICS_DIR;
-  if (!override) {
-    return DEFAULT_DIAGNOSTICS_DIR;
-  }
-  return isAbsolute(override) ? override : join(REPO_ROOT, override);
-}
-
-function buildReviewCoverageResult({
-  skippedAgentReviews = false,
-  configuredProviders = [],
-  availableProviders = [],
-  unavailableProviders = [],
-  allowMissingAgentProvider = process.env
-    .HARNESS_ALLOW_MISSING_AGENT_PROVIDER === "1",
-} = {}) {
-  return {
-    skipped_agent_reviews: Boolean(skippedAgentReviews),
-    configured_providers: configuredProviders,
-    available_providers: availableProviders,
-    unavailable_providers: unavailableProviders,
-    allow_missing_agent_provider: Boolean(allowMissingAgentProvider),
-  };
-}
-
-function writeReviewCoverageDiagnostics(reviewCoverage) {
-  const diagnosticsDir = getDiagnosticsDir();
-  mkdirSync(diagnosticsDir, { recursive: true });
-  const diagnosticsPath = join(diagnosticsDir, REVIEW_COVERAGE_FILENAME);
-  writeFileSync(
-    diagnosticsPath,
-    `${JSON.stringify(reviewCoverage, null, 2)}\n`,
-  );
-  return diagnosticsPath;
-}
-
-function renderReviewCoverageSummary(reviewCoverage) {
-  const configuredProviders =
-    reviewCoverage.configured_providers.join(", ") || "none";
-  const availableProviders =
-    reviewCoverage.available_providers.join(", ") || "none";
-  const unavailableProviders =
-    reviewCoverage.unavailable_providers.join(", ") || "none";
-
-  if (reviewCoverage.skipped_agent_reviews) {
-    return [
-      "## Agent Review Coverage",
-      "",
-      "Provider-backed agent reviews were skipped because no configured providers were runnable on this runner.",
-      "",
-      `- Configured providers: ${configuredProviders}`,
-      `- Available providers: ${availableProviders}`,
-      `- Unavailable providers: ${unavailableProviders}`,
-      `- Allow missing provider: ${reviewCoverage.allow_missing_agent_provider ? "yes" : "no"}`,
-    ].join("\n");
-  }
-
-  return [
-    "## Agent Review Coverage",
-    "",
-    "Provider-backed agent reviews remained in the CI stage.",
-    "",
-    `- Configured providers: ${configuredProviders}`,
-    `- Available providers: ${availableProviders}`,
-    `- Unavailable providers: ${unavailableProviders}`,
-    `- Allow missing provider: ${reviewCoverage.allow_missing_agent_provider ? "yes" : "no"}`,
-  ].join("\n");
-}
-
-function appendReviewCoverageSummary(reviewCoverage) {
-  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-  if (!summaryPath) return null;
-  appendFileSync(
-    summaryPath,
-    `\n${renderReviewCoverageSummary(reviewCoverage)}\n`,
-  );
-  return summaryPath;
 }
 
 function killOrphanedProcesses() {
@@ -208,6 +137,27 @@ function printRecoveryPointers() {
 
 function loadConfig() {
   return loadHarnessConfig({ harnessRoot: HARNESS_ROOT });
+}
+
+const BOOTSTRAP_PREFLIGHT_COMMANDS = new Set(["prep", "post", "ci"]);
+
+function ensureBootstrapPreflight(command) {
+  if (!BOOTSTRAP_PREFLIGHT_COMMANDS.has(command)) {
+    return true;
+  }
+
+  const before = `harness:${command}`;
+  const preflight = analyzeBootstrapPreflight({
+    repoRoot: REPO_ROOT,
+  });
+
+  if (preflight.ok) {
+    logSuccess(`Bootstrap preflight passed before ${before}`);
+    return true;
+  }
+
+  logError(formatBootstrapPreflight(preflight, { before }));
+  return false;
 }
 
 function getChangedFiles() {
@@ -798,7 +748,7 @@ async function cmdCi() {
     config,
   );
   const reviewCoverage = buildReviewCoverageResult(preparedStage);
-  writeReviewCoverageDiagnostics(reviewCoverage);
+  writeReviewCoverageDiagnostics(REPO_ROOT, reviewCoverage);
   appendReviewCoverageSummary(reviewCoverage);
   const outcome = await runCiStage(preparedStage.stage, {
     parallelAgentReviews:
@@ -1128,7 +1078,7 @@ function cmdNewEntry(slug, type, sessionSlug = null) {
       );
     }
     log(
-      "\nDon't forget to fill in the required v3 sections, affected_files, and validation details.",
+      "\nThis scaffold is intentionally incomplete. Fill in the required v3 sections, affected_files, and validation details before `harness:post` or `harness:ci`.",
     );
   } catch (error) {
     logError(error?.message || String(error));
@@ -1173,7 +1123,9 @@ function cmdNewSession(slug) {
 
   writeFileSync(targetPath, template);
   logSuccess(`Created: ${targetPath}`);
-  log("\nUpdate the session as the task evolves; there is no close step.");
+  log(
+    "\nUpdate the session as the task evolves. Blank timeline/workflow/candidate bullets will fail `harness:post` until you replace them with real notes.",
+  );
 }
 
 function extractLegacySection(content, heading) {
@@ -1419,6 +1371,10 @@ function main() {
     process.env.HARNESS_PARALLEL_AGENT_REVIEWS = "1";
   }
   if (providerOverride) process.env.HARNESS_PROVIDER = providerOverride;
+
+  if (!ensureBootstrapPreflight(command)) {
+    process.exit(1);
+  }
 
   switch (command) {
     case "prep":

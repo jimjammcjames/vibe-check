@@ -14,6 +14,9 @@
 - Never use `--no-verify`; fix verification failures instead of bypassing them.
 - Keep durable rules in tracked repo docs rather than leaving them only in chat
   history.
+- Prefer the simplest structural fix that moves an invariant earlier or
+  centralizes it behind one shared helper. Avoid reactive late-stage patches
+  when a cleaner boundary exists.
 - If a change alters durable workflow, policy, or standing guidance, update the
   relevant repo docs in the same change and record the guidance impact in the
   matching history/session artifacts.
