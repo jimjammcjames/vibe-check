@@ -74,6 +74,10 @@ The first four are now represented in this repo.
 - `.github/workflows/` - CI wiring examples
 - `AGENTS.md` - terminal-first entry point for coding agents
 
+Background rationale for harness changes lives in
+`.harness/context/history/*`. Repo-root docs should stay reserved for stable
+entrypoints and long-lived reference material.
+
 ## What still belongs in later phases
 
 These showed up in sibling repos but are not yet portable enough to make part
