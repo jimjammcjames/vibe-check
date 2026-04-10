@@ -52,6 +52,11 @@ If you need machine-local agent overrides, use `.harness/config.local.yml` inste
 ## 5. Set up docs and CI
 
 - Ensure `AGENTS.md` points agents to `.harness/Harness.md` and `npm run harness:prep`.
+- Keep one canonical operator surface: `AGENTS.md` for entrypoint guidance,
+  `.harness/Harness.md` for the durable workflow contract, `.harness/setup/*`
+  for installation, `workflows/skills/*` for conditional playbooks, and
+  `.harness/context/*` or a dedicated docs subtree for background research
+  instead of repo-root memos.
 - Copy `.harness/setup/harness-ci.yml` into `.github/workflows/` if the repo needs a dedicated workflow.
 - If hosted CI will not have a runnable agent provider CLI/API configured, keep `HARNESS_ALLOW_MISSING_AGENT_PROVIDER=1` on the workflow step so deterministic checks still run while local `harness:ci` remains the full provider-backed outer loop.
 - Upload `.harness/diagnostics/latest` as a workflow artifact so machine-readable review coverage and agent failure diagnostics survive each CI run.
