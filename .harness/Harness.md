@@ -42,7 +42,10 @@ npm run harness:ci                # Outer loop only: PR update / merge gate
 - Use Codex for agent steps with `npm run harness:ci -- --codex`.
 - Use GitHub Copilot CLI for agent steps with `npm run harness:ci -- --copilot`.
 - Override provider directly with `npm run harness:ci -- --provider <name>`.
-- Local-only agent overrides belong in `.harness/config.local.yml` (gitignored).
+- Local untracked agent overrides can live in two places: a repo-shared
+  `<git common dir>/.harness/config.local.yml` that applies across linked
+  worktrees for the same repo, and a per-worktree `.harness/config.local.yml`
+  that overrides the shared layer last. Keep both files gitignored.
 - Agent runtime failures are logged to
   `.harness/diagnostics/latest/agent-failures.log`.
 - CI review coverage is logged to
@@ -51,6 +54,9 @@ npm run harness:ci                # Outer loop only: PR update / merge gate
   provider-backed agent-review commands when none of the configured providers
   are runnable on that runner. This does not hide real provider failures once a
   provider is actually available.
+- Callers that want the code reviewer to see the original user task can set
+  `HARNESS_ORIGINAL_REQUEST` to stage an optional `ORIGINAL_REQUEST.txt` input
+  for `agent-code-review`.
 
 Useful env/config overrides:
 

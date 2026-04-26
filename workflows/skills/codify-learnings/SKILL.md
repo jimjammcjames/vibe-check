@@ -11,6 +11,8 @@ Use this after we discover something non-obvious that future agents should not h
 
 - Capturing durable guidance after debugging, incident work, or process thrash.
 - Converting chat-only learnings into repo artifacts.
+- Localizing external skills, workflows, or upstream docs into repo-owned guidance.
+- Capturing repeated user steering once a workflow preference becomes explicit.
 - Use when the user says or implies:
 - "Codify our learnings."
 - "Save this as a skill."
@@ -26,6 +28,8 @@ Run this after a task when any of these happened:
 - A durable repo rule changed but is still only implicit in chat.
 - A long-lived automation, runtime, or operator-facing surface became part of
   the repo contract.
+- The task imported or adapted an external skill, workflow, or vendor guide.
+- The user spent multiple turns steering the same workflow or collaboration preference.
 
 ## Quality Bar
 
@@ -52,6 +56,11 @@ rg -n "keyword|error text" .harness/context/history workflows/skills AGENTS.md
 - What signal proved the truth?
 - What should future agents do differently?
 
+  2.5. Infer the broader meta intent when workflow-governing surfaces changed.
+
+- If the task touched `AGENTS.md`, repo skills, review prompts, or imported outside guidance, ask what durable preference the user was really expressing beyond the literal edit.
+- If repeated user steering already made that preference explicit, codify it directly instead of waiting for a separate reflection request.
+
 3. Pick the smallest durable artifact set.
 
 - Put short always-true rules in `AGENTS.md`.
@@ -65,6 +74,14 @@ rg -n "keyword|error text" .harness/context/history workflows/skills AGENTS.md
 
 - Update when the trigger and remedy are materially the same.
 - Create new only when the workflow or root cause is genuinely distinct.
+- Prefer consolidation over adding a sibling artifact when the same owner can absorb the new learning cleanly.
+
+  4.5. Adapt external inputs before finalizing local artifacts.
+
+- Keep high-fit guidance.
+- Link to existing repo owners when the imported material is only support.
+- Merge only when the owner and trigger surface are truly the same.
+- Cut advice that is stack-mismatched, irrelevant, or too context-specific for this repo.
 
 5. Write the artifact so future agents can act on it quickly.
 

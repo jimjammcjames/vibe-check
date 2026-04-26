@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildDetachedHeadMessage,
   getCurrentBranch,
+  getGitCommonDir,
   isDetachedHead,
   requireNamedBranch,
 } from "../../.harness/framework/lib/git-state.mjs";
@@ -38,4 +39,12 @@ test("requireNamedBranch throws a canonical recovery message on detached HEAD", 
     }),
     /Detached HEAD is fine for exploration/,
   );
+});
+
+test("getGitCommonDir returns the resolved git common dir when available", () => {
+  const commonDir = getGitCommonDir({
+    execGit: () => ".git",
+  });
+
+  assert.equal(commonDir, ".git");
 });

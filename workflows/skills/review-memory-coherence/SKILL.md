@@ -1,12 +1,12 @@
 ---
 id: review-memory-coherence
-summary: Validates history entry coherence (type correctness, topic unity, linking).
+summary: Validates history and session coherence (type correctness, topic unity, linking, and stale topic reuse).
 ---
 
 ## Use Cases
 
 - Validating history-entry coherence for type correctness and topic scope before merge.
-- Checking documentation updates for consistent linking and single-change discipline.
+- Checking documentation updates for consistent linking, single-change discipline, and whether fresh work was wrongly appended to an old umbrella entry.
 - Use when the user says or implies:
 - "Check history coherence for this change."
 - "Is this the right entry type?"
@@ -34,7 +34,7 @@ RULES:
    - Each entry should cover ONE logical change
    - If entry mixes multiple UNRELATED changes → flag as "multiple_topics"
    - Exception: Related changes (e.g., fix + test for that fix) are OK together
-   - If multiple topics are properly linked via `related_entries` and the active session context → OK
+   - If multiple topics are properly linked via `related_entries` and the linked session context → OK
 
 3. SESSION ALIGNMENT:
    - Use SESSIONS.txt to confirm the entry reflects the actual user intent and major course corrections.
@@ -45,7 +45,15 @@ RULES:
    - Only apply this to legacy entries that still rely on `## Timeline` as part of their schema.
    - If an edited legacy entry keeps a stale final `## Timeline` bullet, flag `stale_timeline`.
 
-5. Check each entry and report issues.
+5. TOPIC REUSE / UMBRELLA ENTRY DRIFT:
+   - If a fresh request or same-day follow-up is being documented by editing an older dated entry instead of creating a new linked entry, flag `topic_reuse`.
+   - If the changed entry reads like a catch-all umbrella for multiple later rounds of work instead of one dated decision/change, flag `topic_reuse`.
+   - Reusing an older entry is only acceptable when the new diff is truly the same still-open task and the linkage/session notes make that continuity explicit.
+
+6. SESSION STATUS HYGIENE:
+   - If a session artifact clearly reads complete in `## Outcome` or final timeline bullets but still says `status: "active"` with no sign it is intentionally left open, flag `session_status`.
+
+7. Check each entry and report issues.
 
 MANDATORY: Produce COHERENCE.json as a JSON object (no extra text):
 {
@@ -53,7 +61,7 @@ MANDATORY: Produce COHERENCE.json as a JSON object (no extra text):
 "issues": [
 {
 "file": "path/to/entry.md",
-"issue_type": "wrong_entry_type | multiple_topics | missing_links | stale_timeline",
+"issue_type": "wrong_entry_type | multiple_topics | missing_links | stale_timeline | topic_reuse | session_status",
 "description": "brief description",
 "suggestion": "brief fix"
 }

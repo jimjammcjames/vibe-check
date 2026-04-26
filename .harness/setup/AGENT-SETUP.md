@@ -47,7 +47,11 @@ Update `.harness/config.yml` based on the actual source and test layout:
 - `globs.tests`: repo test patterns
 - `globs.exempt`: docs and generated files that should not require history
 
-If you need machine-local agent overrides, use `.harness/config.local.yml` instead of editing the committed config.
+If you need machine-local agent overrides, use an untracked local config
+instead of editing the committed config. Shared repo-local overrides can live
+under `<git common dir>/.harness/config.local.yml`, and a per-worktree
+`.harness/config.local.yml` can override that shared layer when one checkout
+needs to diverge intentionally.
 
 ## 5. Set up docs and CI
 

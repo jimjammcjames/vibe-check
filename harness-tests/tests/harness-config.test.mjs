@@ -60,4 +60,46 @@ reviewers:
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("loads a shared git-common-dir override before the worktree override", () => {
+    const root = mkdtempSync(join(tmpdir(), "harness-config-shared-"));
+    const harnessRoot = join(root, ".harness");
+    const sharedHarnessRoot = join(root, ".git", ".harness");
+    mkdirSync(harnessRoot, { recursive: true });
+    mkdirSync(sharedHarnessRoot, { recursive: true });
+
+    writeFileSync(
+      join(harnessRoot, "config.yml"),
+      `agents:
+  provider: gemini
+  codex_model: gpt-4.1-mini
+`,
+    );
+
+    writeFileSync(
+      join(sharedHarnessRoot, "config.local.yml"),
+      `agents:
+  provider: codex
+  codex_model: gpt-5.4
+`,
+    );
+
+    writeFileSync(
+      join(harnessRoot, "config.local.yml"),
+      `agents:
+  codex_model: gpt-5.4-mini
+`,
+    );
+
+    try {
+      const loaded = loadHarnessConfig({
+        harnessRoot,
+        execGit: () => ".git",
+      });
+      assert.equal(loaded.agents.provider, "codex");
+      assert.equal(loaded.agents.codex_model, "gpt-5.4-mini");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

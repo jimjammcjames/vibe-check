@@ -29,6 +29,11 @@ service, runtime surface, operator command, or background workflow.
 
 - Update the narrowest durable doc that future agents will actually consult.
 - Record the same change in the linked history/session `## Guidance Impact` sections.
+- If the repo has several long-lived automations, prefer a small registry or
+  index that names each automation, its status, source file, runner, schedule,
+  reads, writes, and owner-facing output.
+- If the repo does not have a registry, record the same fields in the narrowest
+  existing tracked doc instead of leaving the capability implicit.
 
 3. Make validation explicit.
 
@@ -39,6 +44,9 @@ service, runtime surface, operator command, or background workflow.
 
 - Prefer a durable health signal run by a persistent service or scheduled automation over manual smoke tests alone.
 - If only manual validation exists today, say so explicitly and record the missing monitor as a follow-up.
+- Use consistent status language such as `active`, `ready`, and `paused` so
+  future audits can distinguish scheduled behavior from documented-but-idle
+  capability.
 
 5. Fail closed on ambiguity.
 

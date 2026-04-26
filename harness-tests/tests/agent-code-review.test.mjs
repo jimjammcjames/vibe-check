@@ -11,6 +11,8 @@ import {
   selectAdapter,
   getProviderConfig,
   buildReviewResult,
+  buildAgentReviewFiles,
+  buildReviewScope,
 } from "../../.harness/framework/scripts/agent-code-review.mjs";
 
 async function withEnv(vars, fn) {
@@ -137,6 +139,101 @@ describe("agent-code-review logic", () => {
 
     it("does not register stub adapter", () => {
       assert.strictEqual(adapters.stub, undefined);
+    });
+  });
+
+  describe("buildReviewScope", () => {
+    it("separates touched and inherited history/session entries", () => {
+      const scope = buildReviewScope({
+        historyEntries: [
+          { file: ".harness/context/history/touched.md", schema: "v3" },
+          { file: ".harness/context/history/inherited.md", schema: "v2" },
+        ],
+        sessionEntries: [
+          { file: ".harness/context/sessions/touched.md" },
+          { file: ".harness/context/sessions/inherited.md" },
+        ],
+        touchedFiles: new Set([
+          ".harness/context/history/touched.md",
+          ".harness/context/sessions/touched.md",
+        ]),
+      });
+
+      assert.match(
+        scope,
+        /Touched history entries:\n- \[v3\] .harness\/context\/history\/touched.md/,
+      );
+      assert.match(
+        scope,
+        /Inherited history entries:\n- \[v2\] .harness\/context\/history\/inherited.md/,
+      );
+      assert.match(
+        scope,
+        /Touched session entries:\n- .harness\/context\/sessions\/touched.md/,
+      );
+      assert.match(
+        scope,
+        /Inherited session entries:\n- .harness\/context\/sessions\/inherited.md/,
+      );
+    });
+  });
+
+  describe("buildAgentReviewFiles", () => {
+    it("includes sessions, review scope, and optional original request", () => {
+      const files = buildAgentReviewFiles(
+        {
+          diff: "diff --git a/file b/file",
+          testFiles: ["harness-tests/tests/example.test.mjs"],
+          historyEntries: [
+            {
+              file: ".harness/context/history/example.md",
+              content: "# history",
+              type: "fix",
+              schema: "v3",
+            },
+          ],
+          sessionEntries: [
+            {
+              file: ".harness/context/sessions/example.md",
+              content: "# session",
+            },
+          ],
+          touchedFiles: new Set([
+            ".harness/context/history/example.md",
+            ".harness/context/sessions/example.md",
+          ]),
+        },
+        { HARNESS_ORIGINAL_REQUEST: "Ship the intentional weird file." },
+      );
+
+      assert.match(
+        files["HISTORY_ENTRIES.txt"],
+        /\[FIX\]\[TOUCHED\]\[schema=v3\]/,
+      );
+      assert.match(files["SESSIONS.txt"], /\[SESSION\]\[TOUCHED\]/);
+      assert.match(
+        files["REVIEW_SCOPE.txt"],
+        /Touched files in current branch\/worktree scope: 2/,
+      );
+      assert.equal(
+        files["ORIGINAL_REQUEST.txt"],
+        "Ship the intentional weird file.",
+      );
+    });
+
+    it("omits ORIGINAL_REQUEST.txt when the env value is blank", () => {
+      const files = buildAgentReviewFiles(
+        {
+          diff: "diff --git a/file b/file",
+          testFiles: [],
+          historyEntries: [],
+          sessionEntries: [],
+          touchedFiles: new Set(),
+        },
+        { HARNESS_ORIGINAL_REQUEST: "   " },
+      );
+
+      assert.equal(files["ORIGINAL_REQUEST.txt"], undefined);
     });
   });
 });

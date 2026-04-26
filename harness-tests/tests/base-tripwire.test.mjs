@@ -23,8 +23,6 @@ import { tmpdir } from "node:os";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const REPO_ROOT = join(__dirname, "..", "..");
-const SANDBOX_BASE_REF = "tripwire-test-base";
-
 function normalizePath(pathValue) {
   try {
     return realpathSync(pathValue);
@@ -103,6 +101,13 @@ function listWorktrees(cwd) {
     .map((pathValue) => normalizePath(pathValue));
 }
 
+function listTripwireWorktrees(cwd) {
+  const tripwirePrefix = normalizePath(join(tmpdir(), "harness-tripwire-"));
+  return listWorktrees(cwd).filter((pathValue) =>
+    pathValue.startsWith(tripwirePrefix),
+  );
+}
+
 function removeWorktree(cwd, worktreePath) {
   try {
     execSync(`git worktree remove --force "${worktreePath}"`, {
@@ -161,21 +166,28 @@ function createSandboxWorktree(t) {
     join(REPO_ROOT, "node_modules"),
     join(sandboxRoot, "node_modules"),
   );
-  runCommand(sandboxRoot, `git update-ref refs/heads/${SANDBOX_BASE_REF} HEAD`);
-
   const configPath = join(sandboxRoot, ".harness", "config.yml");
   const config = readFileSync(configPath, "utf-8");
-  writeFileSync(configPath, setBaseTripwireBaseRef(config, SANDBOX_BASE_REF));
+  writeFileSync(
+    configPath,
+    setBaseTripwireBaseRef(config, getSandboxBaseRef(sandboxRoot)),
+  );
 
   const normalized = normalizePath(sandboxRoot);
   t.after(() => {
+    const leftovers = listTripwireWorktrees(REPO_ROOT);
+    assert.deepEqual(
+      leftovers,
+      [],
+      `expected no leaked tripwire worktrees, got: ${leftovers.join(", ")}`,
+    );
     removeWorktree(REPO_ROOT, normalized);
   });
   return normalized;
 }
 
 function getSandboxBaseRef(sandboxRoot) {
-  return SANDBOX_BASE_REF;
+  return runCommand(sandboxRoot, "git rev-parse HEAD");
 }
 
 function createTripwireWorktree(sandboxRoot, baseRef) {
@@ -292,6 +304,7 @@ describe("base-tripwire discovery validation", { concurrency: 1 }, () => {
   it("cleans up stale tripwire worktrees before running", (t) => {
     const sandboxRoot = createSandboxWorktree(t);
     const baseRef = getSandboxBaseRef(sandboxRoot);
+    assert.match(baseRef, /^[0-9a-f]{40}$/);
     const worktreePath = createTripwireWorktree(sandboxRoot, baseRef);
     const testFile = join(
       sandboxRoot,

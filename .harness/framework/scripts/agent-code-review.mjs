@@ -227,11 +227,85 @@ function getHistoryContent(diffFiles, config) {
       if (existsSync(fullPath)) {
         const content = readFileSync(fullPath, "utf-8");
         const { data } = parseFrontmatter(content);
-        return { file, content, type: data?.type || "unknown" };
+        return {
+          file,
+          content,
+          type: data?.type || "unknown",
+          schema: data?.schema || "unknown",
+        };
       }
       return null;
     })
     .filter(Boolean);
+}
+
+function getSessionContent(diffFiles, config) {
+  const sessionGlob = config.globs.sessions;
+  const sessionFiles = diffFiles.filter((f) => matchesAnyGlob(f, sessionGlob));
+
+  return sessionFiles
+    .map((file) => {
+      const fullPath = join(REPO_ROOT, file);
+      if (!existsSync(fullPath)) {
+        return null;
+      }
+
+      return {
+        file,
+        content: readFileSync(fullPath, "utf-8"),
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildReviewScope({
+  historyEntries = [],
+  sessionEntries = [],
+  touchedFiles = new Set(),
+}) {
+  const touchedHistory = historyEntries.filter((entry) =>
+    touchedFiles.has(entry.file),
+  );
+  const inheritedHistory = historyEntries.filter(
+    (entry) => !touchedFiles.has(entry.file),
+  );
+  const touchedSessions = sessionEntries.filter((entry) =>
+    touchedFiles.has(entry.file),
+  );
+  const inheritedSessions = sessionEntries.filter(
+    (entry) => !touchedFiles.has(entry.file),
+  );
+
+  const formatEntries = (entries, formatter) =>
+    entries.length > 0
+      ? entries.map((entry) => `- ${formatter(entry)}`).join("\n")
+      : "- NONE";
+
+  return [
+    "DETERMINISTIC REVIEW BOUNDARY",
+    "- HARNESS_RULES.md is the source of truth for compliance boundaries.",
+    "- Legacy history entries marked [INHERITED] may use schema v1/v2 inside a branch diff.",
+    "- Do NOT fail solely because an [INHERITED] v1/v2 history entry lacks v3-only fields or sections.",
+    "- Apply v3-only expectations only to [TOUCHED] entries or entries already marked schema=v3.",
+    "- Use [INHERITED] history and session entries as context, not as standalone migration-debt blockers.",
+    "",
+    `Touched files in current branch/worktree scope: ${touchedFiles.size}`,
+    "",
+    "Touched history entries:",
+    formatEntries(touchedHistory, (entry) => `[${entry.schema}] ${entry.file}`),
+    "",
+    "Inherited history entries:",
+    formatEntries(
+      inheritedHistory,
+      (entry) => `[${entry.schema}] ${entry.file}`,
+    ),
+    "",
+    "Touched session entries:",
+    formatEntries(touchedSessions, (entry) => entry.file),
+    "",
+    "Inherited session entries:",
+    formatEntries(inheritedSessions, (entry) => entry.file),
+  ].join("\n");
 }
 
 function getProviderConfig(isFastMode) {
@@ -292,6 +366,60 @@ function buildReviewResult(reviewData) {
   };
 }
 
+function buildAgentReviewFiles(context, env = process.env) {
+  const files = {};
+  files["DIFF.txt"] = context.diff || "No diff available";
+  files["TEST_FILES.txt"] = context.testFiles.join("\n");
+
+  const historyEntries = context.historyEntries || context.learnedEntries || [];
+  const historyContent = historyEntries
+    .map((entry) => {
+      const scope =
+        context.touchedFiles && context.touchedFiles.has(entry.file)
+          ? "TOUCHED"
+          : "INHERITED";
+      return `### [${(entry.type || "unknown").toUpperCase()}][${scope}][schema=${entry.schema || "unknown"}] ${entry.file}\n${entry.content}`;
+    })
+    .join("\n\n");
+  files["HISTORY_ENTRIES.txt"] = historyContent || "None";
+
+  const sessionEntries = context.sessionEntries || [];
+  const sessionContent = sessionEntries
+    .map((entry) => {
+      const scope =
+        context.touchedFiles && context.touchedFiles.has(entry.file)
+          ? "TOUCHED"
+          : "INHERITED";
+      return `### [SESSION][${scope}] ${entry.file}\n${entry.content}`;
+    })
+    .join("\n\n");
+  files["SESSIONS.txt"] = sessionContent || "None";
+  files["REVIEW_SCOPE.txt"] = buildReviewScope({
+    historyEntries,
+    sessionEntries,
+    touchedFiles: context.touchedFiles || new Set(),
+  });
+
+  const harnessDocPath = join(HARNESS_ROOT, "Harness.md");
+  const harnessMd = existsSync(harnessDocPath)
+    ? readFileSync(harnessDocPath, "utf-8")
+    : "Harness.md not found";
+  files["HARNESS_RULES.md"] = harnessMd;
+
+  const agentsDocPath = join(REPO_ROOT, "AGENTS.md");
+  const agentsMd = existsSync(agentsDocPath)
+    ? readFileSync(agentsDocPath, "utf-8")
+    : "AGENTS.md not found";
+  files["REPO_AGENTS_GUIDANCE.md"] = agentsMd;
+
+  const originalRequest = env.HARNESS_ORIGINAL_REQUEST?.trim();
+  if (originalRequest) {
+    files["ORIGINAL_REQUEST.txt"] = originalRequest;
+  }
+
+  return files;
+}
+
 // ============================================================================
 // Adapter Interface
 // ============================================================================
@@ -300,7 +428,9 @@ function buildReviewResult(reviewData) {
  * @typedef {Object} ReviewContext
  * @property {string} diff - Git diff of the PR
  * @property {string[]} testFiles - Changed test files
- * @property {Array<{file: string, content: string, type?: string}>} historyEntries - History entry contents
+ * @property {Array<{file: string, content: string, type?: string, schema?: string}>} historyEntries - History entry contents
+ * @property {Array<{file: string, content: string}>} sessionEntries - Session entry contents
+ * @property {Set<string>} touchedFiles - Files touched by the branch diff or local worktree overlays
  * @property {string} testCommand - Command used to run tests
  */
 
@@ -345,32 +475,7 @@ const sharedAdapter = {
     // Use in-memory file map instead of disk sandbox
     const files = {};
     try {
-      files["DIFF.txt"] = context.diff || "No diff available";
-      files["TEST_FILES.txt"] = context.testFiles.join("\n");
-
-      const historyEntries =
-        context.historyEntries || context.learnedEntries || [];
-      const historyContent = historyEntries
-        .map(
-          (e) =>
-            `### [${(e.type || "unknown").toUpperCase()}] ${e.file}\n${e.content}`,
-        )
-        .join("\n\n");
-      files["HISTORY_ENTRIES.txt"] = historyContent || "None";
-
-      // Read Harness.md for the compliance prompt
-      const harnessDocPath = join(HARNESS_ROOT, "Harness.md");
-      const harnessMd = existsSync(harnessDocPath)
-        ? readFileSync(harnessDocPath, "utf-8")
-        : "Harness.md not found";
-      files["HARNESS_RULES.md"] = harnessMd;
-
-      // Read AGENTS.md for repo-specific guidance
-      const agentsDocPath = join(REPO_ROOT, "AGENTS.md");
-      const agentsMd = existsSync(agentsDocPath)
-        ? readFileSync(agentsDocPath, "utf-8")
-        : "AGENTS.md not found";
-      files["AGENTS.md"] = agentsMd;
+      Object.assign(files, buildAgentReviewFiles(context));
 
       // Load prompt from skill at runtime
       const prompt = loadSkillPrompt("review-code");
@@ -539,6 +644,8 @@ async function main() {
     diff: getDiff(baseRef),
     testFiles,
     historyEntries: getHistoryContent(diffFiles, config),
+    sessionEntries: getSessionContent(diffFiles, config),
+    touchedFiles: new Set(diffFiles),
     testCommand: reviewerConfig.test_command || "npm test",
   };
 
@@ -623,4 +730,12 @@ if (process.argv[1] === __filename) {
 }
 
 // Export for testing
-export { adapters, selectAdapter, getProviderConfig, buildReviewResult };
+export {
+  adapters,
+  selectAdapter,
+  getProviderConfig,
+  buildReviewResult,
+  buildReviewScope,
+  buildAgentReviewFiles,
+  getSessionContent,
+};

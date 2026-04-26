@@ -25,6 +25,23 @@ export function getCurrentBranch({ repoRoot, execGit } = {}) {
   }
 }
 
+export function getGitCommonDir({ repoRoot, execGit } = {}) {
+  const runGit =
+    execGit ||
+    ((command) => {
+      if (!repoRoot) {
+        throw new Error("repoRoot is required when execGit is not provided");
+      }
+      return defaultExecGit(command, repoRoot);
+    });
+
+  try {
+    return runGit("git rev-parse --git-common-dir");
+  } catch {
+    return "";
+  }
+}
+
 export function isDetachedHead(options = {}) {
   return getCurrentBranch(options) === "";
 }

@@ -27,12 +27,18 @@ FILES PROVIDED:
 - SESSIONS.txt: Session artifacts linked to the task
 - REVIEW_SCOPE.txt: Deterministic boundary for touched vs inherited artifacts
 - HARNESS_RULES.md: The rules
-- AGENTS.md: Repo-specific rules and conventions
+- REPO_AGENTS_GUIDANCE.md: Repo-specific rules and conventions
+- ORIGINAL_REQUEST.txt: Optional caller-supplied original task/request when available
 
 ANALYSIS:
 
-0. REPO RULES: Apply AGENTS.md as mandatory, repo-specific guidance.
-   0.5. REVIEW BOUNDARY: Apply REVIEW_SCOPE.txt as mandatory scope guidance.
+0. REPO RULES: Apply REPO_AGENTS_GUIDANCE.md as mandatory, repo-specific guidance. It is intentionally not named AGENTS.md inside the scratch context so reviewers do not mistake it for live control instructions.
+   0.25. ORIGINAL TASK INTENT: If ORIGINAL_REQUEST.txt is present, treat it as authoritative caller-supplied task intent.
+
+- Use it to judge whether unusual-looking content is intentional.
+- Do not call content placeholder, nonsense, or unsupported solely because it looks odd out of repo context if it matches ORIGINAL_REQUEST.txt.
+- HARNESS_RULES.md and REPO_AGENTS_GUIDANCE.md still win on actual repo invariants.
+  0.5. REVIEW BOUNDARY: Apply REVIEW_SCOPE.txt as mandatory scope guidance.
 
 - HISTORY_ENTRIES.txt marks entries as `[TOUCHED]` or `[INHERITED]`.
 - Legacy `[INHERITED]` entries may legitimately use schema `v1` or `v2`.
@@ -69,6 +75,7 @@ ANALYSIS:
 
 5. SESSION CONTEXT:
    - Use SESSIONS.txt to verify the user intent and constraints match the documented history.
+   - If ORIGINAL_REQUEST.txt is present, use it as the primary request/intent source and treat SESSIONS.txt as supporting context.
    - Flag when the staged history ignores major user corrections or reversals captured in the session.
    - Flag when the session shows repeated manual workflow pain that should have been captured in the history/context.
 

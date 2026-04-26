@@ -417,7 +417,7 @@ function resolveDiscoveredTests(worktreePath, discovered) {
 
 function validateTestDiscovery(worktreePath, testFiles, config) {
   const tripwireConfig = config.reviewers?.base_tripwire || {};
-  if (tripwireConfig.validate_test_discovery !== true) return;
+  if (tripwireConfig.validate_test_discovery !== true) return null;
 
   const listCommand =
     getEnvOverride("HARNESS_LIST_TESTS_CMD") || tripwireConfig.list_tests_cmd;
@@ -428,7 +428,7 @@ function validateTestDiscovery(worktreePath, testFiles, config) {
     logError(
       "Test discovery validation requires list_tests_cmd and list_tests_pattern",
     );
-    process.exit(1);
+    return 1;
   }
 
   const listResult = spawnSync("sh", ["-c", listCommand], {
@@ -442,7 +442,7 @@ function validateTestDiscovery(worktreePath, testFiles, config) {
     logError("Failed to list discovered tests from runner");
     const output = (listResult.stdout || "") + (listResult.stderr || "");
     if (output.trim()) log(output.trim());
-    process.exit(1);
+    return 1;
   }
 
   let discovered;
@@ -450,7 +450,7 @@ function validateTestDiscovery(worktreePath, testFiles, config) {
     discovered = parseDiscoveredTests(listResult.stdout || "", listPattern);
   } catch (error) {
     logError(error.message);
-    process.exit(1);
+    return 1;
   }
 
   const discoveredSet = resolveDiscoveredTests(worktreePath, discovered);
@@ -475,8 +475,10 @@ function validateTestDiscovery(worktreePath, testFiles, config) {
     log(
       "\nThis test file doesn't match the test runner's discovery pattern.\nEither rename the test to match, or update test runner config.",
     );
-    process.exit(1);
+    return 1;
   }
+
+  return null;
 }
 
 function classifyResult(testResult) {
@@ -637,7 +639,8 @@ async function main() {
 
       if (!patchResult.success) {
         logError(`Patch failed: ${patchResult.error}`);
-        process.exit(2);
+        process.exitCode = 2;
+        return;
       }
       logSuccess("Patch applied");
     }
@@ -658,7 +661,15 @@ async function main() {
     ensureNodeModules(worktreePath);
 
     // Validate test discovery before running tests
-    validateTestDiscovery(worktreePath, testFiles, config);
+    const discoveryExitCode = validateTestDiscovery(
+      worktreePath,
+      testFiles,
+      config,
+    );
+    if (discoveryExitCode !== null) {
+      process.exitCode = discoveryExitCode;
+      return;
+    }
 
     // Run tests on base
     log("\nRunning tests on base worktree...");
@@ -670,17 +681,20 @@ async function main() {
 
     if (classification.classification === "strong_pass") {
       logSuccess(`STRONG PASS: ${classification.reason}`);
-      process.exit(0);
+      process.exitCode = 0;
+      return;
     } else if (classification.classification === "weak_pass") {
       if (allowWeakPass) {
         logWarning(`WEAK PASS: ${classification.reason}`);
         log(
           "  Consider: Can you write a test that fails behaviorally, not just at compile time?",
         );
-        process.exit(0);
+        process.exitCode = 0;
+        return;
       } else {
         logError(`WEAK PASS (not allowed): ${classification.reason}`);
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
     } else {
       logError(`FAIL: ${classification.reason}`);
@@ -690,7 +704,8 @@ async function main() {
       log(
         `  2. Add ${exemptTag} to your fix/incident entry with justification`,
       );
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
   } finally {
     // Cleanup

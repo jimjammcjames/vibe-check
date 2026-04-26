@@ -22,6 +22,7 @@ import {
 } from "../lib/agent-runner.mjs";
 import { resolveBaseRef } from "../lib/base-ref.mjs";
 import { loadHarnessConfig } from "../lib/harness-config.mjs";
+import { getDiffFiles, getNonExemptRealCodeFiles } from "./policy-audit.mjs";
 import { loadSkillPrompt } from "../lib/skills.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -33,6 +34,10 @@ const __dirname = dirname(__filename);
 
 const DETECTOR_PROMPT = loadSkillPrompt("review-undocumented");
 
+function getDocumentationScopeFiles(diffFiles, config) {
+  return getNonExemptRealCodeFiles(diffFiles, config);
+}
+
 // ============================================================================
 // Main
 // ============================================================================
@@ -41,6 +46,18 @@ async function main() {
   log("\n\x1b[36m=== Undocumented Changes Detector ===\x1b[0m\n");
   const config = loadHarnessConfig({ harnessRoot: HARNESS_ROOT });
   const baseRef = resolveBaseRef({ config, repoRoot: REPO_ROOT });
+  const diffFiles = getDiffFiles();
+
+  if (diffFiles.length === 0) {
+    logSuccess("No changes to check");
+    process.exit(0);
+  }
+
+  const documentableFiles = getDocumentationScopeFiles(diffFiles, config);
+  if (documentableFiles.length === 0) {
+    logSuccess("No changed files require documentation coverage");
+    process.exit(0);
+  }
 
   // Get diff
   let diff = "";
@@ -131,7 +148,11 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  logError(`Detector error: ${err.message}`);
-  process.exit(1);
-});
+if (process.argv[1] === __filename) {
+  main().catch((err) => {
+    logError(`Detector error: ${err.message}`);
+    process.exit(1);
+  });
+}
+
+export { getDocumentationScopeFiles };

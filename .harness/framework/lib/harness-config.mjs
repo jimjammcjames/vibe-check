@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import YAML from "yaml";
+import { getGitCommonDir } from "./git-state.mjs";
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -70,6 +71,24 @@ function normalizeLocalOverrideConfig(config = {}) {
   });
 }
 
+function resolveSharedLocalOverridePath(
+  harnessRoot,
+  localOverrideFilename,
+  execGit,
+) {
+  const repoRoot = resolve(join(harnessRoot, ".."));
+  const commonGitDir = getGitCommonDir({ repoRoot, execGit });
+  if (!commonGitDir) {
+    return null;
+  }
+
+  return join(
+    resolve(repoRoot, commonGitDir),
+    ".harness",
+    localOverrideFilename,
+  );
+}
+
 export function parseHarnessConfigYaml(content) {
   if (!content.trim()) {
     return normalizeHarnessConfigShape();
@@ -83,6 +102,7 @@ export function loadHarnessConfig({
   harnessRoot,
   requireBaseConfig = true,
   localOverrideFilename = "config.local.yml",
+  execGit,
 } = {}) {
   if (!harnessRoot) {
     throw new Error("loadHarnessConfig requires harnessRoot");
@@ -90,6 +110,11 @@ export function loadHarnessConfig({
 
   const configPath = join(harnessRoot, "config.yml");
   const localOverridePath = join(harnessRoot, localOverrideFilename);
+  const sharedLocalOverridePath = resolveSharedLocalOverridePath(
+    harnessRoot,
+    localOverrideFilename,
+    execGit,
+  );
 
   if (!existsSync(configPath)) {
     if (requireBaseConfig) {
@@ -99,12 +124,21 @@ export function loadHarnessConfig({
   }
 
   const baseConfig = parseHarnessConfigYaml(readFileSync(configPath, "utf-8"));
+  let mergedConfig = baseConfig;
+
+  if (sharedLocalOverridePath && existsSync(sharedLocalOverridePath)) {
+    const sharedLocalConfig = normalizeLocalOverrideConfig(
+      parseHarnessConfigYaml(readFileSync(sharedLocalOverridePath, "utf-8")),
+    );
+    mergedConfig = deepMergeConfig(mergedConfig, sharedLocalConfig);
+  }
+
   if (!existsSync(localOverridePath)) {
-    return baseConfig;
+    return mergedConfig;
   }
 
   const localConfig = normalizeLocalOverrideConfig(
     parseHarnessConfigYaml(readFileSync(localOverridePath, "utf-8")),
   );
-  return deepMergeConfig(baseConfig, localConfig);
+  return deepMergeConfig(mergedConfig, localConfig);
 }

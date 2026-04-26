@@ -59,7 +59,9 @@ Edit `.harness/config.yml` to match your project structure:
 - `tests` - patterns for test files
 - `sessions` - session artifact locations
 
-Optional local-only overrides belong in `.harness/config.local.yml` (gitignored).
+Optional untracked local overrides can live in a repo-shared
+`<git common dir>/.harness/config.local.yml`, plus a per-worktree
+`.harness/config.local.yml` that overrides the shared layer when needed.
 
 ## 5. Verify setup
 

@@ -11,6 +11,7 @@ Use this when a workflow keeps recurring and should become a durable repo playbo
 
 - Defining a reusable workflow for a repeated engineering task.
 - Converting an ad hoc process into a repo-local skill.
+- Localizing an external skill or upstream workflow into repo-owned guidance.
 - Use when the user says or implies:
 - "Create a new skill for this."
 - "Turn this into a reusable workflow."
@@ -26,6 +27,12 @@ rg -n "keyword|workflow phrase" workflows/skills
 ```
 
 - If an existing skill already covers the workflow, update it instead of creating a duplicate.
+
+  1.5. Eliminate overlap before creating anything.
+
+- Extend an existing skill when the owner and trigger surface are materially the same.
+- Create a new skill only when the workflow is distinct enough that folding it into a broader skill would make that skill confusing.
+- If the starting point is an external skill or vendor workflow, treat the task as an adaptation pass, not a copy pass.
 
 2. Decide whether the task deserves a skill.
 
@@ -56,6 +63,13 @@ summary: One-line description of what this skill does.
 - `scripts/` for deterministic or repetitive code you do not want rewritten each time.
 - `references/` for long docs, schemas, or background material that should be loaded only when needed.
 - `assets/` for templates or output resources.
+
+  5.5. Adapt external source material before finalizing.
+
+- Keep guidance that fits this repo's architecture and workflow.
+- Link to the existing local owner when the imported material is only a supporting detail.
+- Merge only when the workflow owner is truly the same.
+- Cut stack-mismatched or overly prescriptive guidance instead of importing it verbatim.
 
 6. Keep repo rules and scenario playbooks separated.
 
