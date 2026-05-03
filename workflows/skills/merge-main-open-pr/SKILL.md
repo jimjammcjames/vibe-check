@@ -1,6 +1,6 @@
 ---
 id: merge-main-open-pr
-summary: Refresh a branch against the latest base, run harness verification, then create or update a GitHub pull request without skipping review state or merge-safety checks.
+summary: Refresh a branch against the latest base, prefer rebase for stale unpublished work, require an explicit reason before merge-based sync, run `harness:post` plus `review-skill`, then create or update a ready-for-review GitHub pull request.
 ---
 
 # Sync Main and Open PR
@@ -15,14 +15,17 @@ Use this when the user wants a branch prepared for GitHub review, not when they 
 
 ## Workflow
 
-1. Confirm GitHub and local branch state.
+1. Confirm bootstrap, GitHub, and branch state.
 
 ```bash
+npm run harness:prep
 gh auth status
 node .harness/framework/scripts/require-named-branch.mjs --purpose "opening or updating a PR" --recovery-command "git checkout -b <branch-name>"
 git status --short --branch
 ```
 
+- Treat `harness:prep` bootstrap preflight as part of the workflow. Fix runtime
+  or dependency drift there before you start branch sync.
 - Stop if GitHub CLI is unauthenticated.
 - Finish any in-progress merge/rebase/cherry-pick before starting a fresh pass.
 
@@ -37,11 +40,20 @@ git rev-list --left-right --count HEAD..."$BASE_REF"
 gh pr view --json number,url,state,baseRefName,headRefName
 ```
 
+- Recompute divergence from a freshly fetched base every time you resume this
+  workflow. Do not trust earlier notes once the base may have moved.
+- Keep `fetch -> inspect divergence -> choose sync strategy -> rebase/merge`
+  serialized. Never run fetch and sync in parallel.
+
 3. Choose sync strategy deliberately.
 
+- Stage and commit intentional local changes first. Do not use `--no-verify`.
 - Prefer rebase when rewriting the branch is acceptable.
-- Use merge only when preserving published review history is intentional.
+- Use merge only when preserving published review history is intentional, and
+  state that reason explicitly before choosing merge.
 - Do not push immediately before a rebase-based sync.
+- If the branch is already up to date with the freshly fetched base, skip sync
+  and continue to verification.
 
 4. If rebasing, inspect the replayed patch surface.
 
@@ -53,6 +65,8 @@ git diff --name-only "$BASE_REF"...HEAD
 ```
 
 - If conflicts are large or stale, load `history-first-branch-merge`.
+- During conflicts, read the linked history/session artifacts for the affected
+  work before resolving so the original request survives the cleanup.
 
 5. Run repo verification before push.
 
@@ -61,7 +75,12 @@ npm run harness:post
 ```
 
 - After `harness:post`, run `review-skill`.
+- Treat [`workflows/skills/review-skill/SKILL.md`](../review-skill/SKILL.md)
+  as the source of truth for that checkpoint instead of relying on a stale
+  shorthand.
 - If review follow-up changes files, rerun verification until clean again.
+- Run this checkpoint before the first push that would create or refresh a PR,
+  not after the branch is already visible on GitHub.
 
 6. Push the branch.
 
@@ -83,4 +102,6 @@ gh pr create --fill
 ```
 
 - Reuse the existing PR when one already exists for the branch.
+- Open a normal ready-for-review PR by default. Use a draft PR only when the
+  user explicitly asked for one or you have stated a concrete reason first.
 - Finish only when the branch is pushed, `harness:ci` is green, and a PR URL exists.

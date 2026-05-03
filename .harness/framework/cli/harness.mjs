@@ -67,6 +67,9 @@ const HISTORY_TYPES = new Set([
   "note",
 ]);
 
+const DEFAULT_SESSION_REF_RETRY_TIMEOUT_MS = 2000;
+const DEFAULT_SESSION_REF_RETRY_INTERVAL_MS = 100;
+
 function log(msg) {
   console.log(msg);
 }
@@ -85,6 +88,35 @@ function logInfo(msg) {
 
 function logWarning(msg) {
   console.log(`\x1b[33m⚠ ${msg}\x1b[0m`);
+}
+
+function parseNonNegativeInt(value, fallback) {
+  if (value === undefined || value === null || value === "") return fallback;
+  const parsed = Number.parseInt(String(value), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function getSessionRefRetryTimeoutMs() {
+  return parseNonNegativeInt(
+    process.env.HARNESS_SESSION_REF_RETRY_TIMEOUT_MS,
+    DEFAULT_SESSION_REF_RETRY_TIMEOUT_MS,
+  );
+}
+
+function getSessionRefRetryIntervalMs() {
+  return parseNonNegativeInt(
+    process.env.HARNESS_SESSION_REF_RETRY_INTERVAL_MS,
+    DEFAULT_SESSION_REF_RETRY_INTERVAL_MS,
+  );
+}
+
+function sleepSync(ms) {
+  if (ms <= 0) return;
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
 const DEFAULT_DIAGNOSTICS_DIR = join(HARNESS_ROOT, "diagnostics", "latest");
@@ -231,7 +263,7 @@ function prepareCommand(command, files = "all") {
         result: { success: true, output: "", duration: 0 },
       };
     }
-    command = `${command} ${relevantFiles.join(" ")}`;
+    command = `${command} ${relevantFiles.map(shellQuote).join(" ")}`;
   }
 
   return { command, skipped: false };
@@ -906,9 +938,18 @@ function formatSessionSlug(sessionFile) {
   return baseName.replace(/^\d{4}-\d{2}-\d{2}-\d{4}-/, "");
 }
 
+function formatSessionSelector(sessionFile) {
+  return basename(sessionFile, ".md");
+}
+
 function formatSessionChoices(sessionFiles) {
   return sessionFiles
-    .map((file) => `  - ${file} (slug: ${formatSessionSlug(file)})`)
+    .map(
+      (file) =>
+        `  - ${file} (slug: ${formatSessionSlug(file)}; selector: ${formatSessionSelector(
+          file,
+        )})`,
+    )
     .join("\n");
 }
 
@@ -919,6 +960,17 @@ function getCurrentDateSessionFiles(sessionFiles) {
 
 function resolveSessionRefs(sessionFiles, sessionSlug = null) {
   if (sessionSlug) {
+    const exactMatches = sessionFiles.filter(
+      (file) =>
+        file === sessionSlug ||
+        basename(file) === sessionSlug ||
+        formatSessionSelector(file) === sessionSlug,
+    );
+
+    if (exactMatches.length === 1) {
+      return exactMatches;
+    }
+
     const matches = sessionFiles.filter(
       (file) => formatSessionSlug(file) === sessionSlug,
     );
@@ -931,7 +983,9 @@ function resolveSessionRefs(sessionFiles, sessionSlug = null) {
       throw new Error(
         `Multiple sessions matched --session-slug ${sessionSlug}.\n\n${formatSessionChoices(
           matches,
-        )}\n\nPick a more specific slug.`,
+        )}\n\nPick the full session selector (for example \`${formatSessionSelector(
+          matches[0],
+        )}\`).`,
       );
     }
 
@@ -961,6 +1015,65 @@ function resolveSessionRefs(sessionFiles, sessionSlug = null) {
   }
 
   return ["NONE"];
+}
+
+function isMissingSessionRefError(error) {
+  return String(error?.message || error).startsWith(
+    "No session matched --session-slug ",
+  );
+}
+
+function formatSessionSlugRecoveryCommand(sessionSlug) {
+  return `npm run harness:new:session -- --slug ${shellQuote(sessionSlug)}`;
+}
+
+function withSessionRetryContext(error, sessionSlug, retryTimeoutMs) {
+  return new Error(
+    `${
+      error?.message || String(error)
+    }\n\nRetried for ${retryTimeoutMs}ms because --session-slug can race a just-created session file.\nRecovery: ${formatSessionSlugRecoveryCommand(
+      sessionSlug,
+    )}`,
+  );
+}
+
+function resolveSessionRefsWithRetry({
+  sessionSlug = null,
+  listSessions = getSessionFiles,
+  retryTimeoutMs = getSessionRefRetryTimeoutMs(),
+  retryIntervalMs = getSessionRefRetryIntervalMs(),
+  wait = sleepSync,
+  now = () => Date.now(),
+} = {}) {
+  if (!sessionSlug) {
+    return resolveSessionRefs(listSessions(), null);
+  }
+
+  const deadline = now() + retryTimeoutMs;
+  const retryDelayMs = retryIntervalMs > 0 ? retryIntervalMs : 1;
+  let didRetry = false;
+  let lastError = null;
+
+  while (true) {
+    try {
+      return resolveSessionRefs(listSessions(), sessionSlug);
+    } catch (error) {
+      if (!isMissingSessionRefError(error)) {
+        throw error;
+      }
+
+      lastError = error;
+      const remainingMs = deadline - now();
+      if (retryTimeoutMs <= 0 || remainingMs <= 0) {
+        throw didRetry
+          ? withSessionRetryContext(lastError, sessionSlug, retryTimeoutMs)
+          : error;
+      }
+
+      didRetry = true;
+      wait(Math.min(retryDelayMs, remainingMs));
+    }
+  }
 }
 
 function linkHistoryToSession(sessionFile, historyFile) {
@@ -1049,7 +1162,12 @@ function cmdNewEntry(slug, type, sessionSlug = null) {
 
   try {
     const sessionFiles = getSessionFiles();
-    const sessionRefs = resolveSessionRefs(sessionFiles, sessionSlug);
+    const sessionRefs = sessionSlug
+      ? resolveSessionRefsWithRetry({
+          sessionSlug,
+          listSessions: () => sessionFiles,
+        })
+      : resolveSessionRefs(sessionFiles, null);
     const stagedRealCodeFiles = getStagedRealCodeFiles();
 
     const template = renderHistoryEntryTemplate({
@@ -1122,6 +1240,26 @@ function cmdNewSession(slug) {
   template = template.replace(/{{slug}}/g, slug);
 
   writeFileSync(targetPath, template);
+  const sessionFile = toRepoRelativePath(targetPath);
+
+  try {
+    const [resolvedSessionFile] = resolveSessionRefsWithRetry({
+      sessionSlug: formatSessionSelector(sessionFile),
+    });
+    if (resolvedSessionFile !== sessionFile) {
+      throw new Error(
+        `Expected ${sessionFile}, but lookup returned ${resolvedSessionFile}.`,
+      );
+    }
+  } catch (error) {
+    logError(
+      `Created session file but could not verify it through session lookup: ${
+        error?.message || String(error)
+      }`,
+    );
+    process.exit(1);
+  }
+
   logSuccess(`Created: ${targetPath}`);
   log(
     "\nUpdate the session as the task evolves. Blank timeline/workflow/candidate bullets will fail `harness:post` until you replace them with real notes.",
@@ -1489,9 +1627,11 @@ export {
   filterCiStageForProviderAvailability,
   filterRelevantChangedFiles,
   formatSessionChoices,
+  formatSessionSelector,
   renderReviewCoverageSummary,
   renderHistoryEntryTemplate,
   resolveSessionRefs,
+  resolveSessionRefsWithRetry,
   runCiStage,
   writeReviewCoverageDiagnostics,
 };

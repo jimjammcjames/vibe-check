@@ -32,6 +32,9 @@ service, runtime surface, operator command, or background workflow.
 - If the repo has several long-lived automations, prefer a small registry or
   index that names each automation, its status, source file, runner, schedule,
   reads, writes, and owner-facing output.
+- If the repo has several durable surfaces with shared health checks, prefer a
+  small monitor taxonomy or reusable monitor definitions that surfaces can point
+  at instead of duplicating monitor prose in every row.
 - If the repo does not have a registry, record the same fields in the narrowest
   existing tracked doc instead of leaving the capability implicit.
 
@@ -39,6 +42,9 @@ service, runtime surface, operator command, or background workflow.
 
 - Record the strongest deterministic validation command available today.
 - If the repo distinguishes lanes like local/canary/live/prod, name each lane separately and note any gaps.
+- If the repo maintains named validation suites, register the new durable check
+  centrally and reference the suite identifiers from the surface contract
+  instead of leaving validation as ad hoc prose.
 
 4. Make monitoring or readiness explicit.
 

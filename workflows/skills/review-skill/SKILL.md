@@ -7,6 +7,12 @@ summary: Run a lightweight final-quality pass by codifying learnings, running an
 
 Use this as a lightweight review checkpoint before handoff, PR work, or final landing.
 
+## Source of Truth
+
+- This file is the canonical definition of what `review-skill` currently means.
+- Other skills should point here instead of restating a partial checklist that
+  can drift later.
+
 ## Use Cases
 
 - Final cleanup after implementation.

@@ -30,6 +30,9 @@ Run this after a task when any of these happened:
   the repo contract.
 - The task imported or adapted an external skill, workflow, or vendor guide.
 - The user spent multiple turns steering the same workflow or collaboration preference.
+- A relevant skill should have guided the work but did not, or the final
+  validation proved the implementation shape without proving the requested
+  behavior.
 
 ## Quality Bar
 
@@ -39,6 +42,8 @@ Codify only when the learning is:
 - Non-obvious: it required discovery, not just rereading a README.
 - Specific: the trigger and remedy can be stated concretely.
 - Verified: the solution actually worked, not just sounded plausible.
+- Behavior-shaping: the codified guidance would have changed what a future
+  agent does before the same mistake or follow-up happens again.
 
 ## Workflow
 
@@ -56,10 +61,24 @@ rg -n "keyword|error text" .harness/context/history workflows/skills AGENTS.md
 - What signal proved the truth?
 - What should future agents do differently?
 
+  2.25. Abstract before you encode.
+
+- Ask what broader principle would have changed the agent's behavior before the
+  specific mistake, clarification, or missed check.
+- Prefer principle-first guidance over narrow incident recipes unless the exact
+  if-then condition is itself the recurring reusable pattern.
+
   2.5. Infer the broader meta intent when workflow-governing surfaces changed.
 
 - If the task touched `AGENTS.md`, repo skills, review prompts, or imported outside guidance, ask what durable preference the user was really expressing beyond the literal edit.
 - If repeated user steering already made that preference explicit, codify it directly instead of waiting for a separate reflection request.
+
+  2.75. Route the artifact before editing.
+
+- State the lesson, the owner artifact, why that owner is correct, and at
+  least one tempting non-owner.
+- If a named skill was relevant, edit that skill only when the workflow itself
+  is what failed. Otherwise run it to choose the real owner.
 
 3. Pick the smallest durable artifact set.
 
@@ -69,12 +88,16 @@ rg -n "keyword|error text" .harness/context/history workflows/skills AGENTS.md
 - If the learning is about a long-lived runtime, automation, or operator
   surface, use `durable-surface-contracts` to record its boundary, validation,
   and monitoring story in the abstract.
+- If an existing skill should have covered the situation but did not, treat that
+  as a skill-coverage gap and update that skill during the same task.
 
 4. Prefer updating an existing artifact over creating a duplicate.
 
 - Update when the trigger and remedy are materially the same.
 - Create new only when the workflow or root cause is genuinely distinct.
 - Prefer consolidation over adding a sibling artifact when the same owner can absorb the new learning cleanly.
+- Do not leave a behavior-changing lesson only in history when the responsible
+  skill or always-on rule is what future agents will actually consult.
 
   4.5. Adapt external inputs before finalizing local artifacts.
 
