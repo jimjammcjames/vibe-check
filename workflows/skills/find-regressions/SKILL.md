@@ -26,16 +26,32 @@ Use this when the user wants to know what changed and then changed again, what l
 git log --since='YYYY-MM-DD 00:00' --until='YYYY-MM-DD 23:59' --no-merges --name-only --date=short --pretty=format:'COMMIT%x09%H%x09%ad%x09%s'
 ```
 
+1.5. Restore the runtime before trusting the audit.
+
+- If the repo has a bootstrap or harness preflight, run it first and fix
+  runtime or dependency drift before interpreting later failures as churn
+  signal.
+- In harness-backed repos, treat provider availability and diagnostics as
+  live-check concerns instead of assuming earlier runs still reflect reality.
+
 2. Gather matching durable context and hidden-state evidence.
 
 ```bash
+npm run harness:prep
 rg -n "keyword|feature-name|error text" .harness/context/history
 rg -n "keyword|feature-name|error text" .harness/context/sessions
 git log --all --since='YYYY-MM-DD 00:00' --until='YYYY-MM-DD 23:59' --no-merges --name-only --date=short --pretty=format:'COMMIT%x09%H%x09%ad%x09%s'
 git worktree list --porcelain
 git branch --no-merged HEAD
 git stash list --date=local
+cat .harness/diagnostics/latest/review-coverage.json
+cat .harness/diagnostics/latest/agent-failures.log
 ```
+
+- If the question is whether a provider-backed issue is still open, rerun the
+  live boundary instead of trusting `which <tool>` or an older failure note.
+- Use `review-coverage.json` plus `agent-failures.log` to understand configured
+  versus actually runnable providers after a guardian or agent-review failure.
 
 3. Reduce to the real audit surface.
 
@@ -67,5 +83,7 @@ git stash list --date=local
 - Summarize the real churn clusters, not a file dump.
 - Call out later changes that lacked matching intent coverage.
 - Separate "changed twice for a good reason" from likely regressions.
+- If the exact window has no commits, say so plainly and separate "no new
+  churn in this window" from older unresolved carryover.
 - For unresolved items, include user-pain and recurrence-risk ratings plus a
   concrete durable fix candidate.

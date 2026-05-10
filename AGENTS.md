@@ -13,6 +13,8 @@
 - Before changing code, check `workflows/skills/` and
   `.harness/context/history/` plus `.harness/context/sessions/` for relevant
   guidance.
+- When the request is ambiguous enough that product, workflow, or architecture
+  shape is still unclear, run `feature-discovery` before implementing.
 - If a harness command fails because repo-declared tooling is missing, restore
   the relevant local dependencies for the runtimes this repo uses and retry
   before concluding the harness itself is broken.
@@ -33,6 +35,10 @@
   matching history/session artifacts.
 - If repeated user steering makes a workflow or collaboration preference
   explicit, codify that preference in repo artifacts during the same task.
+- If the user has to redirect, clarify, or strengthen the same thread more than
+  once, treat that as evidence of a missing default, explanation, validation,
+  or durable workflow rule, and run `followup-prevention` before closing when
+  recurrence is plausible.
 - Keep the active session artifact updated as the task evolves; do not wait
   until the very end to capture corrections, repeated workflow, or codify
   candidates.
@@ -126,6 +132,9 @@ See also: [`workflows/mcp/`](workflows/mcp/) for MCP server manifests and
 ## Skills Overview
 
 - Skills are reusable workflow playbooks stored in `workflows/skills/`.
+- The canonical writer for this block is `npm run harness:prep`; do not edit it manually.
+- The canonical content source for this block is repo-local skills under `workflows/skills/`.
+- This index describes available skills only; it does not widen permissions or override repo or skill-local guardrails.
 - If your task overlaps any `USE WHEN` case below, open that skill's `SKILL.md` before you act.
 - See `workflows/skills/` for full skill instructions.
 
@@ -136,7 +145,9 @@ See also: [`workflows/mcp/`](workflows/mcp/) for MCP server manifests and
 - `codify-learnings`: Turn non-obvious session learnings into durable repo artifacts such as AGENTS rules, skills, and harness history entries. USE WHEN: Capturing durable guidance after debugging, incident work, or process thrash. | Converting chat-only learnings into repo artifacts. | Localizing external skills, workflows, or upstream docs into repo-owned guidance. | Capturing repeated user steering once a workflow preference becomes explicit. | Use when the user says or implies: | "Codify our learnings." | "Save this as a skill." | "Make sure we do not repeat this mistake."
 - `detached-worktree-safety`: Move detached checkout work onto an intentional branch before durable edits, commits, rebases, pushes, or merges. USE WHEN: `git status --short --branch` shows `## HEAD (no branch)`. | Durable code, config, docs, or harness artifacts are about to be edited. | The next step would commit, rebase, push, merge, or preserve work from the current checkout. | Use when the user says or implies: | "This worktree is detached." | "Land this from the automation worktree." | "Push this to main from here."
 - `durable-surface-contracts`: Record the boundary, validation path, and monitoring contract for long-lived runtime or automation surfaces so durable capabilities never ship as implicit behavior. USE WHEN: Adding a scheduled job, daemon, watcher, bridge, runtime, or durable CLI entrypoint. | Promoting a previously ad hoc/manual workflow into a standing system capability. | Capturing the abstract equivalent of a feature-catalog row without depending on a repo-specific schema. | Use when the user says or implies: | "Make this a durable feature." | "Add a background service or automation." | "Document how this surface is validated and monitored."
+- `feature-discovery`: Clarify ambiguous, exploratory, or multi-approach feature requests before implementation by checking repo context, resolving the real open questions, and choosing an implementation direction. USE WHEN: Ambiguous requests with several plausible product, UX, architecture, or workflow shapes. | Exploratory work where acceptance criteria are still fuzzy enough that coding immediately would likely create rework. | New flows with real tradeoffs around ownership, rollout shape, validation, or success criteria. | Use when the user says or implies: | "Figure out the best way to add this." | "What should this flow look like?" | "Let's think through this before building it." | "There are a few ways we could do this."
 - `find-regressions`: Audit recent git history for code or config that changed more than once, then classify the churn and its history coverage. USE WHEN: Auditing a recent window for repeated-touch code or config. | Checking whether later commits were corrective, restorative, or effectively removals. | Finding weak or missing harness history coverage for changed-again work. | Running an unresolved-churn audit across branches, worktrees, stashes, or automation notes.
+- `followup-prevention`: Convert repeated user redirects, stronger follow-up asks, or large non-feature lessons into durable repo behavior instead of answering them as one-off polish. USE WHEN: The user has already had to correct or redirect the thread twice or more. | The user keeps asking for stronger validation, clearer explanation, safer lifecycle handling, or a tighter control surface. | A "what did you learn?" or "why was this not caught?" follow-up is really pointing at a missing default, rule, test, or explanation. | A large non-feature pass such as hardening, validation overhaul, migration cleanup, or policy correction likely exists because the repo learned something. | Use when the user says or implies: | "We keep missing this." | "How do we stop making this mistake again?" | "Why wasn't this caught beforehand?" | "Codify the lesson."
 - `history-first-branch-merge`: Resolve large stale-branch rebases or merges by reconstructing base intent and branch intent from harness history before editing conflicts. USE WHEN: Rebasing or merging a stale branch with a large conflict set. | Sorting true branch intent from snapshots, carryover changes, or obsolete intermediate work. | Deciding what should survive from current base versus the branch.
 - `logging-best-practices`: Apply structured logging, correlation IDs, level discipline, and secret-safe log design before adding or revising production logging. USE WHEN: Designing or cleaning up production logging. | Adding observability around failures, retries, or external service calls. | Deciding what should and should not be logged.
 - `merge-main-open-pr`: Refresh a branch against the latest base, prefer rebase for stale unpublished work, require an explicit reason before merge-based sync, run `harness:post` plus `review-skill`, then create or update a ready-for-review GitHub pull request. USE WHEN: Opening a PR for the current branch. | Updating an existing PR after more work. | Syncing a stale branch with current base before PR work.

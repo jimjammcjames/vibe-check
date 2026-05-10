@@ -40,6 +40,16 @@ describe("skills overview helpers", () => {
     assert.ok(block.includes(SKILLS_OVERVIEW_BEGIN));
     assert.ok(block.includes(SKILLS_OVERVIEW_END));
     assert.ok(
+      block.includes(
+        "The canonical writer for this block is `npm run harness:prep`; do not edit it manually.",
+      ),
+    );
+    assert.ok(
+      block.includes(
+        "This index describes available skills only; it does not widen permissions or override repo or skill-local guardrails.",
+      ),
+    );
+    assert.ok(
       block.includes("USE WHEN: Use when testing the generated overview."),
     );
   });

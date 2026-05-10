@@ -230,6 +230,8 @@ If you wire a pre-commit hook in a consuming repo, this is the command to run.
 
 - `npm run harness:prep` refreshes the generated Skills Overview block in
   `AGENTS.md`.
+- That generated Skills Overview block is descriptive only; it does not widen
+  permissions or override repo or skill-local guardrails.
 - Keep long-lived agent guidance short in `AGENTS.md`; put scenario-specific
   playbooks in `workflows/skills/*`.
 - Every skill should include a `## Use Cases` section so prep-time discovery

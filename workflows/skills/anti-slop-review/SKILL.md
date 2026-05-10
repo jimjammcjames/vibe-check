@@ -77,6 +77,11 @@ git diff "$BASE_REF"...HEAD
 
 - Prefer behavior-level assertions over source-string matching or duplicated
   production logic.
+- Start from the failure mode and choose the smallest seam that could actually
+  catch it instead of defaulting to the biggest screen, integration, or
+  end-to-end harness.
+- Keep mocks limited to unavoidable boundaries such as network, time,
+  randomness, or external SDKs.
 - Cover the changed invariant plus at least one unhappy path when the diff
   introduces new failure modes.
 - Remove brittle or low-signal assertions that only prove the test ran.
@@ -87,6 +92,9 @@ git diff "$BASE_REF"...HEAD
   source of truth.
 - Keep responsibilities in the right module and avoid leaking workflow,
   persistence, or policy concerns across boundaries.
+- If the change is trying to prevent a recurring but judgment-heavy mistake,
+  prefer AGENTS guidance, a skill, or a review prompt over a brittle new
+  threshold, scorecard, or wrapper script.
 - If a second path is temporarily necessary, name the migration trigger and
   deletion condition.
 
@@ -101,5 +109,7 @@ git diff "$BASE_REF"...HEAD
 
 - Pick the top 1-3 assumptions that could still make the diff slop even if it
   looks clean.
+- Re-derive those assumptions from the requested behavior rather than from the
+  implementation shape that already exists.
 - Verify them with tests, targeted commands, or an explicit manual check.
 - If you cannot verify one, call out the gap plainly before handoff.

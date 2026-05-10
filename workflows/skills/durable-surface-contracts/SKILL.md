@@ -29,6 +29,10 @@ service, runtime surface, operator command, or background workflow.
 
 - Update the narrowest durable doc that future agents will actually consult.
 - Record the same change in the linked history/session `## Guidance Impact` sections.
+- If the surface depends on shared assets such as manifests, schemas,
+  templates, prompts, or repo-root contract files outside the immediate runtime
+  package, declare how those assets are packaged, mounted, or copied into the
+  real execution environment.
 - If the repo has several long-lived automations, prefer a small registry or
   index that names each automation, its status, source file, runner, schedule,
   reads, writes, and owner-facing output.
@@ -42,9 +46,18 @@ service, runtime surface, operator command, or background workflow.
 
 - Record the strongest deterministic validation command available today.
 - If the repo distinguishes lanes like local/canary/live/prod, name each lane separately and note any gaps.
+- If the surface depends on packaged shared assets, include one validation step
+  that proves those assets are present in the real runtime or deploy artifact.
 - If the repo maintains named validation suites, register the new durable check
   centrally and reference the suite identifiers from the surface contract
   instead of leaving validation as ad hoc prose.
+- If the surface has a canonical deploy, publish, or update command, prefer
+  wiring the strongest deterministic local validation into that path by default.
+  If an explicit bypass is still necessary, document the narrow bypass knob and
+  its intended incident-only use.
+- Do not call a surface "ready" when lane claims are still implicit. Each
+  claimed lane should either name the supporting suite(s) or record the gap
+  explicitly.
 
 4. Make monitoring or readiness explicit.
 

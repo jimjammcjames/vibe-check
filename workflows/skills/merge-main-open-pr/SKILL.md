@@ -78,6 +78,10 @@ npm run harness:post
 - Treat [`workflows/skills/review-skill/SKILL.md`](../review-skill/SKILL.md)
   as the source of truth for that checkpoint instead of relying on a stale
   shorthand.
+- If the branch only goes green after machine-local bootstrap, runtime, or
+  tooling repair, decide whether that repair is intentionally part of the
+  deliverable. Do not silently widen a feature PR with local-environment churn
+  that belongs in separate setup or harness work.
 - If review follow-up changes files, rerun verification until clean again.
 - Run this checkpoint before the first push that would create or refresh a PR,
   not after the branch is already visible on GitHub.
