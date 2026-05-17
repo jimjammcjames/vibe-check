@@ -62,6 +62,9 @@ into the appropriate repo-local implementation owner with an approved direction.
   discussion at the contract level before proposing code.
 - If the uncertainty is about a long-lived automation, runtime, or service
   boundary, use `durable-surface-contracts` after the direction is approved.
+- If the uncertainty is really about what is true, what caused a symptom, or
+  what evidence would prove a claim, route through `prove-it` instead of
+  treating it as product discovery.
 - If the uncertainty is only visual polish or implementation detail, do not
   over-upgrade the task into discovery theater.
 
@@ -93,6 +96,8 @@ into the appropriate repo-local implementation owner with an approved direction.
 
 - Use the narrowest existing implementation skill, workflow doc, or durable
   owner that covers the approved direction.
+- If the remaining uncertainty is evidence, causality, measurement, or
+  validation rather than product shape, use `prove-it`.
 - If no such owner exists and the workflow is likely to recur, consider
   creating or extending a skill instead of leaving the guidance only in chat.
 

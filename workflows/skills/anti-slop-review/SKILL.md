@@ -84,6 +84,9 @@ git diff "$BASE_REF"...HEAD
   randomness, or external SDKs.
 - Cover the changed invariant plus at least one unhappy path when the diff
   introduces new failure modes.
+- If the diff makes a non-trivial debugging, performance, live-validation, or
+  correctness claim, check whether it used `prove-it` or an equally explicit
+  ground-truth loop proportionate to the risk.
 - Remove brittle or low-signal assertions that only prove the test ran.
 
 8. Check architecture and ownership.
@@ -111,5 +114,8 @@ git diff "$BASE_REF"...HEAD
   looks clean.
 - Re-derive those assumptions from the requested behavior rather than from the
   implementation shape that already exists.
-- Verify them with tests, targeted commands, or an explicit manual check.
+- Verify them with tests, targeted commands, a `prove-it` matrix, or an
+  explicit manual check.
+- When UI evidence, backend state, and runtime timing could disagree, prefer
+  the most direct evidence source and call out any residual disagreement.
 - If you cannot verify one, call out the gap plainly before handoff.

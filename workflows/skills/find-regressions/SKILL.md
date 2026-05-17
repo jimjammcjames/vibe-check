@@ -53,6 +53,15 @@ cat .harness/diagnostics/latest/agent-failures.log
 - Use `review-coverage.json` plus `agent-failures.log` to understand configured
   versus actually runnable providers after a guardian or agent-review failure.
 
+  2.5. Compare artifact freshness against code freshness early.
+
+- Check whether the newest relevant code commit materially outruns the newest
+  matching history, session, automation, or audit artifact.
+- If the visible tree looks quiet but off-main refs or automation memory carry
+  newer evidence, say so before concluding the repo is actually quiet.
+- Treat stale durable context as its own finding: the audit can only be as
+  trustworthy as the freshness of the artifacts it is leaning on.
+
 3. Reduce to the real audit surface.
 
 - Focus on code and config paths touched more than once.

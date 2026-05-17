@@ -45,12 +45,19 @@ service, runtime surface, operator command, or background workflow.
 3. Make validation explicit.
 
 - Record the strongest deterministic validation command available today.
-- If the repo distinguishes lanes like local/canary/live/prod, name each lane separately and note any gaps.
+- If the repo distinguishes lanes like local/canary/live/prod, name each lane
+  separately and note any gaps.
+- When support is incomplete, label each lane explicitly as `full`, `partial`,
+  or `none` and name the blocking gaps instead of flattening everything into a
+  vague "ready" claim.
 - If the surface depends on packaged shared assets, include one validation step
   that proves those assets are present in the real runtime or deploy artifact.
 - If the repo maintains named validation suites, register the new durable check
   centrally and reference the suite identifiers from the surface contract
   instead of leaving validation as ad hoc prose.
+- When the change affects execution-boundary behavior, include validation
+  through the real operator-facing entrypoint rather than stopping at a nearby
+  helper, unit seam, or contract-only check.
 - If the surface has a canonical deploy, publish, or update command, prefer
   wiring the strongest deterministic local validation into that path by default.
   If an explicit bypass is still necessary, document the narrow bypass knob and
