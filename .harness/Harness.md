@@ -100,14 +100,22 @@ When you make changes:
 
 ```bash
 npm run harness:new:session -- --slug "task-name"
+npm run harness:session:use -- --slug "task-name"
+npm run harness:session:clear
 npm run harness:new:entry -- --slug "change-slug" --type fix
 npm run harness:new:entry -- --slug "change-slug" --type decision
 npm run harness:new:meta -- --slug "harness-change"
 ```
 
-Session files are append-only task notes. There is no close command.
-If more than one same-day session exists, rerun `new:entry` or `new:meta` with
-`--session-slug <task-name>` so the new history entry links to the right task.
+Session files are append-only task notes. The harness keeps a separate
+per-worktree current-session pointer in Git metadata, so old session files do
+not stay live routing state forever. `new:session` selects the new session
+automatically, `session:use` switches to an existing session, and
+`session:clear` clears the current selection when the task is done.
+`harness:close:session` remains as a deprecated compatibility alias for
+clearing the pointer.
+Use `--session-slug <task-name>` only when you intentionally need a one-off
+link target different from the current worktree selection.
 Keep the active session updated during the task, especially when corrections,
 repeated workflow, or codify candidates appear.
 When immediate linkage matters, create the session before the linked history

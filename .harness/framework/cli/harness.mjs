@@ -10,7 +10,9 @@
  *   ci            - Full CI gate (lint + typecheck + tripwire + agents)
  *   new:entry     - Create a context history entry from template
  *   new:meta      - Create a harness meta entry
- *   new:session   - Create a task session entry
+ *   new:session   - Create a task session entry and select it
+ *   session:use   - Select an existing task session for this worktree
+ *   session:clear - Clear the current session pointer
  */
 
 import { exec, execSync } from "node:child_process";
@@ -21,6 +23,7 @@ import {
   mkdirSync,
   readdirSync,
   rmSync,
+  statSync,
 } from "node:fs";
 import {
   join,
@@ -825,6 +828,26 @@ function getSessionsDir() {
   return join(getContextRoot(), "sessions");
 }
 
+function getGitDir() {
+  const gitPath = join(REPO_ROOT, ".git");
+  if (!existsSync(gitPath)) {
+    throw new Error(`Could not locate .git for repository root: ${REPO_ROOT}`);
+  }
+
+  const gitPathStat = statSync(gitPath);
+  if (gitPathStat.isDirectory()) {
+    return gitPath;
+  }
+
+  const pointer = readFileSync(gitPath, "utf-8").trim();
+  const match = pointer.match(/^gitdir:\s*(.+)$/i);
+  if (!match) {
+    throw new Error(`Invalid .git file format in ${REPO_ROOT}`);
+  }
+
+  return resolve(REPO_ROOT, match[1].trim());
+}
+
 function toRepoRelativePath(file) {
   const rel = relative(REPO_ROOT, file);
   if (!rel || rel.startsWith("..")) {
@@ -868,6 +891,49 @@ function getStagedRealCodeFiles() {
     (file) =>
       matchesAnyGlob(file, realCodeGlobs) && !matchesAnyGlob(file, exemptGlobs),
   );
+}
+
+const CURRENT_SESSION_POINTER_DIR = "harness-state";
+const CURRENT_SESSION_POINTER_FILE = "current-session";
+
+function getCurrentSessionPointerPath() {
+  return join(
+    getGitDir(),
+    CURRENT_SESSION_POINTER_DIR,
+    CURRENT_SESSION_POINTER_FILE,
+  );
+}
+
+function setCurrentSessionPointer(sessionFile) {
+  const pointerPath = getCurrentSessionPointerPath();
+  mkdirSync(dirname(pointerPath), { recursive: true });
+  writeFileSync(pointerPath, `${sessionFile}\n`, { encoding: "utf-8" });
+  return pointerPath;
+}
+
+function clearCurrentSessionPointer() {
+  rmSync(getCurrentSessionPointerPath(), { force: true });
+}
+
+function getCurrentSessionState() {
+  const pointerPath = getCurrentSessionPointerPath();
+  if (!existsSync(pointerPath)) {
+    return { sessionFile: null, reason: "missing", pointerPath };
+  }
+
+  const sessionFile = readFileSync(pointerPath, "utf-8").trim();
+  if (!sessionFile) {
+    clearCurrentSessionPointer();
+    return { sessionFile: null, reason: "empty", pointerPath };
+  }
+
+  const sessionPath = join(REPO_ROOT, sessionFile);
+  if (!existsSync(sessionPath)) {
+    clearCurrentSessionPointer();
+    return { sessionFile: null, reason: "stale", pointerPath };
+  }
+
+  return { sessionFile, reason: "ok", pointerPath };
 }
 
 function listMarkdownFiles(dir, files = []) {
@@ -953,12 +1019,11 @@ function formatSessionChoices(sessionFiles) {
     .join("\n");
 }
 
-function getCurrentDateSessionFiles(sessionFiles) {
-  const datePrefix = `${getCurrentDate()}-`;
-  return sessionFiles.filter((file) => basename(file).startsWith(datePrefix));
-}
-
-function resolveSessionRefs(sessionFiles, sessionSlug = null) {
+function resolveSessionRefs(
+  sessionFiles,
+  sessionSlug = null,
+  currentSessionFile = null,
+) {
   if (sessionSlug) {
     const exactMatches = sessionFiles.filter(
       (file) =>
@@ -1002,16 +1067,8 @@ function resolveSessionRefs(sessionFiles, sessionSlug = null) {
     );
   }
 
-  const currentDateSessionFiles = getCurrentDateSessionFiles(sessionFiles);
-  if (currentDateSessionFiles.length === 1) {
-    return currentDateSessionFiles;
-  }
-  if (currentDateSessionFiles.length > 1) {
-    throw new Error(
-      `Multiple session files exist for ${getCurrentDate()}. Re-run with --session-slug <session-slug> so the new history entry links to the correct task.\n\nToday's sessions:\n${formatSessionChoices(
-        currentDateSessionFiles,
-      )}`,
-    );
+  if (currentSessionFile) {
+    return [currentSessionFile];
   }
 
   return ["NONE"];
@@ -1039,6 +1096,7 @@ function withSessionRetryContext(error, sessionSlug, retryTimeoutMs) {
 
 function resolveSessionRefsWithRetry({
   sessionSlug = null,
+  currentSessionFile = null,
   listSessions = getSessionFiles,
   retryTimeoutMs = getSessionRefRetryTimeoutMs(),
   retryIntervalMs = getSessionRefRetryIntervalMs(),
@@ -1046,7 +1104,7 @@ function resolveSessionRefsWithRetry({
   now = () => Date.now(),
 } = {}) {
   if (!sessionSlug) {
-    return resolveSessionRefs(listSessions(), null);
+    return resolveSessionRefs(listSessions(), null, currentSessionFile);
   }
 
   const deadline = now() + retryTimeoutMs;
@@ -1056,7 +1114,11 @@ function resolveSessionRefsWithRetry({
 
   while (true) {
     try {
-      return resolveSessionRefs(listSessions(), sessionSlug);
+      return resolveSessionRefs(
+        listSessions(),
+        sessionSlug,
+        currentSessionFile,
+      );
     } catch (error) {
       if (!isMissingSessionRefError(error)) {
         throw error;
@@ -1161,13 +1223,12 @@ function cmdNewEntry(slug, type, sessionSlug = null) {
   }
 
   try {
-    const sessionFiles = getSessionFiles();
-    const sessionRefs = sessionSlug
-      ? resolveSessionRefsWithRetry({
-          sessionSlug,
-          listSessions: () => sessionFiles,
-        })
-      : resolveSessionRefs(sessionFiles, null);
+    const currentSessionState = getCurrentSessionState();
+    const sessionRefs = resolveSessionRefsWithRetry({
+      sessionSlug,
+      currentSessionFile: sessionSlug ? null : currentSessionState.sessionFile,
+      listSessions: getSessionFiles,
+    });
     const stagedRealCodeFiles = getStagedRealCodeFiles();
 
     const template = renderHistoryEntryTemplate({
@@ -1190,9 +1251,14 @@ function cmdNewEntry(slug, type, sessionSlug = null) {
     }
 
     logSuccess(`Created: ${targetPath}`);
+    if (currentSessionState.reason === "stale") {
+      logWarning(
+        "The previous current-session pointer referenced a missing session file and was cleared before creating this history entry.",
+      );
+    }
     if (sessionRefs.length === 1 && sessionRefs[0] === "NONE") {
       logWarning(
-        'No session linked. Run `npm run harness:new:session -- --slug "task-name"` if this change needs commit-time session coverage.',
+        'No current session linked. Run `npm run harness:new:session -- --slug "task-name"` or `npm run harness:session:use -- --slug "task-name"` if this change needs commit-time session coverage.',
       );
     }
     log(
@@ -1260,10 +1326,75 @@ function cmdNewSession(slug) {
     process.exit(1);
   }
 
+  setCurrentSessionPointer(sessionFile);
   logSuccess(`Created: ${targetPath}`);
+  logSuccess(`Selected current session for this worktree: ${sessionFile}`);
   log(
     "\nUpdate the session as the task evolves. Blank timeline/workflow/candidate bullets will fail `harness:post` until you replace them with real notes.",
   );
+}
+
+function cmdSessionUse(slug) {
+  if (!slug) {
+    logError("Usage: harness session:use --slug <slug>");
+    process.exit(1);
+  }
+
+  try {
+    const [sessionFile] = resolveSessionRefs(getSessionFiles(), slug);
+    setCurrentSessionPointer(sessionFile);
+    logSuccess(`Selected current session for this worktree: ${sessionFile}`);
+  } catch (error) {
+    logError(error?.message || String(error));
+    process.exit(1);
+  }
+}
+
+function doesCurrentSessionMatch(expectedSlug, sessionFile) {
+  return (
+    sessionFile === expectedSlug ||
+    basename(sessionFile) === expectedSlug ||
+    formatSessionSelector(sessionFile) === expectedSlug ||
+    formatSessionSlug(sessionFile) === expectedSlug
+  );
+}
+
+function cmdSessionClear(expectedSlug = null, { legacyAlias = false } = {}) {
+  const currentSessionState = getCurrentSessionState();
+  if (!currentSessionState.sessionFile) {
+    const reasonMessage =
+      currentSessionState.reason === "stale"
+        ? "The current-session pointer referenced a missing session file and has already been cleared."
+        : "No current session selected for this worktree.";
+    logError(reasonMessage);
+    process.exit(1);
+  }
+
+  if (
+    expectedSlug &&
+    !doesCurrentSessionMatch(expectedSlug, currentSessionState.sessionFile)
+  ) {
+    logError(
+      `Current session ${formatSessionSelector(
+        currentSessionState.sessionFile,
+      )} does not match --slug ${expectedSlug}.`,
+    );
+    process.exit(1);
+  }
+
+  clearCurrentSessionPointer();
+  if (legacyAlias) {
+    logWarning(
+      "`harness:close:session` is deprecated; use `npm run harness:session:clear`.",
+    );
+  }
+  logSuccess(
+    `Cleared current session pointer for this worktree: ${currentSessionState.sessionFile}`,
+  );
+}
+
+function cmdCloseSession(slug) {
+  cmdSessionClear(slug, { legacyAlias: true });
 }
 
 function extractLegacySection(content, heading) {
@@ -1554,6 +1685,19 @@ function main() {
       }
       cmdNewSession(slug);
       break;
+    case "session:use":
+      if (!slug) {
+        logError("Usage: harness session:use --slug <slug>");
+        process.exit(1);
+      }
+      cmdSessionUse(slug);
+      break;
+    case "session:clear":
+      cmdSessionClear(slug);
+      break;
+    case "close:session":
+      cmdCloseSession(slug);
+      break;
     case "migrate:history":
       cmdMigrateHistory();
       break;
@@ -1571,7 +1715,16 @@ function main() {
       );
       log("  new:entry         Create a history entry (requires --type)");
       log("  new:meta          Create a harness meta entry");
-      log("  new:session       Create a task session entry");
+      log(
+        "  new:session       Create a task session entry and select it for this worktree",
+      );
+      log("  session:use       Select an existing session for this worktree");
+      log(
+        "  session:clear     Clear the current session pointer for this worktree",
+      );
+      log(
+        "  close:session     Deprecated alias for session:clear (does not rewrite session files)",
+      );
       log("  migrate:history   Move legacy entries into history");
       log("");
       log("Options:");
@@ -1580,7 +1733,7 @@ function main() {
       );
       log("  --slug <slug>     Slug for new entries (required for new:*)");
       log(
-        "  --session-slug <slug>  Explicit session slug to link when multiple candidate sessions exist",
+        "  --session-slug <slug>  Explicit session slug to link instead of the current worktree selection",
       );
       log("  --type <type>     Entry type (required for new:entry)");
       log(
@@ -1624,8 +1777,11 @@ if (isDirectExecution) {
 export {
   appendReviewCoverageSummary,
   buildReviewCoverageResult,
+  clearCurrentSessionPointer,
   filterCiStageForProviderAvailability,
   filterRelevantChangedFiles,
+  getCurrentSessionPointerPath,
+  getCurrentSessionState,
   formatSessionChoices,
   formatSessionSelector,
   renderReviewCoverageSummary,
@@ -1633,5 +1789,6 @@ export {
   resolveSessionRefs,
   resolveSessionRefsWithRetry,
   runCiStage,
+  setCurrentSessionPointer,
   writeReviewCoverageDiagnostics,
 };

@@ -102,4 +102,16 @@ describe("session lookup retry helpers", () => {
       },
     );
   });
+
+  it("uses the current session pointer when no explicit session slug is provided", () => {
+    const refs = resolveSessionRefsWithRetry({
+      currentSessionFile:
+        ".harness/context/sessions/2026-04-24-2149-current-task.md",
+      listSessions: () => [],
+    });
+
+    assert.deepStrictEqual(refs, [
+      ".harness/context/sessions/2026-04-24-2149-current-task.md",
+    ]);
+  });
 });

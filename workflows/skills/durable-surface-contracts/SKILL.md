@@ -39,6 +39,9 @@ service, runtime surface, operator command, or background workflow.
 - If the repo has several durable surfaces with shared health checks, prefer a
   small monitor taxonomy or reusable monitor definitions that surfaces can point
   at instead of duplicating monitor prose in every row.
+- If the surface spans repos or packages, prefer one owner-published contract
+  artifact plus participant-declared verify commands over hardcoded clone paths,
+  mirrored folder assumptions, or hand-maintained sibling checkout notes.
 - If the repo does not have a registry, record the same fields in the narrowest
   existing tracked doc instead of leaving the capability implicit.
 
@@ -50,11 +53,17 @@ service, runtime surface, operator command, or background workflow.
 - When support is incomplete, label each lane explicitly as `full`, `partial`,
   or `none` and name the blocking gaps instead of flattening everything into a
   vague "ready" claim.
+- If the default gate is local, emulated, or otherwise side-effect-bounded,
+  say that plainly and record the separate protected live or production
+  workflow instead of implying the local lane proves live behavior too.
 - If the surface depends on packaged shared assets, include one validation step
   that proves those assets are present in the real runtime or deploy artifact.
 - If the repo maintains named validation suites, register the new durable check
   centrally and reference the suite identifiers from the surface contract
   instead of leaving validation as ad hoc prose.
+- If a validation command is supposed to protect PRs or merges, verify that a
+  committed CI workflow or equivalent standing runner actually executes it.
+  A local script alone is not durable enforcement.
 - When the change affects execution-boundary behavior, include validation
   through the real operator-facing entrypoint rather than stopping at a nearby
   helper, unit seam, or contract-only check.

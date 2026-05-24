@@ -18,6 +18,9 @@
     "harness:new:entry": "node .harness/framework/cli/harness.mjs new:entry",
     "harness:new:meta": "node .harness/framework/cli/harness.mjs new:meta",
     "harness:new:session": "node .harness/framework/cli/harness.mjs new:session",
+    "harness:session:use": "node .harness/framework/cli/harness.mjs session:use",
+    "harness:session:clear": "node .harness/framework/cli/harness.mjs session:clear",
+    "harness:close:session": "node .harness/framework/cli/harness.mjs close:session",
     "harness:migrate:history": "node .harness/framework/cli/harness.mjs migrate:history",
     "mcp-gen": "node workflows/bin/mcp-gen",
     "test:e2e": "node --import tsx --test harness-tests/tests/mcp-gen-e2e.test.mjs"

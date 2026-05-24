@@ -2,6 +2,7 @@
  * Tests for harness.mjs CLI orchestrator
  */
 
+import { spawn } from "node:child_process";
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import { existsSync, readFileSync, rmSync } from "node:fs";
@@ -11,9 +12,19 @@ import {
   TEST_DATE,
   TEST_TIMESTAMP,
   createContextRoot,
+  getCurrentSessionPointerPathForTests,
+  HARNESS_CLI,
   runHarness,
   runHarnessUntilMarkers,
 } from "../helpers/harness-cli-helpers.mjs";
+
+function clearCurrentSessionPointerForTests() {
+  rmSync(getCurrentSessionPointerPathForTests(), { force: true });
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 describe("harness CLI", { concurrency: 1 }, () => {
   describe("prep command", () => {
@@ -420,6 +431,9 @@ describe("harness CLI", { concurrency: 1 }, () => {
     });
 
     it("links the same-day session with a repo-relative session_ref", (t) => {
+      clearCurrentSessionPointerForTests();
+      t.after(() => clearCurrentSessionPointerForTests());
+
       const sessionSlug = "test-session-linked";
       const metaSlug = "test-meta-linked";
       const sessionFile = join(
@@ -480,10 +494,315 @@ describe("harness CLI", { concurrency: 1 }, () => {
         "session should link back to the created history entry",
       );
     });
+
+    it("uses the current session pointer when multiple same-day sessions exist", (t) => {
+      clearCurrentSessionPointerForTests();
+      t.after(() => clearCurrentSessionPointerForTests());
+
+      const sessionOneSlug = "test-session-pointer-one";
+      const sessionTwoSlug = "test-session-pointer-two";
+      const metaSlug = "test-meta-current-session";
+      const sessionOneFile = join(
+        REPO_ROOT,
+        ".harness",
+        "context",
+        "sessions",
+        `${TEST_DATE}-1234-${sessionOneSlug}.md`,
+      );
+      const sessionTwoFile = join(
+        REPO_ROOT,
+        ".harness",
+        "context",
+        "sessions",
+        `${TEST_DATE}-1235-${sessionTwoSlug}.md`,
+      );
+      const metaFile = join(
+        REPO_ROOT,
+        ".harness",
+        "context",
+        "history",
+        `${TEST_DATE}-${metaSlug}.md`,
+      );
+
+      [sessionOneFile, sessionTwoFile, metaFile].forEach((file) => {
+        if (existsSync(file)) rmSync(file);
+      });
+
+      const sessionOneResult = runHarness(
+        `new:session --slug ${sessionOneSlug}`,
+        {
+          HARNESS_DATE: TEST_DATE,
+          HARNESS_TIMESTAMP: TEST_TIMESTAMP,
+        },
+      );
+      assert.strictEqual(
+        sessionOneResult.exitCode,
+        0,
+        `first session should succeed, got: ${sessionOneResult.output}`,
+      );
+
+      const sessionTwoResult = runHarness(
+        `new:session --slug ${sessionTwoSlug}`,
+        {
+          HARNESS_DATE: TEST_DATE,
+          HARNESS_TIMESTAMP: "2026-01-04T12:35:56.000Z",
+        },
+      );
+      assert.strictEqual(
+        sessionTwoResult.exitCode,
+        0,
+        `second session should succeed, got: ${sessionTwoResult.output}`,
+      );
+
+      const metaResult = runHarness(`new:meta --slug ${metaSlug}`, {
+        HARNESS_DATE: TEST_DATE,
+      });
+      assert.strictEqual(
+        metaResult.exitCode,
+        0,
+        `meta creation should succeed, got: ${metaResult.output}`,
+      );
+
+      t.after(() => {
+        [sessionOneFile, sessionTwoFile, metaFile].forEach((file) => {
+          if (existsSync(file)) rmSync(file);
+        });
+      });
+
+      const metaContent = readFileSync(metaFile, "utf-8");
+      assert.ok(
+        metaContent.includes(
+          '  - ".harness/context/sessions/2026-01-04-1235-test-session-pointer-two.md"',
+        ),
+        "meta entry should link the currently selected session",
+      );
+
+      const sessionTwoContent = readFileSync(sessionTwoFile, "utf-8");
+      assert.ok(
+        sessionTwoContent.includes(
+          '  - ".harness/context/history/2026-01-04-test-meta-current-session.md"',
+        ),
+        "selected session should link back to the created history entry",
+      );
+    });
+
+    it("supports switching and clearing the current session selection", (t) => {
+      clearCurrentSessionPointerForTests();
+      t.after(() => clearCurrentSessionPointerForTests());
+
+      const sessionOneSlug = "test-session-switch-one";
+      const sessionTwoSlug = "test-session-switch-two";
+      const linkedMetaSlug = "test-meta-session-switch";
+      const unlinkedMetaSlug = "test-meta-no-session";
+      const sessionOneFile = join(
+        REPO_ROOT,
+        ".harness",
+        "context",
+        "sessions",
+        `${TEST_DATE}-1236-${sessionOneSlug}.md`,
+      );
+      const sessionTwoFile = join(
+        REPO_ROOT,
+        ".harness",
+        "context",
+        "sessions",
+        `${TEST_DATE}-1237-${sessionTwoSlug}.md`,
+      );
+      const linkedMetaFile = join(
+        REPO_ROOT,
+        ".harness",
+        "context",
+        "history",
+        `${TEST_DATE}-${linkedMetaSlug}.md`,
+      );
+      const unlinkedMetaFile = join(
+        REPO_ROOT,
+        ".harness",
+        "context",
+        "history",
+        `${TEST_DATE}-${unlinkedMetaSlug}.md`,
+      );
+
+      [
+        sessionOneFile,
+        sessionTwoFile,
+        linkedMetaFile,
+        unlinkedMetaFile,
+      ].forEach((file) => {
+        if (existsSync(file)) rmSync(file);
+      });
+
+      assert.strictEqual(
+        runHarness(`new:session --slug ${sessionOneSlug}`, {
+          HARNESS_DATE: TEST_DATE,
+          HARNESS_TIMESTAMP: "2026-01-04T12:36:56.000Z",
+        }).exitCode,
+        0,
+        "first session should be created",
+      );
+      assert.strictEqual(
+        runHarness(`new:session --slug ${sessionTwoSlug}`, {
+          HARNESS_DATE: TEST_DATE,
+          HARNESS_TIMESTAMP: "2026-01-04T12:37:56.000Z",
+        }).exitCode,
+        0,
+        "second session should be created",
+      );
+
+      const selectResult = runHarness(`session:use --slug ${sessionOneSlug}`, {
+        HARNESS_DATE: TEST_DATE,
+      });
+      assert.strictEqual(
+        selectResult.exitCode,
+        0,
+        `session switch should succeed, got: ${selectResult.output}`,
+      );
+
+      const linkedMetaResult = runHarness(`new:meta --slug ${linkedMetaSlug}`, {
+        HARNESS_DATE: TEST_DATE,
+      });
+      assert.strictEqual(
+        linkedMetaResult.exitCode,
+        0,
+        `linked meta should succeed, got: ${linkedMetaResult.output}`,
+      );
+
+      const clearResult = runHarness("session:clear", {
+        HARNESS_DATE: TEST_DATE,
+      });
+      assert.strictEqual(
+        clearResult.exitCode,
+        0,
+        `session clear should succeed, got: ${clearResult.output}`,
+      );
+
+      const unlinkedMetaResult = runHarness(
+        `new:meta --slug ${unlinkedMetaSlug}`,
+        { HARNESS_DATE: TEST_DATE },
+      );
+      assert.strictEqual(
+        unlinkedMetaResult.exitCode,
+        0,
+        `unlinked meta should succeed, got: ${unlinkedMetaResult.output}`,
+      );
+      assert.ok(
+        unlinkedMetaResult.output.includes("No current session linked."),
+        "should warn when no current session is selected",
+      );
+
+      t.after(() => {
+        [
+          sessionOneFile,
+          sessionTwoFile,
+          linkedMetaFile,
+          unlinkedMetaFile,
+        ].forEach((file) => {
+          if (existsSync(file)) rmSync(file);
+        });
+      });
+
+      const linkedMetaContent = readFileSync(linkedMetaFile, "utf-8");
+      assert.ok(
+        linkedMetaContent.includes(
+          '  - ".harness/context/sessions/2026-01-04-1236-test-session-switch-one.md"',
+        ),
+        "linked meta should use the manually selected session",
+      );
+
+      const unlinkedMetaContent = readFileSync(unlinkedMetaFile, "utf-8");
+      assert.ok(
+        unlinkedMetaContent.includes('  - "NONE"'),
+        "clearing the current session should fall back to NONE",
+      );
+    });
+
+    it("retries against live session state when a matching session appears during meta creation", async (t) => {
+      clearCurrentSessionPointerForTests();
+      t.after(() => clearCurrentSessionPointerForTests());
+
+      const contextRoot = createContextRoot(t);
+      const metaSlug = "test-meta-race";
+      const sessionSlug = "test-session-race";
+      const metaFile = join(
+        contextRoot,
+        "history",
+        `${TEST_DATE}-${metaSlug}.md`,
+      );
+      const sessionFile = join(
+        contextRoot,
+        "sessions",
+        `${TEST_DATE}-1234-${sessionSlug}.md`,
+      );
+
+      const child = spawn(
+        "node",
+        [
+          HARNESS_CLI,
+          "new:meta",
+          "--slug",
+          metaSlug,
+          "--session-slug",
+          sessionSlug,
+        ],
+        {
+          cwd: REPO_ROOT,
+          env: {
+            ...process.env,
+            HARNESS_DATE: TEST_DATE,
+            HARNESS_CONTEXT_ROOT: contextRoot,
+            HARNESS_SESSION_REF_RETRY_TIMEOUT_MS: "500",
+            HARNESS_SESSION_REF_RETRY_INTERVAL_MS: "10",
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+
+      let output = "";
+      child.stdout?.on("data", (chunk) => {
+        output += chunk.toString();
+      });
+      child.stderr?.on("data", (chunk) => {
+        output += chunk.toString();
+      });
+
+      await wait(50);
+
+      const sessionResult = runHarness(`new:session --slug ${sessionSlug}`, {
+        HARNESS_DATE: TEST_DATE,
+        HARNESS_TIMESTAMP: TEST_TIMESTAMP,
+        HARNESS_CONTEXT_ROOT: contextRoot,
+      });
+      assert.strictEqual(
+        sessionResult.exitCode,
+        0,
+        `session creation during retry should succeed, got: ${sessionResult.output}`,
+      );
+
+      const exitCode = await new Promise((resolve, reject) => {
+        child.on("error", reject);
+        child.on("close", (code) => resolve(code));
+      });
+
+      assert.strictEqual(
+        exitCode,
+        0,
+        `meta creation should succeed after the session appears. Output:\n${output}`,
+      );
+      assert.ok(existsSync(metaFile), "meta file should be created");
+
+      const metaContent = readFileSync(metaFile, "utf-8");
+      assert.ok(
+        metaContent.includes(sessionFile),
+        "meta entry should link the session that appeared during retry",
+      );
+    });
   });
 
   describe("new:session command", () => {
     it("creates a session entry with timestamp prefix", (t) => {
+      clearCurrentSessionPointerForTests();
+      t.after(() => clearCurrentSessionPointerForTests());
+
       const slug = "test-session-basic";
       const contextRoot = createContextRoot(t);
       const targetFile = join(

@@ -43,11 +43,16 @@
   until the very end to capture corrections, repeated workflow, or codify
   candidates.
 - When immediate session linkage matters, create `new:session` before the
-  linked `new:entry` or `new:meta`. If multiple same-day sessions exist, use
-  `--session-slug` instead of creating history and session artifacts in
+  linked `new:entry` or `new:meta`. `new:session` selects that session for the
+  current worktree automatically, `session:use` switches the selection, and
+  `--session-slug` is the one-off override when you intentionally need a
+  different link target. Do not create linked history and session artifacts in
   parallel.
 - Before adding a new doc, command, script, abstraction, or root-level
   surface, use `anti-slop-preflight`.
+- When writing reusable skills, workflow docs, or cross-repo guidance, avoid
+  hardcoded personal absolute paths unless the task explicitly requires a
+  machine-local operator path.
 - Before committing or pushing, verify the staged content does not include
   secrets, credentials, or tokens.
 - Prefer live end-to-end validation when feasible; if it is not feasible, say
@@ -109,6 +114,8 @@ cumulative; add only preferences that should follow the user across repos.
 - `npm run harness:post -- --staged`
 - `npm run harness:ci`
 - `npm run harness:new:session -- --slug "task-name"`
+- `npm run harness:session:use -- --slug "task-name"`
+- `npm run harness:session:clear`
 - `npm run harness:new:entry -- --slug "change-slug" --type fix|decision|meta`
 
 ## Portable Skills

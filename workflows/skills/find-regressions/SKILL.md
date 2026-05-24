@@ -61,6 +61,9 @@ cat .harness/diagnostics/latest/agent-failures.log
   newer evidence, say so before concluding the repo is actually quiet.
 - Treat stale durable context as its own finding: the audit can only be as
   trustworthy as the freshness of the artifacts it is leaning on.
+- If the repo ships a CI template or local gate command but no committed
+  workflow actually runs it, treat that as unresolved workflow debt instead of
+  assuming local pass means real enforcement exists.
 
 3. Reduce to the real audit surface.
 

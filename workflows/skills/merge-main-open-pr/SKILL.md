@@ -82,6 +82,9 @@ npm run harness:post
   tooling repair, decide whether that repair is intentionally part of the
   deliverable. Do not silently widen a feature PR with local-environment churn
   that belongs in separate setup or harness work.
+- If the diff mixes product or runtime changes with harness, workflow, or
+  other repo-governing surfaces, split the payload unless the coupling is
+  essential and you can explain why they need to land together.
 - If review follow-up changes files, rerun verification until clean again.
 - Run this checkpoint before the first push that would create or refresh a PR,
   not after the branch is already visible on GitHub.

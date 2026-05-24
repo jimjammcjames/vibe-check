@@ -18,6 +18,15 @@ export const HARNESS_CLI = join(
 export const TEST_DATE = "2026-01-04";
 export const TEST_TIMESTAMP = "2026-01-04T12:34:56.000Z";
 
+export function getCurrentSessionPointerPathForTests() {
+  const gitDir = execSync("git rev-parse --git-dir", {
+    cwd: REPO_ROOT,
+    encoding: "utf-8",
+    stdio: ["pipe", "pipe", "pipe"],
+  }).trim();
+  return join(REPO_ROOT, gitDir, "harness-state", "current-session");
+}
+
 export function runHarness(args, envOverrides = {}) {
   try {
     const result = execSync(`node "${HARNESS_CLI}" ${args}`, {
