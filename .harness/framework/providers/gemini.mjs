@@ -134,15 +134,26 @@ export const geminiProvider = {
    * Check if Gemini CLI is available
    */
   async isAvailable() {
+    const checks = ["gemini --version", "gemini --help"];
+
     try {
-      execSync("which gemini", {
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-      return true;
+      for (const command of checks) {
+        try {
+          execSync(command, {
+            encoding: "utf-8",
+            stdio: ["ignore", "pipe", "pipe"],
+            timeout: 10000,
+          });
+          return true;
+        } catch {
+          // Try the next lightweight startup probe before declaring Gemini unavailable.
+        }
+      }
     } catch {
-      return false;
+      // Fall through to the final false below.
     }
+
+    return false;
   },
 
   /**

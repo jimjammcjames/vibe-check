@@ -364,7 +364,10 @@ npm run harness:prep
 
 1. Run `npm run harness:prep` and follow its bootstrap preflight output first.
 2. If local deps are missing, run `npm ci` (or `npm install` if there is no lockfile).
-3. If the runtime is wrong, use `.nvmrc` and switch to the repo's Node version.
+3. If the runtime is wrong, verify the repo-declared runtime from a fresh login
+   shell first, then from the non-login shell the agent actually uses if
+   needed. Do not bridge around a bad shell/runtime contract with temporary
+   downloads or wrapper glue.
 4. Check that `.harness/config.yml` exists and is valid YAML.
 5. If agent providers fail, verify the selected CLI is installed and logged in.
 6. If git-related commands fail, make sure you are inside a git repository with

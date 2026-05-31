@@ -58,6 +58,10 @@ service, runtime surface, operator command, or background workflow.
   workflow instead of implying the local lane proves live behavior too.
 - If the surface depends on packaged shared assets, include one validation step
   that proves those assets are present in the real runtime or deploy artifact.
+- When the surface has meaningful lifecycle state, validate the real
+  operator-facing path across setup, first use, reuse or preserved state if
+  supported, and cleanup or destroy. If one of those phases was not exercised,
+  say so explicitly instead of implying end-to-end coverage.
 - If the repo maintains named validation suites, register the new durable check
   centrally and reference the suite identifiers from the surface contract
   instead of leaving validation as ad hoc prose.

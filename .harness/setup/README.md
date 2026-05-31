@@ -63,6 +63,12 @@ Optional untracked local overrides can live in a repo-shared
 `<git common dir>/.harness/config.local.yml`, plus a per-worktree
 `.harness/config.local.yml` that overrides the shared layer when needed.
 
+If the repo spans multiple runtimes or languages, keep the shared harness core
+generic and adapt only the repo-owned execution surface. Point the stage
+commands at wrapper scripts in the target repo that partition test, lint, and
+tripwire discovery per runtime instead of teaching the harness framework about
+repo-specific toolchains.
+
 ## 5. Verify setup
 
 ```bash

@@ -53,6 +53,11 @@ under `<git common dir>/.harness/config.local.yml`, and a per-worktree
 `.harness/config.local.yml` can override that shared layer when one checkout
 needs to diverge intentionally.
 
+For mixed-runtime repos, keep the shared harness core intact and adapt only the
+repo-owned stage commands. Prefer wrapper scripts in the target repo that fan
+out to the right test, lint, or discovery commands for each runtime instead of
+patching harness internals for one repo's toolchain.
+
 ## 5. Set up docs and CI
 
 - Ensure `AGENTS.md` points agents to `.harness/Harness.md` and `npm run harness:prep`.
@@ -64,6 +69,10 @@ needs to diverge intentionally.
 - Copy `.harness/setup/harness-ci.yml` into `.github/workflows/` if the repo needs a dedicated workflow.
 - If hosted CI will not have a runnable agent provider CLI/API configured, keep `HARNESS_ALLOW_MISSING_AGENT_PROVIDER=1` on the workflow step so deterministic checks still run while local `harness:ci` remains the full provider-backed outer loop.
 - Upload `.harness/diagnostics/latest` as a workflow artifact so machine-readable review coverage and agent failure diagnostics survive each CI run.
+- If the repo includes temp-checkout harness simulations, exclude provider-home
+  caches and diagnostics artifacts from copied fixtures, and keep stub servers
+  or long-lived helpers asynchronous so the simulations stay small and do not
+  deadlock on synchronous child processes.
 
 ## 6. Create the initial harness meta entry
 

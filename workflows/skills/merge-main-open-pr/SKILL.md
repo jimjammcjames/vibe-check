@@ -68,7 +68,31 @@ git diff --name-only "$BASE_REF"...HEAD
 - During conflicts, read the linked history/session artifacts for the affected
   work before resolving so the original request survives the cleanup.
 
-5. Run repo verification before push.
+5. If merging the base instead of rebasing, inspect the staged merge payload.
+
+```bash
+git merge --no-commit --no-ff "$BASE_REF"
+git diff --cached --name-only
+git diff --cached --name-only | node workflows/skills/merge-main-open-pr/scripts/check-merge-scope.mjs --stdin
+```
+
+- Use this path only when preserving published review history is intentional.
+- If the merge reports `Already up to date`, continue to verification without
+  fabricating a merge commit.
+- Use the staged file list as the source of truth for any history/session
+  updates that need to describe the branch-sync payload.
+- If the scope checker reports a mixed payload across harness/workflow/tooling
+  and runtime paths, stop before committing and decide whether the merge is
+  intentionally mixed-scope.
+- Only continue after one of these is true:
+  - the accidental payload has been split or reverted, or
+  - the mixed scope is intentional, documented in the staged history/PR
+    summary, and the checker has been rerun with `--ack-mixed`
+- If `git merge --no-commit --no-ff ...` succeeds with staged changes and no
+  conflicts, the branch is still in an in-progress merge state. Finalize that
+  merge with a real `git commit` before moving to verification or PR updates.
+
+6. Run repo verification before push.
 
 ```bash
 npm run harness:post
@@ -89,19 +113,19 @@ npm run harness:post
 - Run this checkpoint before the first push that would create or refresh a PR,
   not after the branch is already visible on GitHub.
 
-6. Push the branch.
+7. Push the branch.
 
 - First push: `git push -u origin "$(git branch --show-current)"`
 - Rebased branch: `git push --force-with-lease`
 - Otherwise: `git push`
 
-7. Run the outer loop.
+8. Run the outer loop.
 
 ```bash
 npm run harness:ci
 ```
 
-8. Reuse or create the PR.
+9. Reuse or create the PR.
 
 ```bash
 gh pr view --json number,url,state,baseRefName,headRefName
@@ -112,3 +136,18 @@ gh pr create --fill
 - Open a normal ready-for-review PR by default. Use a draft PR only when the
   user explicitly asked for one or you have stated a concrete reason first.
 - Finish only when the branch is pushed, `harness:ci` is green, and a PR URL exists.
+
+10. Clear the current-session pointer only when the requested PR-ready endpoint is complete.
+
+```bash
+npm run harness:session:clear
+```
+
+- Clear the pointer when the user specifically asked to get the branch into a
+  PR-ready state and the workflow actually ended with a clean pushed branch
+  plus PR URL.
+- Leave the pointer in place when obvious same-task follow-up remains in the
+  current worktree, such as immediate review fixes or additional requested
+  changes on the same topic.
+- If the current session is already unset, report that fact instead of
+  fabricating cleanup.

@@ -25,7 +25,12 @@ gh pr view --json number,url,state,headRefName,baseRefName,reviewDecision,mergea
 ```
 
 - If the user provided a PR number or URL, use that exact PR.
+- If the current checkout is detached and the user did not provide a PR number
+  or URL, stop and report that blocker instead of guessing from local git
+  state.
 - If there is no PR for the current branch and no explicit PR number, stop and report the blocker.
+- If a merge, rebase, or cherry-pick is already in progress, finish that work
+  before starting a fresh merge pass.
 
 2. Pull both summary state and inline review threads.
 
@@ -52,7 +57,19 @@ gh api graphql -f query='query($owner:String!, $repo:String!, $number:Int!) { re
 npm run harness:ci
 ```
 
-5. Merge only the reviewed head commit.
+5. Finalize the linked history and session artifacts before merge.
+
+- Confirm the linked `.harness/context/history/*` and
+  `.harness/context/sessions/*` files still describe the final reviewed
+  outcome after all review fixes, rebases, and CI follow-up commits.
+- If the final merge candidate changed the shipped behavior, validation story,
+  or task outcome relative to those artifacts, update them before merging and
+  rerun `harness:ci`.
+- If merge-readiness work surfaced a follow-up that is distinct from the
+  original PR topic, split that follow-up into its own linked history entry and
+  session notes before continuing instead of widening the older task record.
+
+6. Merge only the reviewed head commit.
 
 ```bash
 PR_HEAD_SHA="$(gh pr view <pr> --json headRefOid --jq '.headRefOid')"
@@ -61,3 +78,17 @@ gh pr merge <pr> --merge --match-head-commit "$PR_HEAD_SHA"
 
 - Use `--squash` or `--rebase` only when the repo or user explicitly wants that strategy.
 - Do not merge pending or failing checks.
+- Read the SHA from GitHub's `headRefOid` for that PR instead of local `HEAD`;
+  local checkout state is not authoritative for the requested PR.
+
+7. Clear the current-session pointer after a successful merge.
+
+```bash
+npm run harness:session:clear
+```
+
+- This workflow is a strict endpoint: when the PR is merged successfully, the
+  requested task is complete and the worktree should not keep routing new
+  history entries to the old task by default.
+- If `harness:session:clear` fails because no current session is selected,
+  report that fact instead of silently skipping it.

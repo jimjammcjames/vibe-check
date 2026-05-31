@@ -10,6 +10,10 @@
   request.
 - Treat `harness:prep` bootstrap preflight as actionable. Fix repo runtime or
   dependency drift there before debugging later harness stages.
+- If the runtime looks wrong, verify the repo-declared runtime from a fresh
+  login shell before patching repo scripts or harness commands. Do not paper
+  over a bad shell/runtime contract with temporary downloads, wrapper glue, or
+  other bridge-only fixes.
 - Before changing code, check `workflows/skills/` and
   `.harness/context/history/` plus `.harness/context/sessions/` for relevant
   guidance.
