@@ -65,6 +65,28 @@
   long-lived workflow needs monitoring, record the real health signal or note
   the gap explicitly.
 
+## Proactive Coding Guardrails
+
+- Surface assumptions, ambiguity, tradeoffs, and success criteria before
+  coding. If a simpler interpretation or cheaper path exists, say so early.
+- For non-trivial work, establish a lightweight task contract covering the
+  goal, non-goals, likely touched surfaces, acceptance criteria,
+  close-but-wrong risks, and validation plan.
+- Do not silently choose among materially different interpretations when a
+  wrong assumption would create rework, product mismatch, or broad diff churn.
+- Prefer the smallest design that solves the current request. Avoid
+  speculative features, configurability, abstractions, or fallback paths unless
+  the task explicitly asks for them.
+- Keep edits surgical: touch only what the task requires, match local style,
+  and mention unrelated cleanup instead of folding it into the current change.
+- For bug fixes, refactors, and multi-step tasks, translate "works" into
+  behavior-based checks and choose the smallest seam that can genuinely fail
+  for the regression. If the full path cannot be proven locally, state the
+  residual risk and strongest evidence gathered.
+- Transitional compatibility is opt-in. Do not add fallback readers, fallback
+  writers, or parallel contract paths unless the task explicitly asks for a
+  migration path.
+
 ## User Preferences
 
 Cross-repo, user-specific defaults that have shown up repeatedly in sibling
@@ -151,7 +173,7 @@ See also: [`workflows/mcp/`](workflows/mcp/) for MCP server manifests and
 
 - `add-new-skill`: Create a new portable repo skill with the right frontmatter, folder layout, and only the supporting resources it genuinely needs. USE WHEN: Defining a reusable workflow for a repeated engineering task. | Converting an ad hoc process into a repo-local skill. | Localizing an external skill or upstream workflow into repo-owned guidance. | Use when the user says or implies: | "Create a new skill for this." | "Turn this into a reusable workflow." | "We keep doing this; standardize it."
 - `anti-slop-preflight`: Pressure-test a proposed change before editing so we extend canonical surfaces and avoid unnecessary files, abstractions, and workflow clutter. USE WHEN: Adding a new root doc, command, script, helper, or review surface. | Touching operator-facing docs and wanting one clear source of truth. | Feeling tempted to add a wrapper, fallback path, or abstraction "just in case." | Planning a substantial AI-authored diff and choosing the review path up front. | Use when the user says or implies: | "Avoid AI slop." | "This feels sloppy." | "Keep the repo tight."
-- `anti-slop-review`: Audit a recent diff for broader AI-slop patterns such as dead code, docs drift, robustness gaps, security footguns, weak tests, architectural drift, and performance/resource regressions. USE WHEN: Reviewing a substantial AI-authored or AI-assisted diff before handoff. | Checking whether a change is semantically tight, not just cosmetically tidy. | Auditing docs, tests, config, and runtime behavior for low-signal churn. | Use when the user says or implies: | "Make sure this is not AI slop." | "Do a broader slop review." | "Pressure-test this diff."
+- `anti-slop-review`: Audit a recent diff for broader AI-slop patterns such as weak task contracts, dead code, docs drift, weak tests, architectural drift, and performance or resource regressions. USE WHEN: Reviewing a substantial AI-authored or AI-assisted diff before handoff. | Checking whether a change is semantically tight, not just cosmetically tidy. | Auditing docs, tests, config, and runtime behavior for low-signal churn. | Running a proactive code-health pass after implementation, not just when the user explicitly asks for a review. | Use when the user says or implies: | "Make sure this is not AI slop." | "Do a broader slop review." | "Pressure-test this diff."
 - `behavior-preserving-refactor`: Preserve the current shipped contract during a refactor so structural cleanup does not silently revive retired behavior or drop the live path. USE WHEN: Moving a live workflow into new files, modules, or ownership seams without intending a product change. | Refactoring a surface that still has legacy, experiment, or rollback-era files nearby. | Cleaning up architecture after the product already converged on one chosen path. | Use when the user says or implies: | "Refactor this, but don't change behavior." | "Keep the current UX." | "Make the structure better without losing what shipped."
 - `codify-learnings`: Turn non-obvious session learnings into durable repo artifacts such as AGENTS rules, skills, and harness history entries. USE WHEN: Capturing durable guidance after debugging, incident work, or process thrash. | Converting chat-only learnings into repo artifacts. | Localizing external skills, workflows, or upstream docs into repo-owned guidance. | Capturing repeated user steering once a workflow preference becomes explicit. | Use when the user says or implies: | "Codify our learnings." | "Save this as a skill." | "Make sure we do not repeat this mistake."
 - `detached-worktree-safety`: Move detached checkout work onto an intentional branch before durable edits, commits, rebases, pushes, or merges. USE WHEN: `git status --short --branch` shows `## HEAD (no branch)`. | Durable code, config, docs, or harness artifacts are about to be edited. | The next step would commit, rebase, push, merge, or preserve work from the current checkout. | Use when the user says or implies: | "This worktree is detached." | "Land this from the automation worktree." | "Push this to main from here."
