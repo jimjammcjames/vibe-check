@@ -1,6 +1,6 @@
 ---
 id: prove-it
-summary: Build evidence-backed proof matrices for debugging, validation, comparisons, and other work where the claim needs ground truth.
+summary: Build evidence-backed proof matrices for hypotheses, validation, optimization, debugging, ground truth, and loop-until-proven work.
 ---
 
 # Prove It
@@ -13,6 +13,7 @@ Use this skill when the task needs proof rather than confidence theater.
 - Validating non-trivial behavior across roles, states, platforms, runtimes, or side effects.
 - Comparing candidates where performance, reliability, cost, or quality is the claim.
 - Defining the right ground truth before changing the system.
+- Proving deployed, live, or production-like behavior when local evidence may be misleading.
 - Use when the user says or implies:
 - "Prove it."
 - "Define ground truth."
@@ -21,6 +22,7 @@ Use this skill when the task needs proof rather than confidence theater.
 - "Don't speculate."
 - "Compare these options."
 - "Validate this live."
+- "How do we know this is actually fixed?"
 
 ## Core Rule
 
@@ -28,14 +30,44 @@ Use this skill when the task needs proof rather than confidence theater.
 - If variables can be isolated, vary the smallest useful one.
 - If the result matters, show the matrix.
 
+## Proof Target Lock
+
+Before collecting evidence or changing code, lock the exact proof target. This
+prevents proving an adjacent symptom while missing the user's actual claim.
+
+Write the target contract in concrete terms:
+
+- Exact subject: the literal control, copy, row, field, document, state, or
+  side effect being proven. Do not rely on broad labels such as "the button"
+  or "the status" when multiple nearby candidates could fit.
+- Equivalent state: role, route or screen, viewport or device class, auth or
+  data fixture, feature flags, and the action sequence needed to reach the same
+  before/after state.
+- Failure predicate: the exact mismatch that counts as failure.
+- Pass predicate: the primary measurable condition that proves success.
+- Artifacts: the screenshot, log, probe, URL, trace, or readback that will be
+  shown in the handoff.
+
+If the user supplies a screenshot or correction, treat the named object in that
+evidence as the target source of truth. Re-state the target contract before
+proceeding when the target could be confused with an adjacent control, row, or
+output. Do not broaden from the named object to a whole class of similar
+surfaces unless the user explicitly asks for that.
+
+Before/after proof must compare equivalent states. If the old build, fixture,
+or failing environment cannot be reproduced, say that explicitly and use the
+supplied failing artifact only as the before image while still collecting
+target-scoped measurements on the after state.
+
 ## Proportionality Gate
 
 Use `prove-it` when at least one is true:
 
-- The user explicitly asks for proof, a matrix, hypotheses, ground truth, live validation, or comparison work.
+- The user explicitly asks for proof, a matrix, hypotheses, ground truth, live validation, comparison work, or loop-until-matching work.
 - The cause is uncertain or multiple plausible explanations exist.
 - The claim is about performance, reliability, loading, workflow cost, or optimization.
 - UI proof and backend proof could disagree.
+- The change crosses roles, platforms, runtimes, or live versus local environments.
 - A wrong answer would create false confidence, repeated rework, or a difficult rollback.
 
 Skip `prove-it` for tiny copy edits, obvious docs fixes, isolated mechanical
@@ -128,6 +160,10 @@ Use when the first problem is deciding what measurement actually proves the clai
 - Define what would confirm the claim.
 - Define what would falsify it.
 - Pick the primary ground truth and any secondary evidence.
+- Lock the exact target and equivalent state so the proof does not drift to an
+  adjacent symptom.
+- When the claim is about one visible control, row, message, field, or output,
+  prefer target-scoped measurements over screenshot-only proof.
 
 4. Run the smallest useful experiment.
 
@@ -161,6 +197,7 @@ Use when the first problem is deciding what measurement actually proves the clai
 
 ## Anti-Patterns
 
+- Proving an adjacent symptom while never locking the user's actual target.
 - Treating a screenshot as proof when direct state, ownership, or timing is available.
 - Treating one happy-path local run as proof of hosted or production-like behavior.
 - Measuring several variables at once and then claiming causality.
