@@ -107,6 +107,12 @@ npm run harness:new:entry -- --slug "change-slug" --type decision
 npm run harness:new:meta -- --slug "harness-change"
 ```
 
+- If the current task covers only part of a larger preexisting branch, replay,
+  or publish/merge follow-up, pass repeated
+  `--affected-file <repo-relative-path>` flags to `new:entry` or `new:meta` so
+  `affected_files` records the task-local payload instead of defaulting to the
+  currently staged set or `NONE`.
+
 Session files are append-only task notes. The harness keeps a separate
 per-worktree current-session pointer in Git metadata, so old session files do
 not stay live routing state forever. `new:session` selects the new session

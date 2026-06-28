@@ -81,6 +81,10 @@ git diff --cached --name-only | node workflows/skills/merge-main-open-pr/scripts
   fabricating a merge commit.
 - Use the staged file list as the source of truth for any history/session
   updates that need to describe the branch-sync payload.
+- If you create a fresh history or meta entry for this PR-ready follow-up on a
+  branch that already carries broader code churn, use repeated
+  `--affected-file <repo-relative-path>` flags so `affected_files` stays
+  scoped to the task you are publishing instead of the whole older branch.
 - If the scope checker reports a mixed payload across harness/workflow/tooling
   and runtime paths, stop before committing and decide whether the merge is
   intentionally mixed-scope.

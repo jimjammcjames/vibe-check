@@ -893,6 +893,43 @@ function getStagedRealCodeFiles() {
   );
 }
 
+function normalizeAffectedFileArgs(affectedFiles) {
+  const normalized = [];
+  const seen = new Set();
+
+  for (const rawValue of affectedFiles) {
+    const value = String(rawValue || "").trim();
+    if (!value) continue;
+    if (value === "NONE") {
+      throw new Error(
+        "Do not pass --affected-file NONE. Omit the flag when no task-local code path applies.",
+      );
+    }
+
+    const normalizedPath = toRepoRelativePath(resolveArtifactPath(value));
+    if (!normalizedPath || isAbsolute(normalizedPath)) {
+      throw new Error(
+        `--affected-file must stay inside the current repo: ${value}`,
+      );
+    }
+
+    if (seen.has(normalizedPath)) continue;
+    seen.add(normalizedPath);
+    normalized.push(normalizedPath);
+  }
+
+  return normalized;
+}
+
+function resolveHistoryAffectedFiles(explicitAffectedFiles) {
+  if (explicitAffectedFiles.length > 0) {
+    return normalizeAffectedFileArgs(explicitAffectedFiles);
+  }
+
+  const stagedRealCodeFiles = getStagedRealCodeFiles();
+  return stagedRealCodeFiles.length > 0 ? stagedRealCodeFiles : ["NONE"];
+}
+
 const CURRENT_SESSION_POINTER_DIR = "harness-state";
 const CURRENT_SESSION_POINTER_FILE = "current-session";
 
@@ -1200,7 +1237,12 @@ function getSessionTemplatePath() {
   return join(HARNESS_ROOT, "framework", "templates", "session.md");
 }
 
-function cmdNewEntry(slug, type, sessionSlug = null) {
+function cmdNewEntry(
+  slug,
+  type,
+  sessionSlug = null,
+  explicitAffectedFiles = [],
+) {
   if (!type || !HISTORY_TYPES.has(type)) {
     logError(
       `Invalid or missing type. Allowed: ${Array.from(HISTORY_TYPES).join(", ")}`,
@@ -1229,15 +1271,14 @@ function cmdNewEntry(slug, type, sessionSlug = null) {
       currentSessionFile: sessionSlug ? null : currentSessionState.sessionFile,
       listSessions: getSessionFiles,
     });
-    const stagedRealCodeFiles = getStagedRealCodeFiles();
+    const affectedFiles = resolveHistoryAffectedFiles(explicitAffectedFiles);
 
     const template = renderHistoryEntryTemplate({
       slug,
       type,
       date,
       relatedEntries: ["NONE"],
-      affectedFiles:
-        stagedRealCodeFiles.length > 0 ? stagedRealCodeFiles : ["NONE"],
+      affectedFiles,
       sessionRefs,
     });
 
@@ -1270,8 +1311,8 @@ function cmdNewEntry(slug, type, sessionSlug = null) {
   }
 }
 
-function cmdNewMeta(slug, sessionSlug = null) {
-  cmdNewEntry(slug, "meta", sessionSlug);
+function cmdNewMeta(slug, sessionSlug = null, explicitAffectedFiles = []) {
+  cmdNewEntry(slug, "meta", sessionSlug, explicitAffectedFiles);
 }
 
 function cmdNewSession(slug) {
@@ -1561,6 +1602,7 @@ function main() {
   let parallelAgentReviews = false;
   let providerOverride = null;
   let stagedOnly = false;
+  const affectedFiles = [];
 
   for (let i = 1; i < args.length; i++) {
     if (args[i] === "--slug" && args[i + 1]) {
@@ -1575,6 +1617,11 @@ function main() {
     }
     if (args[i] === "--session-slug" && args[i + 1]) {
       sessionSlug = args[i + 1];
+      i++;
+      continue;
+    }
+    if (args[i] === "--affected-file" && args[i + 1]) {
+      affectedFiles.push(args[i + 1]);
       i++;
       continue;
     }
@@ -1669,14 +1716,14 @@ function main() {
         logError("Usage: harness new:entry --slug <slug> --type <type>");
         process.exit(1);
       }
-      cmdNewEntry(slug, type, sessionSlug);
+      cmdNewEntry(slug, type, sessionSlug, affectedFiles);
       break;
     case "new:meta":
       if (!slug) {
         logError("Usage: harness new:meta --slug <slug>");
         process.exit(1);
       }
-      cmdNewMeta(slug, sessionSlug);
+      cmdNewMeta(slug, sessionSlug, affectedFiles);
       break;
     case "new:session":
       if (!slug) {
@@ -1736,6 +1783,9 @@ function main() {
         "  --session-slug <slug>  Explicit session slug to link instead of the current worktree selection",
       );
       log("  --type <type>     Entry type (required for new:entry)");
+      log(
+        "  --affected-file <path>  Repeatable task-local affected_files override for new:entry/new:meta",
+      );
       log(
         "  --staged          Run staged-only commit policy verification for post",
       );

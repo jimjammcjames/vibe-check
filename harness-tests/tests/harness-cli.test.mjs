@@ -346,6 +346,53 @@ describe("harness CLI", { concurrency: 1 }, () => {
         "should have Rationale section",
       );
     });
+
+    it("supports explicit affected_files overrides for task-local scope", (t) => {
+      const slug = "test-fixture-decision-affected-override";
+      const contextRoot = createContextRoot(t);
+      const harnessCliPath = [
+        ".harness",
+        "framework",
+        "cli",
+        "harness.mjs",
+      ].join("/");
+      const targetFile = join(
+        contextRoot,
+        "history",
+        `${TEST_DATE}-${slug}.md`,
+      );
+      if (existsSync(targetFile)) rmSync(targetFile);
+
+      const result = runHarness(
+        `new:entry --slug ${slug} --type decision --affected-file AGENTS.md --affected-file ${harnessCliPath}`,
+        {
+          HARNESS_DATE: TEST_DATE,
+          HARNESS_CONTEXT_ROOT: contextRoot,
+        },
+      );
+      assert.strictEqual(result.exitCode, 0, "should succeed");
+
+      t.after(() => {
+        if (existsSync(targetFile)) rmSync(targetFile);
+      });
+
+      const content = readFileSync(targetFile, "utf-8");
+      const affectedFilesBlock = content.match(
+        /affected_files:\n([\s\S]*?)\nsession_refs:/,
+      )?.[1];
+      assert.ok(
+        content.includes('  - "AGENTS.md"'),
+        "should record the first explicit affected file",
+      );
+      assert.ok(
+        content.includes(`  - "${harnessCliPath}"`),
+        "should record the second explicit affected file",
+      );
+      assert.ok(
+        affectedFilesBlock && !affectedFilesBlock.includes('  - "NONE"'),
+        "should replace the NONE placeholder when explicit files are provided",
+      );
+    });
   });
 
   describe("new:meta command", () => {
@@ -427,6 +474,49 @@ describe("harness CLI", { concurrency: 1 }, () => {
       assert.ok(
         content.includes("#harness-meta"),
         "should include harness meta tag",
+      );
+    });
+
+    it("supports explicit affected_files overrides for meta entries", (t) => {
+      const slug = "test-fixture-meta-affected-override";
+      const contextRoot = createContextRoot(t);
+      const harnessCliPath = [
+        ".harness",
+        "framework",
+        "cli",
+        "harness.mjs",
+      ].join("/");
+      const targetFile = join(
+        contextRoot,
+        "history",
+        `${TEST_DATE}-${slug}.md`,
+      );
+      if (existsSync(targetFile)) rmSync(targetFile);
+
+      const result = runHarness(
+        `new:meta --slug ${slug} --affected-file ${harnessCliPath}`,
+        {
+          HARNESS_DATE: TEST_DATE,
+          HARNESS_CONTEXT_ROOT: contextRoot,
+        },
+      );
+      assert.strictEqual(result.exitCode, 0, "should succeed");
+
+      t.after(() => {
+        if (existsSync(targetFile)) rmSync(targetFile);
+      });
+
+      const content = readFileSync(targetFile, "utf-8");
+      const affectedFilesBlock = content.match(
+        /affected_files:\n([\s\S]*?)\nsession_refs:/,
+      )?.[1];
+      assert.ok(
+        content.includes(`  - "${harnessCliPath}"`),
+        "should record the explicit affected file",
+      );
+      assert.ok(
+        affectedFilesBlock && !affectedFilesBlock.includes('  - "NONE"'),
+        "should replace the NONE placeholder when an explicit file is provided",
       );
     });
 

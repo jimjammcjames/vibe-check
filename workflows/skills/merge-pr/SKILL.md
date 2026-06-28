@@ -62,6 +62,10 @@ npm run harness:ci
 - Confirm the linked `.harness/context/history/*` and
   `.harness/context/sessions/*` files still describe the final reviewed
   outcome after all review fixes, rebases, and CI follow-up commits.
+- If you need a fresh history or meta artifact for merge-readiness work on a
+  branch that already includes broader landed code, create it with repeated
+  `--affected-file <repo-relative-path>` flags so `affected_files` stays
+  task-local instead of silently widening to the whole branch.
 - If the final merge candidate changed the shipped behavior, validation story,
   or task outcome relative to those artifacts, update them before merging and
   rerun `harness:ci`.
