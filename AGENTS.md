@@ -39,6 +39,10 @@
   matching history/session artifacts.
 - If repeated user steering makes a workflow or collaboration preference
   explicit, codify that preference in repo artifacts during the same task.
+- If a post-implementation or post-review follow-up smells like a missing
+  default, explanation, lifecycle rule, or validation proof rather than new
+  scope, treat it as an early warning and consider `followup-prevention`
+  before closing.
 - If the user has to redirect, clarify, or strengthen the same thread more than
   once, treat that as evidence of a missing default, explanation, validation,
   or durable workflow rule, and run `followup-prevention` before closing when
@@ -57,8 +61,14 @@
 - When writing reusable skills, workflow docs, or cross-repo guidance, avoid
   hardcoded personal absolute paths unless the task explicitly requires a
   machine-local operator path.
+- Keep writes inside the worktree you started in unless the user explicitly
+  authorizes a different write target. Read-only inspection of sibling repos
+  and worktrees is fine.
 - Before committing or pushing, verify the staged content does not include
   secrets, credentials, or tokens.
+- When auditing for secrets, prefer targeted checks against tracked repo
+  surfaces. Do not broad-recursive search outside the repo or dump secret-
+  bearing command output into logs or handoffs.
 - Prefer live end-to-end validation when feasible; if it is not feasible, say
   explicitly what was validated instead.
 - Do not treat a one-off manual smoke test as durable monitoring coverage; if a
@@ -79,6 +89,8 @@
   the task explicitly asks for them.
 - Keep edits surgical: touch only what the task requires, match local style,
   and mention unrelated cleanup instead of folding it into the current change.
+- Every changed line should trace to the user's request, required
+  verification/history, or cleanup caused by the current change.
 - For bug fixes, refactors, and multi-step tasks, translate "works" into
   behavior-based checks and choose the smallest seam that can genuinely fail
   for the regression. If the full path cannot be proven locally, state the
@@ -123,6 +135,10 @@ cumulative; add only preferences that should follow the user across repos.
 - Prefer live end-to-end validation of the real user-facing or operator-facing
   path when feasible; if that is not feasible, say so explicitly and record
   what was validated instead.
+- When the user says `merge to main`, `land this on main`, or equivalent
+  without narrowing scope, treat that as explicit authorization for the normal
+  validated local-main landing plus remote push. Do not silently downgrade to
+  local-only behavior or bypass protections.
 
 ### Communication Preferences
 
@@ -180,11 +196,12 @@ See also: [`workflows/mcp/`](workflows/mcp/) for MCP server manifests and
 - `durable-surface-contracts`: Record the boundary, validation path, and monitoring contract for long-lived runtime or automation surfaces so durable capabilities never ship as implicit behavior. USE WHEN: Adding a scheduled job, daemon, watcher, bridge, runtime, or durable CLI entrypoint. | Promoting a previously ad hoc/manual workflow into a standing system capability. | Capturing the abstract equivalent of a feature-catalog row without depending on a repo-specific schema. | Use when the user says or implies: | "Make this a durable feature." | "Add a background service or automation." | "Document how this surface is validated and monitored."
 - `feature-discovery`: Clarify ambiguous, exploratory, or multi-approach feature requests before implementation by checking repo context, resolving the real open questions, and choosing an implementation direction. USE WHEN: Ambiguous requests with several plausible product, UX, architecture, or workflow shapes. | Exploratory work where acceptance criteria are still fuzzy enough that coding immediately would likely create rework. | New flows with real tradeoffs around ownership, rollout shape, validation, or success criteria. | Use when the user says or implies: | "Figure out the best way to add this." | "What should this flow look like?" | "Let's think through this before building it." | "There are a few ways we could do this."
 - `find-regressions`: Audit recent git history for code or config that changed more than once, then classify the churn and its history coverage. USE WHEN: Auditing a recent window for repeated-touch code or config. | Checking whether later commits were corrective, restorative, or effectively removals. | Finding weak or missing harness history coverage for changed-again work. | Running an unresolved-churn audit across branches, worktrees, stashes, or automation notes.
-- `followup-prevention`: Convert repeated user redirects, stronger follow-up asks, or large non-feature lessons into durable repo behavior instead of answering them as one-off polish. USE WHEN: The user has already had to correct or redirect the thread twice or more. | The user keeps asking for stronger validation, clearer explanation, safer lifecycle handling, or a tighter control surface. | A "what did you learn?" or "why was this not caught?" follow-up is really pointing at a missing default, rule, test, or explanation. | A large non-feature pass such as hardening, validation overhaul, migration cleanup, or policy correction likely exists because the repo learned something. | Use when the user says or implies: | "We keep missing this." | "How do we stop making this mistake again?" | "Why wasn't this caught beforehand?" | "Codify the lesson."
+- `followup-prevention`: Convert repeated user redirects, stronger follow-up asks, or large non-feature lessons into durable repo behavior instead of answering them as one-off polish. USE WHEN: The user has already had to correct or redirect the thread twice or more. | The user keeps asking for stronger validation, clearer explanation, safer lifecycle handling, or a tighter control surface. | A "what did you learn?" or "why was this not caught?" follow-up is really pointing at a missing default, rule, test, or explanation. | A large non-feature pass such as hardening, validation overhaul, migration cleanup, or policy correction likely exists because the repo learned something. | The user asks for follow-up work after an implementation or review pass and that follow-up smells like a missing default, proof, or codified explanation rather than net-new scope. | Use when the user says or implies: | "We keep missing this." | "How do we stop making this mistake again?" | "Why wasn't this caught beforehand?" | "Codify the lesson."
 - `history-first-branch-merge`: Resolve large stale-branch rebases or merges by reconstructing base intent and branch intent from harness history before editing conflicts. USE WHEN: Rebasing or merging a stale branch with a large conflict set. | Sorting true branch intent from snapshots, carryover changes, or obsolete intermediate work. | Deciding what should survive from current base versus the branch.
 - `logging-best-practices`: Apply structured logging, correlation IDs, level discipline, and secret-safe log design before adding or revising production logging. USE WHEN: Designing or cleaning up production logging. | Adding observability around failures, retries, or external service calls. | Deciding what should and should not be logged.
 - `merge-main-open-pr`: Refresh a branch against the latest base, prefer rebase for stale unpublished work, require an explicit reason before merge-based sync, run `harness:post` plus `review-skill`, then create or update a ready-for-review GitHub pull request. USE WHEN: Opening a PR for the current branch. | Updating an existing PR after more work. | Syncing a stale branch with current base before PR work.
 - `merge-pr`: Merge an existing GitHub pull request by checking unresolved review feedback, rerunning harness CI on the final candidate, and merging only the reviewed head commit. USE WHEN: Merging a PR after review. | Resolving GitHub review feedback and then landing the PR. | Avoiding merges that silently skip unresolved inline comments or stale CI state.
+- `merge-to-main-defaults`: Treat explicit "merge to main" requests as authorization for the normal validated local-main landing plus remote push unless the user narrows scope. USE WHEN: The user says `merge to main`, `land this on main`, or equivalent without narrowing scope. | A landing needs the default interpretation to include both the local `main` update and the remote push.
 - `prove-it`: Build evidence-backed proof matrices for hypotheses, validation, optimization, debugging, ground truth, and loop-until-proven work. USE WHEN: Debugging when the cause is uncertain and several hypotheses could explain the symptom. | Validating non-trivial behavior across roles, states, platforms, runtimes, or side effects. | Comparing candidates where performance, reliability, cost, or quality is the claim. | Defining the right ground truth before changing the system. | Proving deployed, live, or production-like behavior when local evidence may be misleading. | Use when the user says or implies: | "Prove it." | "Define ground truth." | "Make a matrix." | "Loop until the matrix matches." | "Don't speculate." | "Compare these options." | "Validate this live." | "How do we know this is actually fixed?"
 - `refine-code`: Clean up recent code changes for clarity and consistency while preserving exact behavior and staying inside the intended diff. USE WHEN: Removing AI slop without changing behavior. | Tightening a fresh diff before review or handoff. | Aligning new code with local conventions.
 - `review-code`: Meta-level code reviewer enforcing the 3-step chain (bandaid, meta-analysis, close gap). USE WHEN: Reviewing code diffs for policy compliance, evidence quality, and regression-prevention completeness. | Auditing fix and incident changes for systemic gap closure and class-prevention follow-through. | Use when the user says or implies: | "Run harness review on this diff." | "Check this fix for systemic gap closure." | "Verify this change meets harness policy."

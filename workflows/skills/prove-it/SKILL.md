@@ -30,6 +30,78 @@ Use this skill when the task needs proof rather than confidence theater.
 - If variables can be isolated, vary the smallest useful one.
 - If the result matters, show the matrix.
 
+## Goal Contract And Goal Lint
+
+Separate what must be true of the product or workflow from how that truth will
+be checked. Do not let proof machinery become part of the claimed behavior or
+acquire authority to expand its own scope.
+
+For non-trivial proof work, write five distinct sections before implementation:
+
+1. Product outcomes: independently falsifiable user-visible or
+   authoritative-state results.
+2. Safety boundaries: prohibited mutations, deliveries, data exposure, or
+   release effects.
+3. Scope and non-goals: what this delivery intentionally excludes.
+4. Proof plan: the simplest direct behavior, authoritative readback, or
+   existing focused check that can prove or falsify each outcome.
+5. Stop condition: the exact state that ends product work and the condition
+   that freezes further verifier growth.
+
+Model identity, reviewer independence, hashes, seals, evidence schemas, retry
+mechanics, and runner implementation belong in the proof plan or reviewer
+policy. If the user explicitly requires one, preserve it there and describe how
+failure narrows or blocks the verification label; do not restate it as product
+behavior.
+
+Reject or rewrite a goal when any of these are true:
+
+- Reviewer or verifier governance can cite itself as the harmed property.
+- The full aggregate is the only practical way to exercise properties that can
+  be tested independently.
+- The plan permits an expensive aggregate rerun after fixing only the latest
+  failure without first inventorying and greening the remaining independent
+  frontier.
+- A property is labeled aggregate-only because of convenience, current test
+  location, or packaging instead of naming the real boundary that cannot be
+  crossed by a cheaper observation.
+- Multiple unrelated user stories are forced into one chain when separate
+  stories over shared data would prove them more directly.
+
+Use this compact shape:
+
+```text
+GOAL
+Deliver <product outcome> within <scope>.
+
+PRODUCT OUTCOMES
+P1 ...
+
+SAFETY BOUNDARIES
+S1 ...
+
+NON-GOALS
+N1 ...
+
+PROOF PLAN
+For each P/S property, name the simplest observation that can prove or falsify it.
+
+STOP CONDITION
+All product and safety properties are proven, with no unresolved in-contract blocker.
+```
+
+Before any aggregate or expensive end-to-end rerun, keep a lightweight frontier
+table or checklist:
+
+```text
+PROPERTY | CHEAPEST REAL BOUNDARY | CURRENT-CANDIDATE EVIDENCE | STATUS
+<id>     | <direct behavior/readback> | <artifact or observation> | INNER-GREEN
+<id>     | <why no cheaper seam exists> | NONE                    | AGGREGATE-ONLY
+```
+
+Its purpose is to make the remaining independent frontier visible, not to
+formalize every minor observation.
+
 ## Proof Target Lock
 
 Before collecting evidence or changing code, lock the exact proof target. This
@@ -170,6 +242,9 @@ Use when the first problem is deciding what measurement actually proves the clai
 - Vary one thing at a time when possible.
 - Prefer fresh disposable fixtures over polluted shared state.
 - When deployed or operator-facing behavior matters, test the real entrypoint or nearest truthful hosted path instead of a local-only shortcut.
+- Prove independently testable rows first. Treat aggregate-only rows as real
+  boundary claims that should name the cross-property, environment,
+  continuity, cleanup, or sequencing boundary they alone can prove.
 
 5. Fill actual evidence.
 
@@ -182,6 +257,11 @@ Use when the first problem is deciding what measurement actually proves the clai
 - For debugging, stop when the important hypotheses are accepted, rejected, or explicitly inconclusive.
 - For validation, stop when expected and actual match or the residual risk is explicit.
 - For comparison, stop when a winner clears the primary metric and guardrails or the result is honestly inconclusive.
+- If an aggregate or expensive end-to-end row fails, reopen the failed row and
+  any rows that share its invalidated fixture, collector, state, or setup
+  assumption. Before another aggregate rerun, inventory and green the whole
+  remaining independent frontier instead of replaying the full aggregate just
+  to discover the next failure.
 
 7. Clean up or promote the proof surface.
 

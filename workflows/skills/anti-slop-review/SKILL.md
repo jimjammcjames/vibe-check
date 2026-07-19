@@ -19,6 +19,19 @@ anti-slop pass than naming cleanup alone.
 - "Do a broader slop review."
 - "Pressure-test this diff."
 
+## Principle
+
+Choose the right control surface for the problem:
+
+- Binary, high-confidence invariant -> deterministic harness, lint, or policy
+  check
+- Judgment-heavy maintainability, review depth, or code-health concern ->
+  AGENTS guidance, a skill, or a review prompt
+
+Do not reach for a new threshold, scorecard, or wrapper script just because the
+concern is important. If reviewer judgment is the real requirement, keep the
+enforcement agentic.
+
 ## Workflow
 
 1. Load the real review surface.
@@ -49,6 +62,8 @@ git diff "$BASE_REF"...HEAD
 - If the landed implementation narrowed or shifted the original contract,
   require the handoff or linked artifacts to explain that change instead of
   silently shipping the easier adjacent version.
+- If a simpler interpretation or cheaper path existed, check whether the diff
+  considered it before committing to a larger design.
 
 3. Check redundancy and dead code.
 
@@ -69,10 +84,17 @@ git diff "$BASE_REF"...HEAD
 
 - Prefer derivable state over stored duplicate flags, cached conclusions, or
   parallel status fields.
+- If mutable state is genuinely needed, scope it to the smallest owner that can
+  mutate it.
 - Look for optional-field bags, sentinel values, or dead variants that allow
   impossible combinations or hide missing data.
+- Look for primitive aliases or loosely typed identifiers that let callers pass
+  the wrong concept through a technically compatible type.
 - Keep semantic helpers pure and orchestration helpers explicit about side
   effects. Flag helpers that both mutate inputs and return the same reference.
+- If a helper mutates its input, prefer returning `void`; if it returns a
+  value, prefer cloning first instead of mutating and returning the same
+  reference.
 - When a long branch chain returns the same shape from each branch, consider
   whether a data table or earlier normalization would be clearer than repeated
   control flow.
@@ -120,6 +142,21 @@ git diff "$BASE_REF"...HEAD
   ground-truth loop proportionate to the risk.
 - Remove brittle or low-signal assertions that only prove the test ran.
 
+Use this built-in rubric when the diff changes tests or user-visible behavior:
+
+- Choose the smallest seam that can genuinely fail:
+  - pure transformation bug -> utility test
+  - state transition or orchestration bug -> controller/hook test
+  - service contract bug -> service test
+  - view wiring bug -> component/screen test
+  - true multi-surface product flow -> integration or e2e coverage
+- Prefer behavior assertions over source inspection, duplicated production
+  logic, or giant mock harnesses.
+- Treat tautologies, implementation-detail assertions, and tests that mostly
+  prove the mock setup as low-signal smells.
+- If the full user path still is not covered, require the handoff or linked
+  artifact to say so instead of implying the suite is complete.
+
 10. Check architecture, ownership, and guidance pressure.
 
 - Ensure the change extends the canonical owner instead of creating a parallel
@@ -152,6 +189,9 @@ git diff "$BASE_REF"...HEAD
   looks clean.
 - Re-derive those assumptions from the requested behavior rather than from the
   implementation shape that already exists.
+- Before accepting a non-trivial change, reset the verification story from the
+  requested behavior instead of inheriting confidence from the code that now
+  happens to exist.
 - Verify them with tests, targeted commands, a `prove-it` matrix, or an
   explicit manual check.
 - When UI evidence, backend state, and runtime timing could disagree, prefer
