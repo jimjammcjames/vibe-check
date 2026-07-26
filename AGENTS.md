@@ -82,6 +82,11 @@
 - For non-trivial work, establish a lightweight task contract covering the
   goal, non-goals, likely touched surfaces, acceptance criteria,
   close-but-wrong risks, and validation plan.
+- Write non-trivial goals as product outcomes and safety boundaries. Keep
+  reviewer identity, evidence packaging, hashes, seals, runner mechanics, and
+  other verifier policy in the validation plan rather than the claimed
+  behavior. If proof machinery starts acting like the product requirement,
+  rewrite the goal or make the policy boundary explicit before implementation.
 - Do not silently choose among materially different interpretations when a
   wrong assumption would create rework, product mismatch, or broad diff churn.
 - Prefer the smallest design that solves the current request. Avoid
@@ -95,6 +100,11 @@
   behavior-based checks and choose the smallest seam that can genuinely fail
   for the regression. If the full path cannot be proven locally, state the
   residual risk and strongest evidence gathered.
+- An independently deferrable non-core property, provider seam, or verifier
+  signal must not linger half-integrated in a source-frozen landing. If it
+  cannot meet the current task contract, remove or isolate its incomplete delta
+  before final verification instead of asking the verifier to excuse a partial
+  or incompatible landing.
 - Transitional compatibility is opt-in. Do not add fallback readers, fallback
   writers, or parallel contract paths unless the task explicitly asks for a
   migration path.
